@@ -288,28 +288,32 @@ void regroove_effects_process(RegrooveEffects* fx, int16_t* buffer, int frames, 
             for (int ch = 0; ch < 2; ch++) {
                 float sample = (ch == 0) ? left : right;
 
-                // Low shelf: one-pole lowpass filter for bass (below 250Hz)
+                // Separate bands using cascaded lowpass filters on ORIGINAL signal
+                // Low band: lowpass at 250Hz (bass)
                 float low_freq = 250.0f / sample_rate;
                 float low_alpha = 1.0f - expf(-2.0f * 3.14159f * low_freq);
                 fx->eq_lp1[ch] += low_alpha * (sample - fx->eq_lp1[ch]);
-                float low_out = fx->eq_lp1[ch] * low_mult + (sample - fx->eq_lp1[ch]);
+                float low_band = fx->eq_lp1[ch];
 
-                // Mid band: bandpass (250Hz to 6kHz) - what's left after low and high
+                // Mid+High band: lowpass at 6kHz (mid+high)
                 float mid_freq = 6000.0f / sample_rate;
                 float mid_alpha = 1.0f - expf(-2.0f * 3.14159f * mid_freq);
-                fx->eq_lp2[ch] += mid_alpha * (low_out - fx->eq_lp2[ch]);
-                float mid_band = fx->eq_lp2[ch] - fx->eq_lp1[ch];
-                float mid_out = low_out + mid_band * (mid_mult - 1.0f);
+                fx->eq_lp2[ch] += mid_alpha * (sample - fx->eq_lp2[ch]);
 
-                // High shelf: boost/cut high frequencies (above 6kHz)
-                float high_band = mid_out - fx->eq_lp2[ch];
-                float final_out = mid_out + high_band * (high_mult - 1.0f);
+                // Extract actual mid band (250Hz to 6kHz)
+                float mid_band = fx->eq_lp2[ch] - fx->eq_lp1[ch];
+
+                // Extract high band (above 6kHz)
+                float high_band = sample - fx->eq_lp2[ch];
+
+                // Apply independent gains to each band
+                float final_out = low_band * low_mult + mid_band * mid_mult + high_band * high_mult;
 
                 if (ch == 0) left = final_out;
                 else right = final_out;
             }
         }
-
+        
         // --- COMPRESSOR (Professional RMS with soft knee and makeup gain) ---
         if (fx->compressor_enabled) {
             for (int ch = 0; ch < 2; ch++) {

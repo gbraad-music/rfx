@@ -1,0 +1,46 @@
+# Build directories
+build/
+bin/
+plugins/*/bin/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake
+!CMakeLists.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# DPF (if using as submodule, ignore build artifacts)
+dpf/build/
+dpf/
+
+# logue SDK build artifacts
+logue-sdk-effects/*/.dep/
+logue-sdk-effects/*/build/
+logue-sdk-effects/*/*.d
+logue-sdk-effects/*/*.ntkdigunit
+logue-sdk-effects/*/*.bin
+logue-sdk-effects/*/*.list
+logue-sdk-effects/*/*.map
+
+# Object files
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.vst
+*.vst3
+*.component
+
+# OS
+.DS_Store
+Thumbs.db

@@ -40,6 +40,25 @@ if(BUILD_MODULAR)
     )
     target_include_directories(fx_delay PUBLIC effects)
 
+    # MODEL 1 effects
+    add_library(fx_model1_lpf STATIC
+        effects/fx_model1_lpf.c
+    )
+    target_include_directories(fx_model1_lpf PUBLIC effects)
+    target_link_libraries(fx_model1_lpf PUBLIC m)  # For powf(), cosf(), sinf()
+
+    add_library(fx_model1_hpf STATIC
+        effects/fx_model1_hpf.c
+    )
+    target_include_directories(fx_model1_hpf PUBLIC effects)
+    target_link_libraries(fx_model1_hpf PUBLIC m)  # For powf(), cosf(), sinf()
+
+    add_library(fx_model1_sculpt STATIC
+        effects/fx_model1_sculpt.c
+    )
+    target_include_directories(fx_model1_sculpt PUBLIC effects)
+    target_link_libraries(fx_model1_sculpt PUBLIC m)  # For powf(), cosf(), sinf()
+
     # Combined library (all individual modules)
     add_library(regroove_effects_modular INTERFACE)
     target_link_libraries(regroove_effects_modular INTERFACE
@@ -48,6 +67,9 @@ if(BUILD_MODULAR)
         fx_eq
         fx_compressor
         fx_delay
+        fx_model1_lpf
+        fx_model1_hpf
+        fx_model1_sculpt
     )
 endif()
 

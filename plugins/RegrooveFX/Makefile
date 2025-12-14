@@ -11,7 +11,12 @@ NAME = RegrooveFX
 # Files to build
 FILES_DSP = \
 	RegrooveFXPlugin.cpp \
-	../../regroove_effects.c
+	../../regroove_effects.c \
+	../../effects/fx_distortion.c \
+	../../effects/fx_filter.c \
+	../../effects/fx_eq.c \
+	../../effects/fx_compressor.c \
+	../../effects/fx_delay.c
 
 FILES_UI = \
 	RegrooveFXUI.cpp

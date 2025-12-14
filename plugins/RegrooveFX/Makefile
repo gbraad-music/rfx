@@ -1,6 +1,12 @@
 #!/usr/bin/make -f
-# Makefile for RegrooveFX Plugin
-# This uses DPF's native Makefile system (simpler than CMake for DPF)
+# Makefile for RegrooveFX Plugin - WITH UI
+# Builds: Linux LV2 (with UI), Windows VST3 (with UI)
+
+# Set Windows cross-compiler when WINDOWS=true
+ifeq ($(WINDOWS),true)
+CC  = x86_64-w64-mingw32-gcc
+CXX = x86_64-w64-mingw32-g++
+endif
 
 # Include DPF Makefile framework
 include ../../dpf/Makefile.base.mk
@@ -8,7 +14,7 @@ include ../../dpf/Makefile.base.mk
 # Plugin name
 NAME = RegrooveFX
 
-# Files to build
+# Files to build - DSP
 FILES_DSP = \
 	RegrooveFXPlugin.cpp \
 	../../regroove_effects.c \
@@ -18,18 +24,46 @@ FILES_DSP = \
 	../../effects/fx_compressor.c \
 	../../effects/fx_delay.c
 
+# UI files - using DPF-Widgets DearImGui
+# Note: DearImGui.cpp includes all ImGui, ImGuiKnobs, and ImGuiToggle sources
 FILES_UI = \
-	RegrooveFXUI.cpp
+	RegrooveFXUI.cpp \
+	../DearImGui.cpp
 
-# Build targets
-TARGETS = lv2_sep vst2 vst3 clap jack
+# UI Type - use default OpenGL2 for better Windows compatibility
+# ifeq ($(WINDOWS),true)
+# UI_TYPE = opengl3
+# endif
 
-# Include directories
-BUILD_CXX_FLAGS += -I../..
+# Build targets - with UI
+ifeq ($(WINDOWS),true)
+    # Windows: VST3 with UI
+    TARGETS = vst3
+else
+    # Linux: LV2 with UI (lv2_sep = separate DSP/UI) and VST3
+    TARGETS = lv2_sep vst3
+endif
 
-# Enable DGL/ImGui
-DGL_FLAGS = -DDGL_USE_IMGUI
-BUILD_CXX_FLAGS += $(DGL_FLAGS)
+# Include directories - prioritize DearImGui to avoid header conflicts
+BUILD_C_FLAGS += -I../.. -I../../effects
+BUILD_CXX_FLAGS += -I../DearImGui -I../DearImGuiKnobs -I../DearImGuiToggle
+BUILD_CXX_FLAGS += -I.. -I../.. -I../../effects
+
+# Define RFX_BUILD_UI=1 for UI build
+BUILD_C_FLAGS += -DRFX_BUILD_UI=1
+BUILD_CXX_FLAGS += -DRFX_BUILD_UI=1
+
+# Windows-specific flags
+ifeq ($(WINDOWS),true)
+    BUILD_C_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
+    BUILD_CXX_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
+    LINK_FLAGS += -static-libgcc -static-libstdc++
+    # OpenGL for ImGui
+    LINK_FLAGS += -lopengl32 -lgdi32
+else
+    # Linux OpenGL for ImGui
+    LINK_FLAGS += -lGL
+endif
 
 # Link math library
 LINK_FLAGS += -lm
@@ -37,15 +71,19 @@ LINK_FLAGS += -lm
 # Include DPF plugin makefile
 include ../../dpf/Makefile.plugins.mk
 
-# Custom target: fetch DPF if not present
-dpf-check:
-	@if [ ! -d "../../dpf" ]; then \
-		echo "DPF not found. Cloning..."; \
-		git clone --depth 1 --branch v1.7 https://github.com/DISTRHO/DPF.git ../../dpf; \
+# Fix Windows .def file handling for modern MinGW - use version script instead
+ifeq ($(WINDOWS),true)
+SYMBOLS_VST3 = -Wl,--version-script=$(DPF_PATH)/utils/symbols/vst3.version
+endif
+
+# Default target
+all: $(TARGETS)
+
+# Post-build: copy icon for LV2
+.PHONY: install-icon
+install-icon:
+	@if [ -f ../../assets/icon-192x192.png ] && [ -d $(TARGET_DIR)/$(NAME).lv2 ]; then \
+		cp ../../assets/icon-192x192.png $(TARGET_DIR)/$(NAME).lv2/icon.png; \
 	fi
 
-.PHONY: dpf-check
-
-# Override default target to check for DPF first
-all: dpf-check
-	@$(MAKE) -f Makefile $(TARGETS)
+.PHONY: all lv2_sep vst3

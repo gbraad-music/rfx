@@ -1,6 +1,8 @@
 #include "DistrhoPlugin.hpp"
 #include "fx_compressor.h"
 #include "../rfx_plugin_utils.h"
+#include <cstring>
+#include <cstdio>
 
 START_NAMESPACE_DISTRHO
 
@@ -8,10 +10,21 @@ class RFX_CompressorPlugin : public Plugin
 {
 public:
     RFX_CompressorPlugin()
-        : Plugin(kParameterCount, 0, 0)
+        : Plugin(kParameterCount, 0, 5)  // 5 state values for explicit VST3 state save/restore
+        , fThreshold(0.4f)
+        , fRatio(0.5f)
+        , fAttack(0.5f)
+        , fRelease(0.5f)
+        , fMakeup(0.5f)
     {
         fEffect = fx_compressor_create();
         fx_compressor_set_enabled(fEffect, true);
+        // Initialize with default values
+        fx_compressor_set_threshold(fEffect, fThreshold);
+        fx_compressor_set_ratio(fEffect, fRatio);
+        fx_compressor_set_attack(fEffect, fAttack);
+        fx_compressor_set_release(fEffect, fRelease);
+        fx_compressor_set_makeup(fEffect, fMakeup);
     }
 
     ~RFX_CompressorPlugin() override
@@ -65,34 +78,131 @@ protected:
 
     float getParameterValue(uint32_t index) const override
     {
-        if (!fEffect) return 0.0f;
-
         switch (index) {
-        case kParameterThreshold: return fx_compressor_get_threshold(fEffect);
-        case kParameterRatio: return fx_compressor_get_ratio(fEffect);
-        case kParameterAttack: return fx_compressor_get_attack(fEffect);
-        case kParameterRelease: return fx_compressor_get_release(fEffect);
-        case kParameterMakeup: return fx_compressor_get_makeup(fEffect);
+        case kParameterThreshold: return fThreshold;
+        case kParameterRatio: return fRatio;
+        case kParameterAttack: return fAttack;
+        case kParameterRelease: return fRelease;
+        case kParameterMakeup: return fMakeup;
         default: return 0.0f;
         }
     }
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (!fEffect) return;
-
+        // Store parameter value
         switch (index) {
-        case kParameterThreshold: fx_compressor_set_threshold(fEffect, value); break;
-        case kParameterRatio: fx_compressor_set_ratio(fEffect, value); break;
-        case kParameterAttack: fx_compressor_set_attack(fEffect, value); break;
-        case kParameterRelease: fx_compressor_set_release(fEffect, value); break;
-        case kParameterMakeup: fx_compressor_set_makeup(fEffect, value); break;
+        case kParameterThreshold: fThreshold = value; break;
+        case kParameterRatio: fRatio = value; break;
+        case kParameterAttack: fAttack = value; break;
+        case kParameterRelease: fRelease = value; break;
+        case kParameterMakeup: fMakeup = value; break;
         }
+
+        // Apply to DSP engine if it exists
+        if (fEffect) {
+            switch (index) {
+            case kParameterThreshold: fx_compressor_set_threshold(fEffect, value); break;
+            case kParameterRatio: fx_compressor_set_ratio(fEffect, value); break;
+            case kParameterAttack: fx_compressor_set_attack(fEffect, value); break;
+            case kParameterRelease: fx_compressor_set_release(fEffect, value); break;
+            case kParameterMakeup: fx_compressor_set_makeup(fEffect, value); break;
+            }
+        }
+    }
+
+    void initState(uint32_t index, State& state) override
+    {
+        switch (index) {
+        case 0:
+            state.key = "threshold";
+            state.defaultValue = "0.4";
+            break;
+        case 1:
+            state.key = "ratio";
+            state.defaultValue = "0.5";
+            break;
+        case 2:
+            state.key = "attack";
+            state.defaultValue = "0.5";
+            break;
+        case 3:
+            state.key = "release";
+            state.defaultValue = "0.5";
+            break;
+        case 4:
+            state.key = "makeup";
+            state.defaultValue = "0.5";
+            break;
+        }
+        state.hints = kStateIsOnlyForDSP;
+    }
+
+    void setState(const char* key, const char* value) override
+    {
+        float fValue = std::atof(value);
+
+        if (std::strcmp(key, "threshold") == 0) {
+            fThreshold = fValue;
+            if (fEffect) fx_compressor_set_threshold(fEffect, fThreshold);
+        }
+        else if (std::strcmp(key, "ratio") == 0) {
+            fRatio = fValue;
+            if (fEffect) fx_compressor_set_ratio(fEffect, fRatio);
+        }
+        else if (std::strcmp(key, "attack") == 0) {
+            fAttack = fValue;
+            if (fEffect) fx_compressor_set_attack(fEffect, fAttack);
+        }
+        else if (std::strcmp(key, "release") == 0) {
+            fRelease = fValue;
+            if (fEffect) fx_compressor_set_release(fEffect, fRelease);
+        }
+        else if (std::strcmp(key, "makeup") == 0) {
+            fMakeup = fValue;
+            if (fEffect) fx_compressor_set_makeup(fEffect, fMakeup);
+        }
+    }
+
+    String getState(const char* key) const override
+    {
+        char buf[32];
+
+        if (std::strcmp(key, "threshold") == 0) {
+            std::snprintf(buf, sizeof(buf), "%.6f", fThreshold);
+            return String(buf);
+        }
+        if (std::strcmp(key, "ratio") == 0) {
+            std::snprintf(buf, sizeof(buf), "%.6f", fRatio);
+            return String(buf);
+        }
+        if (std::strcmp(key, "attack") == 0) {
+            std::snprintf(buf, sizeof(buf), "%.6f", fAttack);
+            return String(buf);
+        }
+        if (std::strcmp(key, "release") == 0) {
+            std::snprintf(buf, sizeof(buf), "%.6f", fRelease);
+            return String(buf);
+        }
+        if (std::strcmp(key, "makeup") == 0) {
+            std::snprintf(buf, sizeof(buf), "%.6f", fMakeup);
+            return String(buf);
+        }
+
+        return String("0.5");
     }
 
     void activate() override
     {
-        if (fEffect) fx_compressor_reset(fEffect);
+        if (fEffect) {
+            fx_compressor_reset(fEffect);
+            // Restore parameters after reset
+            fx_compressor_set_threshold(fEffect, fThreshold);
+            fx_compressor_set_ratio(fEffect, fRatio);
+            fx_compressor_set_attack(fEffect, fAttack);
+            fx_compressor_set_release(fEffect, fRelease);
+            fx_compressor_set_makeup(fEffect, fMakeup);
+        }
     }
 
     void run(const float** inputs, float** outputs, uint32_t frames) override
@@ -103,6 +213,13 @@ protected:
 
 private:
     FXCompressor* fEffect;
+
+    // Store parameters to persist across activate/deactivate
+    float fThreshold;
+    float fRatio;
+    float fAttack;
+    float fRelease;
+    float fMakeup;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RFX_CompressorPlugin)
 };

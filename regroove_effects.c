@@ -127,6 +127,35 @@ void regroove_effects_process(RegrooveEffects* fx, int16_t* buffer, int frames, 
     }
 }
 
+// Process audio through the effects chain (float32 version - preferred for plugins)
+void regroove_effects_process_f32(RegrooveEffects* fx, float* buffer, int frames, int sample_rate) {
+    if (!fx || !buffer || frames <= 0) return;
+
+    // Process directly on float buffer - no conversion needed!
+    // Process through effect chain (in order)
+    if (fx->distortion) {
+        fx_distortion_process_f32(fx->distortion, buffer, frames, sample_rate);
+    }
+
+    if (fx->filter) {
+        fx_filter_process_f32(fx->filter, buffer, frames, sample_rate);
+    }
+
+    if (fx->eq) {
+        fx_eq_process_f32(fx->eq, buffer, frames, sample_rate);
+    }
+
+    if (fx->compressor) {
+        fx_compressor_process_f32(fx->compressor, buffer, frames, sample_rate);
+    }
+
+    if (fx->delay) {
+        fx_delay_process_f32(fx->delay, buffer, frames, sample_rate);
+    }
+
+    // Note: No clamping needed here - individual effects handle their own gain staging
+}
+
 // Distortion parameters
 void regroove_effects_set_distortion_enabled(RegrooveEffects* fx, int enabled) {
     if (fx && fx->distortion) fx_distortion_set_enabled(fx->distortion, enabled);

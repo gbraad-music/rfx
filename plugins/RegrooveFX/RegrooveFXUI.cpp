@@ -1,16 +1,20 @@
 /*
- * RegrooveFX Plugin UI
+ * RegrooveFX Plugin UI - DPF Wrapper
  * Copyright (C) 2024
  *
- * Permission to use, copy, modify, and/or distribute this software for any purpose with
- * or without fee is hereby granted, provided that the above copyright notice and this
- * permission notice appear in all copies.
+ * This is just a thin wrapper around the framework-agnostic UI in regroove_effects_ui.h
+ * The actual ImGui rendering is framework-independent and can be used in:
+ * - DPF plugins (this file)
+ * - SDL applications (../regroove, ../samplecrate)
+ * - Any other ImGui integration
  */
 
 #include "DistrhoUI.hpp"
-#include "imgui.h"
+#include "DearImGui.hpp"
+#include "regroove_effects_ui.h"  // Framework-agnostic UI
 
 START_NAMESPACE_DISTRHO
+USE_NAMESPACE_DGL
 
 // -----------------------------------------------------------------------
 
@@ -21,271 +25,111 @@ public:
         : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT)
     {
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true);
+        std::memset(fParameters, 0, sizeof(fParameters));
+
+        // Create ImGui widget
+        fImGuiWidget = new RegrooveFXImGuiWidget(this);
+        fImGuiWidget->setSize(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT);
+    }
+
+    ~RegrooveFXUI() override
+    {
+        delete fImGuiWidget;
     }
 
 protected:
-    // -------------------------------------------------------------------
-    // DSP/Plugin Callbacks
-
     void parameterChanged(uint32_t index, float value) override
     {
-        // Store parameter values for UI display
         fParameters[index] = value;
-        repaint();
+        fImGuiWidget->repaint();
     }
 
-    // -------------------------------------------------------------------
-    // Widget Callbacks
-
-    void onDisplay() override
+    void uiIdle() override
     {
-        const float sliderW = 50.0f;
-        const float sliderH = 200.0f;
-        const float buttonH = 30.0f;
-        const float spacing = 10.0f;
+        fImGuiWidget->repaint();
+    }
 
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
-
-        if (ImGui::Begin("RegrooveFX", nullptr,
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse))
-        {
-            ImGui::Text("REGROOVE FX");
-            ImGui::Separator();
-            ImGui::Dummy(ImVec2(0, 10.0f));
-
-            // Horizontal layout for all effect sections
-            ImGui::BeginChild("EffectsPanel", ImVec2(0, 0), false);
-
-            // DISTORTION
-            renderEffectSection("DISTORTION",
-                kParameterDistortionEnabled, kParameterDistortionDrive, kParameterDistortionMix,
-                "Drive", "Mix", sliderW, sliderH, buttonH, spacing);
-
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(spacing, 0));
-            ImGui::SameLine();
-
-            // FILTER
-            renderEffectSection("FILTER",
-                kParameterFilterEnabled, kParameterFilterCutoff, kParameterFilterResonance,
-                "Cutoff", "Reso", sliderW, sliderH, buttonH, spacing);
-
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(spacing, 0));
-            ImGui::SameLine();
-
-            // EQ (3-band)
-            renderEQSection(sliderW, sliderH, buttonH, spacing);
-
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(spacing, 0));
-            ImGui::SameLine();
-
-            // COMPRESSOR
-            renderCompressorSection(sliderW, sliderH, buttonH, spacing);
-
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(spacing, 0));
-            ImGui::SameLine();
-
-            // DELAY
-            renderEffectSection("DELAY",
-                kParameterDelayEnabled, kParameterDelayTime, kParameterDelayFeedback,
-                "Time", "FB", sliderW, sliderH, buttonH, spacing, kParameterDelayMix, "Mix");
-
-            ImGui::EndChild();
-        }
-        ImGui::End();
+    void uiReshape(uint width, uint height) override
+    {
+        UI::uiReshape(width, height);
+        fImGuiWidget->setSize(width, height);
     }
 
 private:
-    float fParameters[kParameterCount];
+    friend class RegrooveFXImGuiWidget;
 
-    void renderEffectSection(const char* name,
-                            uint32_t enableParam, uint32_t param1, uint32_t param2,
-                            const char* label1, const char* label2,
-                            float sliderW, float sliderH, float buttonH, float spacing,
-                            uint32_t param3 = 0, const char* label3 = nullptr)
+    class RegrooveFXImGuiWidget : public ImGuiSubWidget
     {
-        ImGui::BeginGroup();
-        ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "%s", name);
-        ImGui::Dummy(ImVec2(0, 4.0f));
-
-        // Enable button
-        bool enabled = fParameters[enableParam] >= 0.5f;
-        ImVec4 btnCol = enabled ? ImVec4(0.70f, 0.60f, 0.20f, 1.0f) : ImVec4(0.26f, 0.27f, 0.30f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, btnCol);
-
-        char btnLabel[64];
-        snprintf(btnLabel, sizeof(btnLabel), "ON##%s", name);
-        if (ImGui::Button(btnLabel, ImVec2(sliderW, buttonH)))
+    public:
+        explicit RegrooveFXImGuiWidget(RegrooveFXUI* const ui)
+            : ImGuiSubWidget(ui),
+              fUI(ui)
         {
-            enabled = !enabled;
-            setParameterValue(enableParam, enabled ? 1.0f : 0.0f);
+            // Setup Regroove style (from framework-agnostic UI)
+            RegrooveFX::UI::setupStyle();
         }
-        ImGui::PopStyleColor();
-        ImGui::Dummy(ImVec2(0, spacing));
 
-        // First parameter slider
-        float value1 = fParameters[param1];
-        char slider1Label[64];
-        snprintf(slider1Label, sizeof(slider1Label), "##%s_1", name);
-        if (ImGui::VSliderFloat(slider1Label, ImVec2(sliderW, sliderH), &value1, 0.0f, 1.0f, ""))
+    protected:
+        void onImGuiDisplay() override
         {
-            setParameterValue(param1, value1);
-        }
-        ImGui::Text("%s", label1);
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
 
-        ImGui::SameLine();
-        ImGui::Dummy(ImVec2(spacing, 0));
-        ImGui::SameLine();
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
 
-        // Second parameter - aligned with first
-        ImGui::BeginGroup();
-        ImGui::Dummy(ImVec2(sliderW, buttonH));
-        ImGui::Dummy(ImVec2(0, spacing));
-
-        float value2 = fParameters[param2];
-        char slider2Label[64];
-        snprintf(slider2Label, sizeof(slider2Label), "##%s_2", name);
-        if (ImGui::VSliderFloat(slider2Label, ImVec2(sliderW, sliderH), &value2, 0.0f, 1.0f, ""))
-        {
-            setParameterValue(param2, value2);
-        }
-        ImGui::Text("%s", label2);
-        ImGui::EndGroup();
-
-        // Optional third parameter
-        if (param3 > 0 && label3 != nullptr)
-        {
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(spacing, 0));
-            ImGui::SameLine();
-
-            ImGui::BeginGroup();
-            ImGui::Dummy(ImVec2(sliderW, buttonH));
-            ImGui::Dummy(ImVec2(0, spacing));
-
-            float value3 = fParameters[param3];
-            char slider3Label[64];
-            snprintf(slider3Label, sizeof(slider3Label), "##%s_3", name);
-            if (ImGui::VSliderFloat(slider3Label, ImVec2(sliderW, sliderH), &value3, 0.0f, 1.0f, ""))
+            if (ImGui::Begin("RegrooveFX", nullptr,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoScrollbar))
             {
-                setParameterValue(param3, value3);
+                // Call framework-agnostic render function
+                // This same function can be used in SDL applications!
+                if (RegrooveFX::UI::render(
+                    // Distortion
+                    &fUI->fParameters[kParameterDistortionEnabled],
+                    &fUI->fParameters[kParameterDistortionDrive],
+                    &fUI->fParameters[kParameterDistortionMix],
+                    // Filter
+                    &fUI->fParameters[kParameterFilterEnabled],
+                    &fUI->fParameters[kParameterFilterCutoff],
+                    &fUI->fParameters[kParameterFilterResonance],
+                    // EQ
+                    &fUI->fParameters[kParameterEQEnabled],
+                    &fUI->fParameters[kParameterEQLow],
+                    &fUI->fParameters[kParameterEQMid],
+                    &fUI->fParameters[kParameterEQHigh],
+                    // Compressor
+                    &fUI->fParameters[kParameterCompressorEnabled],
+                    &fUI->fParameters[kParameterCompressorThreshold],
+                    &fUI->fParameters[kParameterCompressorRatio],
+                    // Delay
+                    &fUI->fParameters[kParameterDelayEnabled],
+                    &fUI->fParameters[kParameterDelayTime],
+                    &fUI->fParameters[kParameterDelayFeedback],
+                    &fUI->fParameters[kParameterDelayMix],
+                    // Layout
+                    getWidth(), getHeight(), true))
+                {
+                    // Parameters changed - notify plugin
+                    for (uint32_t i = 0; i < kParameterCount; i++) {
+                        fUI->setParameterValue(i, fUI->fParameters[i]);
+                    }
+                }
             }
-            ImGui::Text("%s", label3);
-            ImGui::EndGroup();
+            ImGui::End();
+
+            ImGui::PopStyleVar(2);
         }
 
-        ImGui::EndGroup();
-    }
+    private:
+        RegrooveFXUI* const fUI;
 
-    void renderEQSection(float sliderW, float sliderH, float buttonH, float spacing)
-    {
-        ImGui::BeginGroup();
-        ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "EQ");
-        ImGui::Dummy(ImVec2(0, 4.0f));
+        DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RegrooveFXImGuiWidget)
+    };
 
-        // Enable button
-        bool enabled = fParameters[kParameterEQEnabled] >= 0.5f;
-        ImVec4 btnCol = enabled ? ImVec4(0.70f, 0.60f, 0.20f, 1.0f) : ImVec4(0.26f, 0.27f, 0.30f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, btnCol);
-        if (ImGui::Button("ON##EQ", ImVec2(sliderW, buttonH)))
-        {
-            enabled = !enabled;
-            setParameterValue(kParameterEQEnabled, enabled ? 1.0f : 0.0f);
-        }
-        ImGui::PopStyleColor();
-        ImGui::Dummy(ImVec2(0, spacing));
-
-        // Low
-        float low = fParameters[kParameterEQLow];
-        if (ImGui::VSliderFloat("##eq_low", ImVec2(sliderW, sliderH), &low, 0.0f, 1.0f, ""))
-        {
-            setParameterValue(kParameterEQLow, low);
-        }
-        ImGui::Text("Low");
-
-        ImGui::SameLine();
-        ImGui::Dummy(ImVec2(spacing, 0));
-        ImGui::SameLine();
-
-        // Mid
-        ImGui::BeginGroup();
-        ImGui::Dummy(ImVec2(sliderW, buttonH));
-        ImGui::Dummy(ImVec2(0, spacing));
-        float mid = fParameters[kParameterEQMid];
-        if (ImGui::VSliderFloat("##eq_mid", ImVec2(sliderW, sliderH), &mid, 0.0f, 1.0f, ""))
-        {
-            setParameterValue(kParameterEQMid, mid);
-        }
-        ImGui::Text("Mid");
-        ImGui::EndGroup();
-
-        ImGui::SameLine();
-        ImGui::Dummy(ImVec2(spacing, 0));
-        ImGui::SameLine();
-
-        // High
-        ImGui::BeginGroup();
-        ImGui::Dummy(ImVec2(sliderW, buttonH));
-        ImGui::Dummy(ImVec2(0, spacing));
-        float high = fParameters[kParameterEQHigh];
-        if (ImGui::VSliderFloat("##eq_high", ImVec2(sliderW, sliderH), &high, 0.0f, 1.0f, ""))
-        {
-            setParameterValue(kParameterEQHigh, high);
-        }
-        ImGui::Text("High");
-        ImGui::EndGroup();
-
-        ImGui::EndGroup();
-    }
-
-    void renderCompressorSection(float sliderW, float sliderH, float buttonH, float spacing)
-    {
-        ImGui::BeginGroup();
-        ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.2f, 1.0f), "COMPRESSOR");
-        ImGui::Dummy(ImVec2(0, 4.0f));
-
-        // Enable button
-        bool enabled = fParameters[kParameterCompressorEnabled] >= 0.5f;
-        ImVec4 btnCol = enabled ? ImVec4(0.70f, 0.60f, 0.20f, 1.0f) : ImVec4(0.26f, 0.27f, 0.30f, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, btnCol);
-        if (ImGui::Button("ON##COMP", ImVec2(sliderW, buttonH)))
-        {
-            enabled = !enabled;
-            setParameterValue(kParameterCompressorEnabled, enabled ? 1.0f : 0.0f);
-        }
-        ImGui::PopStyleColor();
-        ImGui::Dummy(ImVec2(0, spacing));
-
-        // Threshold
-        float thresh = fParameters[kParameterCompressorThreshold];
-        if (ImGui::VSliderFloat("##comp_thresh", ImVec2(sliderW, sliderH), &thresh, 0.0f, 1.0f, ""))
-        {
-            setParameterValue(kParameterCompressorThreshold, thresh);
-        }
-        ImGui::Text("Thresh");
-
-        ImGui::SameLine();
-        ImGui::Dummy(ImVec2(spacing, 0));
-        ImGui::SameLine();
-
-        // Ratio
-        ImGui::BeginGroup();
-        ImGui::Dummy(ImVec2(sliderW, buttonH));
-        ImGui::Dummy(ImVec2(0, spacing));
-        float ratio = fParameters[kParameterCompressorRatio];
-        if (ImGui::VSliderFloat("##comp_ratio", ImVec2(sliderW, sliderH), &ratio, 0.0f, 1.0f, ""))
-        {
-            setParameterValue(kParameterCompressorRatio, ratio);
-        }
-        ImGui::Text("Ratio");
-        ImGui::EndGroup();
-
-        ImGui::EndGroup();
-    }
+    RegrooveFXImGuiWidget* fImGuiWidget;
+    float fParameters[kParameterCount];
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RegrooveFXUI)
 };

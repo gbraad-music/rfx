@@ -30,7 +30,8 @@ logue-sdk-effects/*/*.bin
 logue-sdk-effects/*/*.list
 logue-sdk-effects/*/*.map
 
-# Object files
+# Object files and related
+*.d
 *.o
 *.obj
 *.a

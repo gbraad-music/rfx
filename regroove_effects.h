@@ -25,6 +25,12 @@ void regroove_effects_reset(RegrooveEffects* fx);
 // sample_rate: sample rate in Hz
 void regroove_effects_process(RegrooveEffects* fx, int16_t* buffer, int frames, int sample_rate);
 
+// Process float32 audio buffer through effects chain (preferred for plugin use)
+// buffer: interleaved stereo float32 samples (L, R, L, R, ...)
+// frames: number of stereo frames
+// sample_rate: sample rate in Hz
+void regroove_effects_process_f32(RegrooveEffects* fx, float* buffer, int frames, int sample_rate);
+
 // Distortion parameters (normalized 0.0 - 1.0 for MIDI mapping)
 void regroove_effects_set_distortion_enabled(RegrooveEffects* fx, int enabled);
 void regroove_effects_set_distortion_drive(RegrooveEffects* fx, float drive);   // 0.0 - 1.0

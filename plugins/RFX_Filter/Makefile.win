@@ -1,0 +1,15 @@
+#!/usr/bin/make -f
+# Windows cross-compile Makefile
+
+include ../../dpf/Makefile.base.mk
+
+NAME = RFX_Filter
+
+FILES_DSP = \
+RFX_FilterPlugin.cpp \
+../../effects/fx_filter.c
+
+BUILD_CXX_FLAGS += -I../.. -I../../effects
+LINK_FLAGS += -lm
+
+include ../../dpf/Makefile.plugins.mk

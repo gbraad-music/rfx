@@ -58,16 +58,16 @@ void fx_filter_process_frame(FXFilter* fx, float* left, float* right, int sample
     // Map resonance to Q (0.5 - 20.0)
     const float q = 0.5f + fx->resonance * 19.5f;
 
-    // Left channel
-    float notch_l = *left - fx->bp[0] * q;
+    // Left channel - State Variable Filter
+    float hp_l = *left - fx->lp[0] - fx->bp[0] * q;  // Fixed: subtract BOTH lp and damped bp
     fx->lp[0] = fx->lp[0] + freq * fx->bp[0];
-    fx->bp[0] = fx->bp[0] + freq * notch_l;
+    fx->bp[0] = fx->bp[0] + freq * hp_l;
     *left = fx->lp[0];
 
     // Right channel
-    float notch_r = *right - fx->bp[1] * q;
+    float hp_r = *right - fx->lp[1] - fx->bp[1] * q;  // Fixed: subtract BOTH lp and damped bp
     fx->lp[1] = fx->lp[1] + freq * fx->bp[1];
-    fx->bp[1] = fx->bp[1] + freq * notch_r;
+    fx->bp[1] = fx->bp[1] + freq * hp_r;
     *right = fx->lp[1];
 }
 

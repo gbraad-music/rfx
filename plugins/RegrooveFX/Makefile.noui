@@ -1,0 +1,98 @@
+#!/usr/bin/make -f
+# Makefile for RegrooveFX Plugin - DSP ONLY (No UI)
+# FIXED: Manually compiles C files that DPF ignores
+
+# Set Windows cross-compiler when WINDOWS=true
+ifeq ($(WINDOWS),true)
+CC  = x86_64-w64-mingw32-gcc
+CXX = x86_64-w64-mingw32-g++
+endif
+
+# Include DPF Makefile framework
+include ../../dpf/Makefile.base.mk
+
+# Plugin name
+NAME = RegrooveFX
+
+# Files to build - DSP only (CPP files)
+FILES_DSP = \
+	RegrooveFXPlugin.cpp
+
+# C source files that need manual compilation
+C_SOURCES = \
+	../../regroove_effects.c \
+	../../effects/fx_distortion.c \
+	../../effects/fx_filter.c \
+	../../effects/fx_eq.c \
+	../../effects/fx_compressor.c \
+	../../effects/fx_delay.c
+
+# No UI files for DSP-only build
+FILES_UI =
+
+# Build targets - DSP only
+ifeq ($(WINDOWS),true)
+    # Windows: Build VST3 only
+    TARGETS = vst3
+else
+    # Linux: Build LV2 and VST3
+    TARGETS = lv2_dsp vst3
+endif
+
+# Include directories
+BUILD_C_FLAGS += -I../.. -I../../effects
+BUILD_CXX_FLAGS += -I../.. -I../../effects
+
+# Define RFX_BUILD_UI=0 for DSP-only build
+BUILD_C_FLAGS += -DRFX_BUILD_UI=0
+BUILD_CXX_FLAGS += -DRFX_BUILD_UI=0
+BUILD_CXX_FLAGS += -DDISTRHO_PLUGIN_HAS_UI=0
+
+# Windows-specific flags
+ifeq ($(WINDOWS),true)
+    BUILD_C_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
+    BUILD_CXX_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
+    LINK_FLAGS += -static-libgcc -static-libstdc++
+endif
+
+# Link math library
+LINK_FLAGS += -lm
+
+# Create object file names for C sources (pattern substitution to match .c.o output)
+C_OBJECTS = $(C_SOURCES:%.c=$(BUILD_DIR)/%.c.o)
+
+# Include DPF plugin makefile AFTER defining variables
+include ../../dpf/Makefile.plugins.mk
+
+# Fix Windows .def file handling for modern MinGW - use version script instead
+ifeq ($(WINDOWS),true)
+SYMBOLS_VST3 = -Wl,--version-script=$(DPF_PATH)/utils/symbols/vst3.version
+endif
+
+# Manually compile C files and add to link
+# Hardcode the paths since pattern substitution doesn't work reliably
+C_OBJS = $(BUILD_DIR)/../../regroove_effects.c.o \
+         $(BUILD_DIR)/../../effects/fx_distortion.c.o \
+         $(BUILD_DIR)/../../effects/fx_filter.c.o \
+         $(BUILD_DIR)/../../effects/fx_eq.c.o \
+         $(BUILD_DIR)/../../effects/fx_compressor.c.o \
+         $(BUILD_DIR)/../../effects/fx_delay.c.o
+
+# Make sure C files are built before the main CPP compilation
+$(BUILD_DIR)/RegrooveFXPlugin.cpp.o: $(C_OBJS)
+
+# Rule to compile C files
+$(BUILD_DIR)/../../%.c.o: ../../%.c
+	-@mkdir -p "$(shell dirname $@)"
+	@echo "Compiling $<"
+	$(SILENT)$(CC) $< $(BUILD_C_FLAGS) -c -o $@
+
+# Override VST3 target to include C objects in link
+$(vst3): $(OBJS_DSP) $(C_OBJS) $(BUILD_DIR)/DistrhoPluginMain_VST3.cpp.o
+	-@mkdir -p $(shell dirname $@)
+	@echo "Creating VST3 plugin for $(NAME)"
+	$(SILENT)$(CXX) $^ $(BUILD_CXX_FLAGS) $(LINK_FLAGS) $(EXTRA_LIBS) $(EXTRA_DSP_LIBS) $(EXTRA_UI_LIBS) $(DGL_LIBS) $(SHARED) $(SYMBOLS_VST3) -o $@
+
+all: $(TARGETS)
+
+.PHONY: all lv2_dsp vst3

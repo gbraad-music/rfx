@@ -1,0 +1,64 @@
+#!/usr/bin/make -f
+# DSP-Only build (no UI) for RFX_Compressor - FIXED to actually compile C files
+
+# Set Windows cross-compiler when WINDOWS=true
+ifeq ($(WINDOWS),true)
+CC  = x86_64-w64-mingw32-gcc
+CXX = x86_64-w64-mingw32-g++
+endif
+
+include ../../dpf/Makefile.base.mk
+
+NAME = RFX_Compressor
+TARGETS = lv2_dsp vst3
+
+# CPP files for DPF
+FILES_DSP = RFX_CompressorPlugin.cpp
+
+# C files that need manual compilation (DPF ignores these)
+C_FILES = ../../effects/fx_compressor.c
+
+# No UI files
+FILES_UI =
+
+BUILD_C_FLAGS += -I../.. -I../../effects
+BUILD_CXX_FLAGS += -I../.. -I../../effects
+BUILD_CXX_FLAGS += -DDISTRHO_PLUGIN_HAS_UI=0
+
+ifeq ($(WINDOWS),true)
+BUILD_C_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
+BUILD_CXX_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
+LINK_FLAGS += -static-libgcc -static-libstdc++
+endif
+
+LINK_FLAGS += -lm
+
+include ../../dpf/Makefile.plugins.mk
+
+# Fix Windows .def file handling for modern MinGW - use version script instead
+ifeq ($(WINDOWS),true)
+SYMBOLS_VST3 = -Wl,--version-script=$(DPF_PATH)/utils/symbols/vst3.version
+endif
+
+# Manually compile C files and add to link
+# Hardcode the path since pattern substitution doesn't work reliably
+C_OBJS = $(BUILD_DIR)/../../effects/fx_compressor.c.o
+
+# Make sure C files are built before the main CPP compilation
+$(BUILD_DIR)/RFX_CompressorPlugin.cpp.o: $(C_OBJS)
+
+# Rule to compile C files
+$(BUILD_DIR)/../../effects/%.c.o: ../../effects/%.c
+	-@mkdir -p "$(shell dirname $@)"
+	@echo "Compiling $<"
+	$(SILENT)$(CC) $< $(BUILD_C_FLAGS) -c -o $@
+
+# Override VST3 target to include C objects in link
+$(vst3): $(OBJS_DSP) $(BUILD_DIR)/../../effects/fx_compressor.c.o $(BUILD_DIR)/DistrhoPluginMain_VST3.cpp.o
+	-@mkdir -p $(shell dirname $@)
+	@echo "Creating VST3 plugin for $(NAME)"
+	$(SILENT)$(CXX) $^ $(BUILD_CXX_FLAGS) $(LINK_FLAGS) $(EXTRA_LIBS) $(EXTRA_DSP_LIBS) $(EXTRA_UI_LIBS) $(DGL_LIBS) $(SHARED) $(SYMBOLS_VST3) -o $@
+
+all: $(TARGETS)
+
+.PHONY: all lv2_dsp vst3

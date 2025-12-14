@@ -1,146 +1,108 @@
-# RegrooveFX Plugin CMake Build
-# Uses DPF (DISTRHO Plugin Framework)
-
 cmake_minimum_required(VERSION 3.15)
+project(RegrooveFX VERSION 1.0.0)
 
-# DPF uses a Makefile-based build system, so we'll wrap it with CMake
-# For a CMake-native approach, we need to manually configure DPF
+# Options
+option(RFX_BUILD_UI "Build with UI (ImGui)" ON)
+option(RFX_BUILD_LV2 "Build LV2 plugin" ON)
+option(RFX_BUILD_VST3 "Build VST3 plugin" ON)
 
-# Get DPF root directory from parent
-if(NOT DEFINED DPF_ROOT_DIR)
-    message(FATAL_ERROR "DPF_ROOT_DIR not set. Please run CMake from the project root.")
-endif()
+# Set C++17 standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
 
-# Set plugin name
-set(PLUGIN_NAME RegrooveFX)
+# DPF path
+set(DPF_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../dpf")
 
-# Source files
-set(PLUGIN_SOURCES
+# Include DPF
+add_subdirectory(${DPF_ROOT_DIR} dpf EXCLUDE_FROM_ALL)
+
+# Plugin metadata
+set(PLUGIN_NAME "RegrooveFX")
+set(PLUGIN_BRAND "Regroove")
+set(PLUGIN_URI "https://github.com/gbraad/rfx")
+
+# DSP source files (always needed)
+set(DSP_SOURCES
     RegrooveFXPlugin.cpp
+    ../../regroove_effects.c
+    ../../effects/fx_distortion.c
+    ../../effects/fx_filter.c
+    ../../effects/fx_eq.c
+    ../../effects/fx_compressor.c
+    ../../effects/fx_delay.c
+)
+
+# UI source files (only if UI enabled)
+set(UI_SOURCES
     RegrooveFXUI.cpp
-)
-
-# DPF core sources
-file(GLOB DPF_SOURCES
-    ${DPF_ROOT_DIR}/distrho/DistrhoPluginMain.cpp
-    ${DPF_ROOT_DIR}/distrho/DistrhoUIMain.cpp
-)
-
-# ImGui sources (from DPF)
-file(GLOB IMGUI_SOURCES
-    ${DPF_ROOT_DIR}/dgl/src/pugl.cpp
-    ${DPF_ROOT_DIR}/dgl/src/OpenGL.cpp
-    ${DPF_ROOT_DIR}/dgl/src/Color.cpp
-    ${DPF_ROOT_DIR}/dgl/src/ImageBase.cpp
-    ${DPF_ROOT_DIR}/dgl/src/NanoVG.cpp
-    ${DPF_ROOT_DIR}/dgl/src/Resources.cpp
-    ${DPF_ROOT_DIR}/dgl/src/Widget.cpp
-    ${DPF_ROOT_DIR}/dgl/src/Window.cpp
-)
-
-# Add ImGui from DPF
-file(GLOB IMGUI_CORE_SOURCES
-    ${DPF_ROOT_DIR}/dgl/src/sofd/libsofd.c
 )
 
 # Include directories
 set(PLUGIN_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}
-    ${DPF_ROOT_DIR}/distrho
-    ${DPF_ROOT_DIR}/dgl
-    ${CMAKE_SOURCE_DIR}  # For regroove_effects.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../effects
 )
 
-# Platform-specific settings
-if(APPLE)
-    set(PLUGIN_SUFFIX ".vst")
-    set(DGL_SYSTEM_LIBS "-framework Cocoa -framework OpenGL")
-elseif(WIN32)
-    set(PLUGIN_SUFFIX ".vst3")
-    set(DGL_SYSTEM_LIBS opengl32 gdi32)
-else()
-    set(PLUGIN_SUFFIX ".so")
-    find_package(X11 REQUIRED)
-    set(DGL_SYSTEM_LIBS ${X11_LIBRARIES} GL)
-    list(APPEND PLUGIN_INCLUDES ${X11_INCLUDE_DIR})
+if(RFX_BUILD_UI)
+    list(APPEND PLUGIN_INCLUDES
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../DearImGui
+        ${CMAKE_CURRENT_SOURCE_DIR}/../DearImGuiKnobs
+        ${CMAKE_CURRENT_SOURCE_DIR}/../DearImGuiToggle
+    )
+
+    # Additional UI sources for DPF-Widgets
+    list(APPEND UI_SOURCES
+        ../DearImGui.cpp
+    )
 endif()
 
-# VST3 Plugin target
-add_library(${PLUGIN_NAME}_vst3 MODULE
-    ${PLUGIN_SOURCES}
-    ${DPF_SOURCES}
+# Compile definitions
+set(PLUGIN_DEFINITIONS
+    DISTRHO_PLUGIN_BRAND="${PLUGIN_BRAND}"
+    DISTRHO_PLUGIN_NAME="${PLUGIN_NAME}"
+    DISTRHO_PLUGIN_URI="${PLUGIN_URI}"
 )
 
-target_include_directories(${PLUGIN_NAME}_vst3 PRIVATE
-    ${PLUGIN_INCLUDES}
+if(RFX_BUILD_UI)
+    list(APPEND PLUGIN_DEFINITIONS RFX_BUILD_UI=1)
+else()
+    list(APPEND PLUGIN_DEFINITIONS RFX_BUILD_UI=0)
+endif()
+
+# Windows-specific flags
+if(WIN32 OR MINGW)
+    add_compile_options(-fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f)
+    if(MINGW)
+        add_link_options(-static-libgcc -static-libstdc++)
+    endif()
+endif()
+
+# Create plugin target using DPF
+dpf_add_plugin(${PLUGIN_NAME}
+    TARGETS lv2 vst3
+    FILES_DSP ${DSP_SOURCES}
+    FILES_UI ${UI_SOURCES}
 )
 
-target_link_libraries(${PLUGIN_NAME}_vst3 PRIVATE
-    regroove_effects
-    ${DGL_SYSTEM_LIBS}
-)
+# Set include directories
+target_include_directories(${PLUGIN_NAME} PRIVATE ${PLUGIN_INCLUDES})
 
-target_compile_definitions(${PLUGIN_NAME}_vst3 PRIVATE
-    DISTRHO_PLUGIN_TARGET_VST3
-)
+# Set compile definitions
+target_compile_definitions(${PLUGIN_NAME} PRIVATE ${PLUGIN_DEFINITIONS})
 
-set_target_properties(${PLUGIN_NAME}_vst3 PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "${PLUGIN_NAME}"
-    SUFFIX "${PLUGIN_SUFFIX}"
-)
+# Link math library
+target_link_libraries(${PLUGIN_NAME} PRIVATE m)
 
-# LV2 Plugin target
-add_library(${PLUGIN_NAME}_lv2 MODULE
-    ${PLUGIN_SOURCES}
-    ${DPF_SOURCES}
-)
+# Windows OpenGL for UI
+if(RFX_BUILD_UI AND WIN32)
+    target_link_libraries(${PLUGIN_NAME} PRIVATE opengl32 gdi32)
+elseif(RFX_BUILD_UI AND UNIX AND NOT APPLE)
+    target_link_libraries(${PLUGIN_NAME} PRIVATE GL)
+endif()
 
-target_include_directories(${PLUGIN_NAME}_lv2 PRIVATE
-    ${PLUGIN_INCLUDES}
-)
-
-target_link_libraries(${PLUGIN_NAME}_lv2 PRIVATE
-    regroove_effects
-    ${DGL_SYSTEM_LIBS}
-)
-
-target_compile_definitions(${PLUGIN_NAME}_lv2 PRIVATE
-    DISTRHO_PLUGIN_TARGET_LV2
-)
-
-set_target_properties(${PLUGIN_NAME}_lv2 PROPERTIES
-    PREFIX ""
-    OUTPUT_NAME "${PLUGIN_NAME}"
-    SUFFIX ".so"
-)
-
-# Standalone target (optional)
-add_executable(${PLUGIN_NAME}_standalone
-    ${PLUGIN_SOURCES}
-    ${DPF_SOURCES}
-)
-
-target_include_directories(${PLUGIN_NAME}_standalone PRIVATE
-    ${PLUGIN_INCLUDES}
-)
-
-target_link_libraries(${PLUGIN_NAME}_standalone PRIVATE
-    regroove_effects
-    ${DGL_SYSTEM_LIBS}
-)
-
-target_compile_definitions(${PLUGIN_NAME}_standalone PRIVATE
-    DISTRHO_PLUGIN_TARGET_JACK
-)
-
-# Installation
-install(TARGETS ${PLUGIN_NAME}_vst3 ${PLUGIN_NAME}_lv2
-    LIBRARY DESTINATION lib/vst3
-    RUNTIME DESTINATION bin
-)
-
-message(STATUS "RegrooveFX plugin configured")
-message(STATUS "  VST3: ${PLUGIN_NAME}_vst3")
-message(STATUS "  LV2:  ${PLUGIN_NAME}_lv2")
-message(STATUS "  Standalone: ${PLUGIN_NAME}_standalone")
+message(STATUS "RegrooveFX Configuration:")
+message(STATUS "  Build UI: ${RFX_BUILD_UI}")
+message(STATUS "  Target: ${CMAKE_SYSTEM_NAME}")

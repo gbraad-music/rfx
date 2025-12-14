@@ -5,6 +5,7 @@
 #include "fx_eq.h"
 #include <stdlib.h>
 #include <string.h>
+#include "windows_compat.h"
 #include <math.h>
 
 struct FXEqualizer {

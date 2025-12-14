@@ -5,7 +5,9 @@
 #include "fx_compressor.h"
 #include <stdlib.h>
 #include <string.h>
+#include "windows_compat.h"
 #include <math.h>
+#include "windows_compat.h"
 
 struct FXCompressor {
     // Parameters

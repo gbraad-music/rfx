@@ -219,6 +219,12 @@ namespace ImGuiKnobs {
 
             return {colors[ImGuiCol_FrameBg], colors[ImGuiCol_FrameBg], colors[ImGuiCol_FrameBg]};
         }
+
+        color_set GetTickColorSet() {
+            auto *colors = ImGui::GetStyle().Colors;
+
+            return {colors[ImGuiCol_SliderGrab], colors[ImGuiCol_SliderGrabActive], colors[ImGuiCol_SliderGrabActive]};
+        }
     }// namespace detail
 
 
@@ -228,8 +234,9 @@ namespace ImGuiKnobs {
 
         switch (variant) {
             case ImGuiKnobVariant_Tick: {
-                knob.draw_circle(0.85f, detail::GetSecondaryColorSet(), true, 32);
-                knob.draw_tick(0.5f, 0.85f, 0.08f, knob.angle, detail::GetPrimaryColorSet());
+                knob.draw_circle(0.85f, detail::GetSecondaryColorSet(), true, 32);  // Outer body
+                knob.draw_circle(0.45f, detail::GetTrackColorSet(), true, 32);       // Center cap
+                knob.draw_tick(0.5f, 0.85f, 0.08f, knob.angle, detail::GetTickColorSet());  // Tick line
                 break;
             }
             case ImGuiKnobVariant_Dot: {
@@ -258,7 +265,7 @@ namespace ImGuiKnobs {
             case ImGuiKnobVariant_WiperDot: {
                 knob.draw_circle(0.6f, detail::GetSecondaryColorSet(), true, 32);
                 knob.draw_arc(0.85f, 0.41f, knob.angle_min, knob.angle_max, detail::GetTrackColorSet(), 16, 2);
-                knob.draw_dot(0.1f, 0.85f, knob.angle, detail::GetPrimaryColorSet(), true, 12);
+                knob.draw_dot(0.1f, 0.85f, knob.angle, detail::GetTickColorSet(), true, 12);  // RED dot
                 break;
             }
             case ImGuiKnobVariant_Stepped: {

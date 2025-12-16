@@ -30,10 +30,11 @@
 #define DISTRHO_UI_CUSTOM_WIDGET_TYPE DGL_NAMESPACE::ImGuiSubWidget
 #define DISTRHO_UI_FILE_BROWSER 0
 #define DISTRHO_UI_DEFAULT_WIDTH  150
-#define DISTRHO_UI_DEFAULT_HEIGHT 200
+#define DISTRHO_UI_DEFAULT_HEIGHT 250
 
 enum Parameters {
     kParameterDrive = 0,
+    kParameterPeakLevel,  // Output parameter for peak metering
     kParameterCount
 };
 

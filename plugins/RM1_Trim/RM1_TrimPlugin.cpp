@@ -14,10 +14,11 @@ class RM1_TrimPlugin : public Plugin
 {
 public:
     RM1_TrimPlugin()
-        : Plugin(kParameterCount, 0, 1) // 1 parameter, 0 programs, 1 state (drive)
+        : Plugin(kParameterCount, 0, 1) // 2 parameters (1 input, 1 output), 0 programs, 1 state (drive)
     {
         fx = fx_model1_trim_create();
         fx_model1_trim_reset(fx);
+        fPeakLevel = 0.0f;
     }
 
     ~RM1_TrimPlugin()
@@ -71,6 +72,14 @@ protected:
             parameter.hints = kParameterIsAutomatable;
             parameter.name = "Drive";
             parameter.symbol = "drive";
+            parameter.ranges.def = 0.7f;  // Unity gain at 70%
+            parameter.ranges.min = 0.0f;
+            parameter.ranges.max = 1.0f;
+            break;
+        case kParameterPeakLevel:
+            parameter.hints = kParameterIsOutput;
+            parameter.name = "Peak Level";
+            parameter.symbol = "peak_level";
             parameter.ranges.def = 0.0f;
             parameter.ranges.min = 0.0f;
             parameter.ranges.max = 1.0f;
@@ -84,6 +93,8 @@ protected:
         {
         case kParameterDrive:
             return fx_model1_trim_get_drive(fx);
+        case kParameterPeakLevel:
+            return fPeakLevel;
         }
         return 0.0f;
     }
@@ -103,7 +114,7 @@ protected:
         // State for drive level
         if (index == 0) {
             stateKey = "drive";
-            defaultStateValue = "0.0";
+            defaultStateValue = "0.7";  // Unity gain at 70%
         }
     }
 
@@ -136,10 +147,32 @@ protected:
         // Note: The original `fx_model1_trim_process_f32` only processes one channel.
         // To make it stereo, we process both.
         fx_model1_trim_process_f32(fx, outputs[1], frames, getSampleRate());
+
+        // Calculate peak level for LED indicator
+        float peak = 0.0f;
+        for (uint32_t i = 0; i < frames; ++i)
+        {
+            float absL = fabsf(outputs[0][i]);
+            float absR = fabsf(outputs[1][i]);
+            float sample_peak = (absL > absR) ? absL : absR;
+            if (sample_peak > peak)
+                peak = sample_peak;
+        }
+
+        // Peak hold with decay (smooth LED response)
+        const float decay_rate = 0.95f;
+        if (peak > fPeakLevel)
+            fPeakLevel = peak;
+        else
+            fPeakLevel *= decay_rate;
+
+        // Notify UI of peak level change
+        setParameterValue(kParameterPeakLevel, fPeakLevel);
     }
 
 private:
     FXModel1Trim* fx;
+    float fPeakLevel;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RM1_TrimPlugin)
 };

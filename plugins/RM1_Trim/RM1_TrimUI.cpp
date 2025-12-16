@@ -14,13 +14,14 @@ class RM1_TrimUI : public UI
 {
 public:
     RM1_TrimUI()
-        : UI(150, 200)
+        : UI(150, 250)
     {
-        setGeometryConstraints(150, 200, true);
-        fDrive = 0.5f;
+        setGeometryConstraints(150, 250, true);
+        fDrive = 0.7f;  // Unity gain at 70%
+        fPeakLevel = 0.0f;
 
         fImGuiWidget = new RM1_TrimImGuiWidget(this);
-        fImGuiWidget->setSize(150, 200);
+        fImGuiWidget->setSize(150, 250);
     }
 
     ~RM1_TrimUI() override
@@ -31,8 +32,13 @@ public:
 protected:
     void parameterChanged(uint32_t index, float value) override
     {
-        if (index == kParameterDrive) {
+        switch (index) {
+        case kParameterDrive:
             fDrive = value;
+            break;
+        case kParameterPeakLevel:
+            fPeakLevel = value;
+            break;
         }
         fImGuiWidget->repaint();
     }
@@ -52,6 +58,7 @@ private:
     friend class RM1_TrimImGuiWidget;
 
     float fDrive;
+    float fPeakLevel;
 
     class RM1_TrimImGuiWidget : public ImGuiSubWidget
     {
@@ -103,11 +110,11 @@ private:
 
                 // Range labels
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-                ImGui::SetCursorPosX(knobCenterX - 10);
-                ImGui::Text("MIN");
+                ImGui::SetCursorPosX(knobCenterX - 15);
+                ImGui::Text("-18dB");
                 ImGui::SameLine();
                 ImGui::SetCursorPosX(knobCenterX + knobSize - 25);
-                ImGui::Text("MAX");
+                ImGui::Text("+6dB");
                 ImGui::PopStyleColor();
 
                 // Drive indicator LED
@@ -120,10 +127,10 @@ private:
                 float led_radius = 8.0f;
                 ImVec2 led_pos = ImVec2(p.x + getWidth() / 2, p.y + led_radius + 5);
 
-                // LED glows based on drive amount
-                // Starts glowing at 50% drive (overdrive zone)
-                float drive_threshold = 0.5f;
-                float glow = (fUI->fDrive - drive_threshold) / (1.0f - drive_threshold);
+                // LED glows based on ACTUAL AUDIO peak level
+                // Starts glowing at 0.5 (-6dB), full red at clipping (1.0 = 0dB)
+                float peak_threshold = 0.5f;
+                float glow = (fUI->fPeakLevel - peak_threshold) / (1.0f - peak_threshold);
                 glow = fmaxf(0.0f, fminf(glow, 1.0f)); // Clamp between 0 and 1
 
                 ImU32 led_color_off = IM_COL32(100, 40, 40, 255);

@@ -229,12 +229,32 @@ namespace ImGuiKnobs {
 
         switch (variant) {
             case ImGuiKnobVariant_Tick: {
-                // Meister design - outer body (dark gray from ButtonActive * 0.5)
-                knob.draw_circle(0.85f, detail::GetSecondaryColorSet(), true, 32);
-                // Center cap (lighter gray from FrameBg)
-                knob.draw_circle(0.40f, detail::GetTrackColorSet(), true, 32);
-                // Red tick mark (from SliderGrab color)
-                knob.draw_tick(0.42f, 0.85f, 0.08f, knob.angle, detail::GetPrimaryColorSet());
+                // MEISTER DESIGN - EXACT colors from icon-192x192.png
+                auto* draw_list = ImGui::GetWindowDrawList();
+
+                // 1. OUTER BODY - Dark gray #2A2A2A (42, 42, 42)
+                draw_list->AddCircleFilled(
+                    knob.center,
+                    0.85f * knob.radius,
+                    IM_COL32(42, 42, 42, 255),
+                    32);
+
+                // 2. CENTER CAP - Gray #555555 (85, 85, 85) - SMALLER
+                draw_list->AddCircleFilled(
+                    knob.center,
+                    0.40f * knob.radius,
+                    IM_COL32(85, 85, 85, 255),
+                    32);
+
+                // 3. RED TICK LINE - #CF1A37 (207, 26, 55)
+                auto tick_start = 0.42f * knob.radius;
+                auto tick_end = 0.85f * knob.radius;
+
+                draw_list->AddLine(
+                    {knob.center[0] + knob.angle_cos * tick_end, knob.center[1] + knob.angle_sin * tick_end},
+                    {knob.center[0] + knob.angle_cos * tick_start, knob.center[1] + knob.angle_sin * tick_start},
+                    IM_COL32(207, 26, 55, 255),
+                    0.08f * knob.radius);
                 break;
             }
             case ImGuiKnobVariant_Dot: {

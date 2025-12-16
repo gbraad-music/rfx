@@ -68,27 +68,8 @@ private:
     protected:
         void onImGuiDisplay() override
         {
-            // Model 1 color scheme matching meister icon-512x512.png
-            // ButtonActive * 0.5 = outer body, so set ButtonActive to 2x target darkness
-            const ImVec4 knobBody = ImVec4(0.33f, 0.33f, 0.33f, 1.0f);       // #545454 → becomes #2a2a2a outer body
-            const ImVec4 knobCenter = ImVec4(0.55f, 0.55f, 0.55f, 1.0f);     // #8c8c8c lighter gray center cap
-            const ImVec4 knobTick = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);          // PURE RED #FF0000
-            const ImVec4 textColor = ImVec4(0.90f, 0.90f, 0.90f, 1.0f);      // Light text
-
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
-
-            ImGuiStyle& style = ImGui::GetStyle();
-            style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background #000000
-            style.Colors[ImGuiCol_Text] = textColor;
-
-            // Set knob colors GLOBALLY
-            style.Colors[ImGuiCol_ButtonActive] = knobBody;
-            style.Colors[ImGuiCol_ButtonHovered] = knobBody;
-            style.Colors[ImGuiCol_Button] = knobBody;
-            style.Colors[ImGuiCol_FrameBg] = knobCenter;
-            style.Colors[ImGuiCol_SliderGrab] = knobTick;
-            style.Colors[ImGuiCol_SliderGrabActive] = knobTick;
 
             if (ImGui::Begin("RM1 Sculpt", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |

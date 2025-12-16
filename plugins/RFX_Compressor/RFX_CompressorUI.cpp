@@ -9,9 +9,9 @@ class RFX_CompressorUI : public UI
 {
 public:
     RFX_CompressorUI()
-        : UI(680, 320)
+        : UI(340, 300)
     {
-        setGeometryConstraints(680, 320, true);
+        setGeometryConstraints(340, 300, true);
         fThreshold = 0.4f;
         fRatio = 0.4f;
         fAttack = 0.05f;
@@ -19,7 +19,7 @@ public:
         fMakeup = 0.65f;
 
         fImGuiWidget = new CompressorImGuiWidget(this);
-        fImGuiWidget->setSize(680, 320);
+        fImGuiWidget->setSize(340, 300);
     }
 
     ~RFX_CompressorUI() override
@@ -67,7 +67,7 @@ private:
         void onImGuiDisplay() override
         {
             ImGui::SetNextWindowPos(ImVec2(0, 0));
-            ImGui::SetNextWindowSize(ImVec2(680, 320));
+            ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
 
             if (ImGui::Begin("RFX Compressor", nullptr,
                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -75,8 +75,12 @@ private:
             {
                 ImGui::Dummy(ImVec2(0, 20.0f));
 
-                float xOffset = (680 - (RFX::UI::Size::FaderWidth * 5 + RFX::UI::Size::Spacing * 4)) / 2.0f;
-                ImGui::SetCursorPosX(xOffset);
+                // Center the content using padding
+                float contentWidth = RFX::UI::Size::FaderWidth * 5 + RFX::UI::Size::Spacing * 4;
+                float xOffset = (getWidth() - contentWidth) / 2.0f;
+                if (xOffset > 0) {
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + xOffset);
+                }
 
                 if (FX::Compressor::renderUI(&fUI->fThreshold, &fUI->fRatio, &fUI->fAttack,
                                             &fUI->fRelease, &fUI->fMakeup, nullptr)) {

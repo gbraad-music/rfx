@@ -4,6 +4,7 @@
 ifeq ($(WINDOWS),true)
 CC  = x86_64-w64-mingw32-gcc
 CXX = x86_64-w64-mingw32-g++
+export CC CXX
 endif
 
 include ../../dpf/Makefile.base.mk

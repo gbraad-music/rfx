@@ -14,13 +14,13 @@ class RFX_DelayUI : public UI
 {
 public:
     RFX_DelayUI()
-        : UI(380, 320)
+        : UI(190, 300)
     {
-        setGeometryConstraints(380, 320, true);
+        setGeometryConstraints(190, 300, true);
         std::memset(fParameters, 0, sizeof(fParameters));
 
         fImGuiWidget = new RFX_DelayImGuiWidget(this);
-        fImGuiWidget->setSize(380, 320);
+        fImGuiWidget->setSize(190, 300);
     }
 
     ~RFX_DelayUI() override
@@ -72,8 +72,12 @@ private:
             {
                 ImGui::Dummy(ImVec2(0, 20.0f));
 
-                float xOffset = (getWidth() - (RFX::UI::Size::FaderWidth * 3 + RFX::UI::Size::Spacing * 2)) / 2.0f;
-                ImGui::SetCursorPosX(xOffset);
+                // Center the content using padding
+                float contentWidth = RFX::UI::Size::FaderWidth * 3 + RFX::UI::Size::Spacing * 2;
+                float xOffset = (getWidth() - contentWidth) / 2.0f;
+                if (xOffset > 0) {
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + xOffset);
+                }
 
                 if (FX::Delay::renderUI(&fUI->fParameters[0], &fUI->fParameters[1], &fUI->fParameters[2], nullptr)) {
                     fUI->setParameterValue(0, fUI->fParameters[0]);

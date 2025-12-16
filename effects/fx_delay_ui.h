@@ -19,56 +19,37 @@ namespace Delay {
 inline bool renderUI(float* time, float* feedback, float* mix, float* enabled = nullptr)
 {
     bool changed = false;
-    
-    RFX::UI::beginEffectGroup();
+    const float spacing = RFX::UI::Size::Spacing;
+    const float faderWidth = RFX::UI::Size::FaderWidth;
+
+    // Title
     RFX::UI::renderEffectTitle("DELAY");
-    
+
     // Enable button
     if (enabled != nullptr) {
         bool en = *enabled >= 0.5f;
-        if (RFX::UI::renderEnableButton("ON##delay", &en)) {
+        if (RFX::UI::renderEnableButton("ON##delay", &en, faderWidth)) {
             *enabled = en ? 1.0f : 0.0f;
             changed = true;
         }
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
+        ImGui::Dummy(ImVec2(0, spacing));
     }
-    
-    // Time fader
+
+    // All faders in horizontal line
     if (RFX::UI::renderFader("Time", "##delay_time", time)) {
         changed = true;
     }
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Feedback fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("FB", "##delay_fb", feedback)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Mix fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("Mix", "##delay_mix", mix)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    RFX::UI::endEffectGroup();
+
     return changed;
 }
 

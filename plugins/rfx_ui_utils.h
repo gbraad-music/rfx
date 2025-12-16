@@ -13,13 +13,16 @@
 namespace RFX {
 namespace UI {
 
-// Regroove style colors
+// Regroove style colors (matching RegrooveFX)
 namespace Colors {
-    static const ImVec4 Title       = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);  // Gold
-    static const ImVec4 EnabledBtn  = ImVec4(0.70f, 0.60f, 0.20f, 1.0f); // Active gold
-    static const ImVec4 DisabledBtn = ImVec4(0.26f, 0.27f, 0.30f, 1.0f); // Dark gray
-    static const ImVec4 Fader       = ImVec4(0.85f, 0.70f, 0.25f, 1.0f); // Fader accent
-    static const ImVec4 Background  = ImVec4(0.15f, 0.15f, 0.15f, 1.0f); // Dark background
+    static const ImVec4 Title        = ImVec4(0.9f, 0.7f, 0.2f, 1.0f);  // Gold
+    static const ImVec4 EnabledBtn   = ImVec4(0.81f, 0.10f, 0.22f, 1.0f); // Red (#CF1A37)
+    static const ImVec4 DisabledBtn  = ImVec4(0.26f, 0.27f, 0.30f, 1.0f); // Dark gray
+    static const ImVec4 FaderHandle  = ImVec4(0.81f, 0.10f, 0.22f, 1.0f); // Red fader
+    static const ImVec4 Background   = ImVec4(0.00f, 0.00f, 0.00f, 1.0f); // BLACK (#000000)
+    static const ImVec4 FaderBg      = ImVec4(0.15f, 0.15f, 0.15f, 1.0f); // Dark gray
+    static const ImVec4 Text         = ImVec4(0.90f, 0.90f, 0.90f, 1.0f);
+    static const ImVec4 TextDim      = ImVec4(0.70f, 0.70f, 0.70f, 1.0f);
 }
 
 // Default sizing
@@ -31,44 +34,57 @@ namespace Size {
 }
 
 /**
- * Render a vertical fader in Regroove style
+ * Render a vertical fader in Regroove style (matching RegrooveFX)
+ * Note: This renders ONLY the fader, no label. Labels should be rendered in a separate row.
  */
-inline bool renderFader(const char* label, const char* id, float* value, 
+inline bool renderFader(const char* label, const char* id, float* value,
                        float min = 0.0f, float max = 1.0f,
                        float width = Size::FaderWidth, float height = Size::FaderHeight)
 {
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, Colors::Background);
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.20f, 0.20f, 0.20f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.25f, 0.25f, 0.25f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_SliderGrab, Colors::Fader);
-    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(1.0f, 0.85f, 0.35f, 1.0f));
-    
+    ImGui::BeginGroup();
+
+    // Vertical fader with red handle (matching RegrooveFX)
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Colors::FaderBg);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, Colors::FaderHandle);  // Red handle
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.91f, 0.20f, 0.32f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, width - 4.0f);  // Wide handle
+
     bool changed = ImGui::VSliderFloat(id, ImVec2(width, height), value, min, max, "");
-    
-    ImGui::PopStyleColor(5);
-    
-    // Label below fader
-    ImGui::Text("%s", label);
-    
+
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+
+    // Label below fader (only if not empty) - keeps it in same vertical group
+    if (label && label[0] != '\0') {
+        ImGui::PushStyleColor(ImGuiCol_Text, Colors::TextDim);
+        ImGui::Text("%s", label);
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::EndGroup();
+
     return changed;
 }
 
 /**
- * Render an enable/disable button in Regroove style
+ * Render an enable/disable button in Regroove style (matching RegrooveFX)
  */
 inline bool renderEnableButton(const char* id, bool* enabled,
                                float width = Size::FaderWidth, float height = Size::ButtonHeight)
 {
     ImVec4 btnColor = *enabled ? Colors::EnabledBtn : Colors::DisabledBtn;
+    ImVec4 btnHover = *enabled ? ImVec4(0.91f, 0.20f, 0.32f, 1.0f) : ImVec4(0.36f, 0.37f, 0.40f, 1.0f);
+    ImVec4 btnActive = *enabled ? ImVec4(0.71f, 0.05f, 0.17f, 1.0f) : ImVec4(0.46f, 0.47f, 0.50f, 1.0f);
+
     ImGui::PushStyleColor(ImGuiCol_Button, btnColor);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.80f, 0.70f, 0.30f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.90f, 0.80f, 0.40f, 1.0f));
-    
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, btnHover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, btnActive);
+
     bool clicked = ImGui::Button(id, ImVec2(width, height));
     if (clicked) {
         *enabled = !(*enabled);
     }
-    
+
     ImGui::PopStyleColor(3);
     return clicked;
 }

@@ -192,23 +192,20 @@ namespace ImGuiKnobs {
         }
 
         color_set GetPrimaryColorSet() {
-            // FORCE RED for meister design
-            static const ImVec4 red = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-            return {red, red, red};
+            auto *colors = ImGui::GetStyle().Colors;
+
+            return {colors[ImGuiCol_ButtonActive], colors[ImGuiCol_ButtonHovered], colors[ImGuiCol_ButtonHovered]};
         }
 
         color_set GetSecondaryColorSet() {
             auto *colors = ImGui::GetStyle().Colors;
-            static ImVec4 active;
-            static ImVec4 hovered;
-
-            active = ImVec4(
+            auto active = ImVec4(
                     colors[ImGuiCol_ButtonActive].x * 0.5f,
                     colors[ImGuiCol_ButtonActive].y * 0.5f,
                     colors[ImGuiCol_ButtonActive].z * 0.5f,
                     colors[ImGuiCol_ButtonActive].w);
 
-            hovered = ImVec4(
+            auto hovered = ImVec4(
                     colors[ImGuiCol_ButtonHovered].x * 0.5f,
                     colors[ImGuiCol_ButtonHovered].y * 0.5f,
                     colors[ImGuiCol_ButtonHovered].z * 0.5f,
@@ -222,12 +219,6 @@ namespace ImGuiKnobs {
 
             return {colors[ImGuiCol_FrameBg], colors[ImGuiCol_FrameBg], colors[ImGuiCol_FrameBg]};
         }
-
-        color_set GetTickColorSet() {
-            auto *colors = ImGui::GetStyle().Colors;
-
-            return {colors[ImGuiCol_SliderGrab], colors[ImGuiCol_SliderGrabActive], colors[ImGuiCol_SliderGrabActive]};
-        }
     }// namespace detail
 
 
@@ -237,32 +228,8 @@ namespace ImGuiKnobs {
 
         switch (variant) {
             case ImGuiKnobVariant_Tick: {
-                // MEISTER DESIGN - EXACT colors from icon-192x192.png
-                auto* draw_list = ImGui::GetWindowDrawList();
-
-                // 1. OUTER BODY - Dark gray #2A2A2A (42, 42, 42)
-                draw_list->AddCircleFilled(
-                    knob.center,
-                    0.85f * knob.radius,
-                    IM_COL32(42, 42, 42, 255),
-                    32);
-
-                // 2. CENTER CAP - Gray #555555 (85, 85, 85) - SMALLER
-                draw_list->AddCircleFilled(
-                    knob.center,
-                    0.40f * knob.radius,
-                    IM_COL32(85, 85, 85, 255),
-                    32);
-
-                // 3. RED TICK LINE - #CF1A37 (207, 26, 55)
-                auto tick_start = 0.42f * knob.radius;
-                auto tick_end = 0.85f * knob.radius;
-
-                draw_list->AddLine(
-                    {knob.center[0] + knob.angle_cos * tick_end, knob.center[1] + knob.angle_sin * tick_end},
-                    {knob.center[0] + knob.angle_cos * tick_start, knob.center[1] + knob.angle_sin * tick_start},
-                    IM_COL32(207, 26, 55, 255),
-                    0.08f * knob.radius);
+                knob.draw_circle(0.85f, detail::GetSecondaryColorSet(), true, 32);
+                knob.draw_tick(0.5f, 0.85f, 0.08f, knob.angle, detail::GetPrimaryColorSet());
                 break;
             }
             case ImGuiKnobVariant_Dot: {
@@ -291,7 +258,7 @@ namespace ImGuiKnobs {
             case ImGuiKnobVariant_WiperDot: {
                 knob.draw_circle(0.6f, detail::GetSecondaryColorSet(), true, 32);
                 knob.draw_arc(0.85f, 0.41f, knob.angle_min, knob.angle_max, detail::GetTrackColorSet(), 16, 2);
-                knob.draw_dot(0.1f, 0.85f, knob.angle, detail::GetTickColorSet(), true, 12);  // RED dot
+                knob.draw_dot(0.1f, 0.85f, knob.angle, detail::GetPrimaryColorSet(), true, 12);
                 break;
             }
             case ImGuiKnobVariant_Stepped: {
@@ -313,25 +280,6 @@ namespace ImGuiKnobs {
                     knob.draw_arc(0.6f, 0.15f, knob.angle_min + 1.0f, knob.angle + 1.0f, detail::GetPrimaryColorSet(), 16, 2);
                     knob.draw_arc(0.8f, 0.15f, knob.angle_min + 3.0f, knob.angle + 3.0f, detail::GetPrimaryColorSet(), 16, 2);
                 }
-                break;
-            }
-            case ImGuiKnobVariant_Meister1: {
-                // Custom variant for MODEL 1 mixer - meister icon style
-                // TEST: Use BRIGHT colors first to verify drawing works
-                // Outer body - BRIGHT BLUE for testing
-                ImVec4 testOuter = ImVec4(0.0f, 0.5f, 1.0f, 1.0f);
-                color_set outerBody = {testOuter, testOuter, testOuter};
-                knob.draw_circle(0.85f, outerBody, true, 32);
-
-                // Center cap - BRIGHT GREEN for testing
-                ImVec4 testCenter = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-                color_set centerCap = {testCenter, testCenter, testCenter};
-                knob.draw_circle(0.45f, centerCap, true, 32);
-
-                // Tick line - BRIGHT RED
-                ImVec4 brightRed = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-                color_set redTick = {brightRed, brightRed, brightRed};
-                knob.draw_tick(0.5f, 0.85f, 0.08f, knob.angle, redTick);
                 break;
             }
         }

@@ -16,90 +16,51 @@ namespace Compressor {
  * Render compressor UI (5 parameters)
  * Returns true if any parameter changed
  */
-inline bool renderUI(float* threshold, float* ratio, float* attack, 
+inline bool renderUI(float* threshold, float* ratio, float* attack,
                     float* release, float* makeup, float* enabled = nullptr)
 {
     bool changed = false;
-    
-    RFX::UI::beginEffectGroup();
+    const float spacing = RFX::UI::Size::Spacing;
+    const float faderWidth = RFX::UI::Size::FaderWidth;
+
+    // Title
     RFX::UI::renderEffectTitle("COMPRESSOR");
-    
-    // Enable button
+
+    // Enable button (if enabled parameter provided)
     if (enabled != nullptr) {
         bool en = *enabled >= 0.5f;
-        if (RFX::UI::renderEnableButton("ON##comp", &en)) {
+        if (RFX::UI::renderEnableButton("ON##comp", &en, faderWidth)) {
             *enabled = en ? 1.0f : 0.0f;
             changed = true;
         }
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
+        ImGui::Dummy(ImVec2(0, spacing));
     }
-    
-    // Threshold fader
+
+    // All faders in horizontal line
     if (RFX::UI::renderFader("Thresh", "##comp_thresh", threshold)) {
         changed = true;
     }
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Ratio fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("Ratio", "##comp_ratio", ratio)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Attack fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("Attack", "##comp_attack", attack)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Release fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("Release", "##comp_release", release)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Makeup fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("Makeup", "##comp_makeup", makeup)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    RFX::UI::endEffectGroup();
+
     return changed;
 }
 

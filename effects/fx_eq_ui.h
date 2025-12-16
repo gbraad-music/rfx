@@ -19,56 +19,37 @@ namespace EQ {
 inline bool renderUI(float* low, float* mid, float* high, float* enabled = nullptr)
 {
     bool changed = false;
-    
-    RFX::UI::beginEffectGroup();
+    const float spacing = RFX::UI::Size::Spacing;
+    const float faderWidth = RFX::UI::Size::FaderWidth;
+
+    // Title
     RFX::UI::renderEffectTitle("EQ");
-    
+
     // Enable button
     if (enabled != nullptr) {
         bool en = *enabled >= 0.5f;
-        if (RFX::UI::renderEnableButton("ON##eq", &en)) {
+        if (RFX::UI::renderEnableButton("ON##eq", &en, faderWidth)) {
             *enabled = en ? 1.0f : 0.0f;
             changed = true;
         }
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
+        ImGui::Dummy(ImVec2(0, spacing));
     }
-    
-    // Low fader
+
+    // All faders in horizontal line
     if (RFX::UI::renderFader("Low", "##eq_low", low)) {
         changed = true;
     }
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // Mid fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("Mid", "##eq_mid", mid)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    ImGui::SameLine();
-    ImGui::Dummy(ImVec2(RFX::UI::Size::Spacing, 0));
-    ImGui::SameLine();
-    
-    // High fader
-    ImGui::BeginGroup();
-    if (enabled != nullptr) {
-        ImGui::Dummy(ImVec2(RFX::UI::Size::FaderWidth, RFX::UI::Size::ButtonHeight));
-        ImGui::Dummy(ImVec2(0, RFX::UI::Size::Spacing));
-    }
+    ImGui::SameLine(0, spacing);
+
     if (RFX::UI::renderFader("High", "##eq_high", high)) {
         changed = true;
     }
-    ImGui::EndGroup();
-    
-    RFX::UI::endEffectGroup();
+
     return changed;
 }
 

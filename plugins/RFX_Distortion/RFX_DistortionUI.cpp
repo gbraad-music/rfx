@@ -14,13 +14,13 @@ class RFX_DistortionUI : public UI
 {
 public:
     RFX_DistortionUI()
-        : UI(280, 320)
+        : UI(140, 300)
     {
-        setGeometryConstraints(280, 320, true);
+        setGeometryConstraints(140, 300, true);
         std::memset(fParameters, 0, sizeof(fParameters));
 
         fImGuiWidget = new RFX_DistortionImGuiWidget(this);
-        fImGuiWidget->setSize(280, 320);
+        fImGuiWidget->setSize(140, 300);
     }
 
     ~RFX_DistortionUI() override
@@ -72,8 +72,12 @@ private:
             {
                 ImGui::Dummy(ImVec2(0, 20.0f));
 
-                float xOffset = (getWidth() - (RFX::UI::Size::FaderWidth * 2 + RFX::UI::Size::Spacing)) / 2.0f;
-                ImGui::SetCursorPosX(xOffset);
+                // Center the content using padding
+                float contentWidth = RFX::UI::Size::FaderWidth * 2 + RFX::UI::Size::Spacing;
+                float xOffset = (getWidth() - contentWidth) / 2.0f;
+                if (xOffset > 0) {
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + xOffset);
+                }
 
                 if (FX::Distortion::renderUI(&fUI->fParameters[0], &fUI->fParameters[1], nullptr)) {
                     fUI->setParameterValue(0, fUI->fParameters[0]);

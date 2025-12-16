@@ -103,6 +103,9 @@ private:
                     &fUI->fParameters[kParameterCompressorEnabled],
                     &fUI->fParameters[kParameterCompressorThreshold],
                     &fUI->fParameters[kParameterCompressorRatio],
+                    &fUI->fParameters[kParameterCompressorAttack],
+                    &fUI->fParameters[kParameterCompressorRelease],
+                    &fUI->fParameters[kParameterCompressorMakeup],
                     // Delay
                     &fUI->fParameters[kParameterDelayEnabled],
                     &fUI->fParameters[kParameterDelayTime],

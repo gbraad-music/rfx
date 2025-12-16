@@ -15,10 +15,9 @@ include ../../dpf/Makefile.base.mk
 # Plugin name
 NAME = RegrooveFX
 
-# Files to build - DSP
+# Files to build - DSP (directly use individual effects, not legacy wrapper)
 FILES_DSP = \
 	RegrooveFXPlugin.cpp \
-	../../regroove_effects.c \
 	../../effects/fx_distortion.c \
 	../../effects/fx_filter.c \
 	../../effects/fx_eq.c \

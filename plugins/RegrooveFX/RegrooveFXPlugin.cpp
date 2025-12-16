@@ -1,5 +1,9 @@
 #include "DistrhoPlugin.hpp"
-#include "regroove_effects.h"
+#include "fx_distortion.h"
+#include "fx_filter.h"
+#include "fx_eq.h"
+#include "fx_compressor.h"
+#include "fx_delay.h"
 #include <cstring>
 #include <cstdio>
 
@@ -31,33 +35,53 @@ public:
         , fDelayFeedback(0.4f)
         , fDelayMix(0.3f)
     {
-        fEffects = regroove_effects_create();
+        // Create individual effect modules directly (like RegrooveM1)
+        fDistortion = fx_distortion_create();
+        fFilter = fx_filter_create();
+        fEQ = fx_eq_create();
+        fCompressor = fx_compressor_create();
+        fDelay = fx_delay_create();
+
         // Initialize with default values
-        regroove_effects_set_distortion_enabled(fEffects, fDistortionEnabled);
-        regroove_effects_set_distortion_drive(fEffects, fDistortionDrive);
-        regroove_effects_set_distortion_mix(fEffects, fDistortionMix);
-        regroove_effects_set_filter_enabled(fEffects, fFilterEnabled);
-        regroove_effects_set_filter_cutoff(fEffects, fFilterCutoff);
-        regroove_effects_set_filter_resonance(fEffects, fFilterResonance);
-        regroove_effects_set_eq_enabled(fEffects, fEQEnabled);
-        regroove_effects_set_eq_low(fEffects, fEQLow);
-        regroove_effects_set_eq_mid(fEffects, fEQMid);
-        regroove_effects_set_eq_high(fEffects, fEQHigh);
-        regroove_effects_set_compressor_enabled(fEffects, fCompressorEnabled);
-        regroove_effects_set_compressor_threshold(fEffects, fCompressorThreshold);
-        regroove_effects_set_compressor_ratio(fEffects, fCompressorRatio);
-        regroove_effects_set_compressor_attack(fEffects, fCompressorAttack);
-        regroove_effects_set_compressor_release(fEffects, fCompressorRelease);
-        regroove_effects_set_compressor_makeup(fEffects, fCompressorMakeup);
-        regroove_effects_set_delay_enabled(fEffects, fDelayEnabled);
-        regroove_effects_set_delay_time(fEffects, fDelayTime);
-        regroove_effects_set_delay_feedback(fEffects, fDelayFeedback);
-        regroove_effects_set_delay_mix(fEffects, fDelayMix);
+        if (fDistortion) {
+            fx_distortion_set_enabled(fDistortion, fDistortionEnabled);
+            fx_distortion_set_drive(fDistortion, fDistortionDrive);
+            fx_distortion_set_mix(fDistortion, fDistortionMix);
+        }
+        if (fFilter) {
+            fx_filter_set_enabled(fFilter, fFilterEnabled);
+            fx_filter_set_cutoff(fFilter, fFilterCutoff);
+            fx_filter_set_resonance(fFilter, fFilterResonance);
+        }
+        if (fEQ) {
+            fx_eq_set_enabled(fEQ, fEQEnabled);
+            fx_eq_set_low(fEQ, fEQLow);
+            fx_eq_set_mid(fEQ, fEQMid);
+            fx_eq_set_high(fEQ, fEQHigh);
+        }
+        if (fCompressor) {
+            fx_compressor_set_enabled(fCompressor, fCompressorEnabled);
+            fx_compressor_set_threshold(fCompressor, fCompressorThreshold);
+            fx_compressor_set_ratio(fCompressor, fCompressorRatio);
+            fx_compressor_set_attack(fCompressor, fCompressorAttack);
+            fx_compressor_set_release(fCompressor, fCompressorRelease);
+            fx_compressor_set_makeup(fCompressor, fCompressorMakeup);
+        }
+        if (fDelay) {
+            fx_delay_set_enabled(fDelay, fDelayEnabled);
+            fx_delay_set_time(fDelay, fDelayTime);
+            fx_delay_set_feedback(fDelay, fDelayFeedback);
+            fx_delay_set_mix(fDelay, fDelayMix);
+        }
     }
 
     ~RegrooveFXPlugin() override
     {
-        if (fEffects) regroove_effects_destroy(fEffects);
+        if (fDistortion) fx_distortion_destroy(fDistortion);
+        if (fFilter) fx_filter_destroy(fFilter);
+        if (fEQ) fx_eq_destroy(fEQ);
+        if (fCompressor) fx_compressor_destroy(fCompressor);
+        if (fDelay) fx_delay_destroy(fDelay);
     }
 
 protected:
@@ -223,60 +247,90 @@ protected:
     {
         // Store parameter value
         switch (index) {
-        case kParameterDistortionEnabled: fDistortionEnabled = (value >= 0.5f); break;
-        case kParameterDistortionDrive: fDistortionDrive = value; break;
-        case kParameterDistortionMix: fDistortionMix = value; break;
+        case kParameterDistortionEnabled:
+            fDistortionEnabled = (value >= 0.5f);
+            if (fDistortion) fx_distortion_set_enabled(fDistortion, fDistortionEnabled);
+            break;
+        case kParameterDistortionDrive:
+            fDistortionDrive = value;
+            if (fDistortion) fx_distortion_set_drive(fDistortion, value);
+            break;
+        case kParameterDistortionMix:
+            fDistortionMix = value;
+            if (fDistortion) fx_distortion_set_mix(fDistortion, value);
+            break;
 
-        case kParameterFilterEnabled: fFilterEnabled = (value >= 0.5f); break;
-        case kParameterFilterCutoff: fFilterCutoff = value; break;
-        case kParameterFilterResonance: fFilterResonance = value; break;
+        case kParameterFilterEnabled:
+            fFilterEnabled = (value >= 0.5f);
+            if (fFilter) fx_filter_set_enabled(fFilter, fFilterEnabled);
+            break;
+        case kParameterFilterCutoff:
+            fFilterCutoff = value;
+            if (fFilter) fx_filter_set_cutoff(fFilter, value);
+            break;
+        case kParameterFilterResonance:
+            fFilterResonance = value;
+            if (fFilter) fx_filter_set_resonance(fFilter, value);
+            break;
 
-        case kParameterEQEnabled: fEQEnabled = (value >= 0.5f); break;
-        case kParameterEQLow: fEQLow = value; break;
-        case kParameterEQMid: fEQMid = value; break;
-        case kParameterEQHigh: fEQHigh = value; break;
+        case kParameterEQEnabled:
+            fEQEnabled = (value >= 0.5f);
+            if (fEQ) fx_eq_set_enabled(fEQ, fEQEnabled);
+            break;
+        case kParameterEQLow:
+            fEQLow = value;
+            if (fEQ) fx_eq_set_low(fEQ, value);
+            break;
+        case kParameterEQMid:
+            fEQMid = value;
+            if (fEQ) fx_eq_set_mid(fEQ, value);
+            break;
+        case kParameterEQHigh:
+            fEQHigh = value;
+            if (fEQ) fx_eq_set_high(fEQ, value);
+            break;
 
-        case kParameterCompressorEnabled: fCompressorEnabled = (value >= 0.5f); break;
-        case kParameterCompressorThreshold: fCompressorThreshold = value; break;
-        case kParameterCompressorRatio: fCompressorRatio = value; break;
-        case kParameterCompressorAttack: fCompressorAttack = value; break;
-        case kParameterCompressorRelease: fCompressorRelease = value; break;
-        case kParameterCompressorMakeup: fCompressorMakeup = value; break;
+        case kParameterCompressorEnabled:
+            fCompressorEnabled = (value >= 0.5f);
+            if (fCompressor) fx_compressor_set_enabled(fCompressor, fCompressorEnabled);
+            break;
+        case kParameterCompressorThreshold:
+            fCompressorThreshold = value;
+            if (fCompressor) fx_compressor_set_threshold(fCompressor, value);
+            break;
+        case kParameterCompressorRatio:
+            fCompressorRatio = value;
+            if (fCompressor) fx_compressor_set_ratio(fCompressor, value);
+            break;
+        case kParameterCompressorAttack:
+            fCompressorAttack = value;
+            if (fCompressor) fx_compressor_set_attack(fCompressor, value);
+            break;
+        case kParameterCompressorRelease:
+            fCompressorRelease = value;
+            if (fCompressor) fx_compressor_set_release(fCompressor, value);
+            break;
+        case kParameterCompressorMakeup:
+            fCompressorMakeup = value;
+            if (fCompressor) fx_compressor_set_makeup(fCompressor, value);
+            break;
 
-        case kParameterDelayEnabled: fDelayEnabled = (value >= 0.5f); break;
-        case kParameterDelayTime: fDelayTime = value; break;
-        case kParameterDelayFeedback: fDelayFeedback = value; break;
-        case kParameterDelayMix: fDelayMix = value; break;
-        }
-
-        // Apply to DSP engine if it exists
-        if (fEffects) {
-            switch (index) {
-            case kParameterDistortionEnabled: regroove_effects_set_distortion_enabled(fEffects, fDistortionEnabled); break;
-            case kParameterDistortionDrive: regroove_effects_set_distortion_drive(fEffects, value); break;
-            case kParameterDistortionMix: regroove_effects_set_distortion_mix(fEffects, value); break;
-
-            case kParameterFilterEnabled: regroove_effects_set_filter_enabled(fEffects, fFilterEnabled); break;
-            case kParameterFilterCutoff: regroove_effects_set_filter_cutoff(fEffects, value); break;
-            case kParameterFilterResonance: regroove_effects_set_filter_resonance(fEffects, value); break;
-
-            case kParameterEQEnabled: regroove_effects_set_eq_enabled(fEffects, fEQEnabled); break;
-            case kParameterEQLow: regroove_effects_set_eq_low(fEffects, value); break;
-            case kParameterEQMid: regroove_effects_set_eq_mid(fEffects, value); break;
-            case kParameterEQHigh: regroove_effects_set_eq_high(fEffects, value); break;
-
-            case kParameterCompressorEnabled: regroove_effects_set_compressor_enabled(fEffects, fCompressorEnabled); break;
-            case kParameterCompressorThreshold: regroove_effects_set_compressor_threshold(fEffects, value); break;
-            case kParameterCompressorRatio: regroove_effects_set_compressor_ratio(fEffects, value); break;
-            case kParameterCompressorAttack: regroove_effects_set_compressor_attack(fEffects, value); break;
-            case kParameterCompressorRelease: regroove_effects_set_compressor_release(fEffects, value); break;
-            case kParameterCompressorMakeup: regroove_effects_set_compressor_makeup(fEffects, value); break;
-
-            case kParameterDelayEnabled: regroove_effects_set_delay_enabled(fEffects, fDelayEnabled); break;
-            case kParameterDelayTime: regroove_effects_set_delay_time(fEffects, value); break;
-            case kParameterDelayFeedback: regroove_effects_set_delay_feedback(fEffects, value); break;
-            case kParameterDelayMix: regroove_effects_set_delay_mix(fEffects, value); break;
-            }
+        case kParameterDelayEnabled:
+            fDelayEnabled = (value >= 0.5f);
+            if (fDelay) fx_delay_set_enabled(fDelay, fDelayEnabled);
+            break;
+        case kParameterDelayTime:
+            fDelayTime = value;
+            if (fDelay) fx_delay_set_time(fDelay, value);
+            break;
+        case kParameterDelayFeedback:
+            fDelayFeedback = value;
+            if (fDelay) fx_delay_set_feedback(fDelay, value);
+            break;
+        case kParameterDelayMix:
+            fDelayMix = value;
+            if (fDelay) fx_delay_set_mix(fDelay, value);
+            break;
         }
     }
 
@@ -313,83 +367,83 @@ protected:
 
         if (std::strcmp(key, "dist_en") == 0) {
             fDistortionEnabled = (fValue >= 0.5f);
-            if (fEffects) regroove_effects_set_distortion_enabled(fEffects, fDistortionEnabled);
+            if (fDistortion) fx_distortion_set_enabled(fDistortion, fDistortionEnabled);
         }
         else if (std::strcmp(key, "dist_drive") == 0) {
             fDistortionDrive = fValue;
-            if (fEffects) regroove_effects_set_distortion_drive(fEffects, fDistortionDrive);
+            if (fDistortion) fx_distortion_set_drive(fDistortion, fDistortionDrive);
         }
         else if (std::strcmp(key, "dist_mix") == 0) {
             fDistortionMix = fValue;
-            if (fEffects) regroove_effects_set_distortion_mix(fEffects, fDistortionMix);
+            if (fDistortion) fx_distortion_set_mix(fDistortion, fDistortionMix);
         }
         else if (std::strcmp(key, "filt_en") == 0) {
             fFilterEnabled = (fValue >= 0.5f);
-            if (fEffects) regroove_effects_set_filter_enabled(fEffects, fFilterEnabled);
+            if (fFilter) fx_filter_set_enabled(fFilter, fFilterEnabled);
         }
         else if (std::strcmp(key, "filt_cutoff") == 0) {
             fFilterCutoff = fValue;
-            if (fEffects) regroove_effects_set_filter_cutoff(fEffects, fFilterCutoff);
+            if (fFilter) fx_filter_set_cutoff(fFilter, fFilterCutoff);
         }
         else if (std::strcmp(key, "filt_res") == 0) {
             fFilterResonance = fValue;
-            if (fEffects) regroove_effects_set_filter_resonance(fEffects, fFilterResonance);
+            if (fFilter) fx_filter_set_resonance(fFilter, fFilterResonance);
         }
         else if (std::strcmp(key, "eq_en") == 0) {
             fEQEnabled = (fValue >= 0.5f);
-            if (fEffects) regroove_effects_set_eq_enabled(fEffects, fEQEnabled);
+            if (fEQ) fx_eq_set_enabled(fEQ, fEQEnabled);
         }
         else if (std::strcmp(key, "eq_low") == 0) {
             fEQLow = fValue;
-            if (fEffects) regroove_effects_set_eq_low(fEffects, fEQLow);
+            if (fEQ) fx_eq_set_low(fEQ, fEQLow);
         }
         else if (std::strcmp(key, "eq_mid") == 0) {
             fEQMid = fValue;
-            if (fEffects) regroove_effects_set_eq_mid(fEffects, fEQMid);
+            if (fEQ) fx_eq_set_mid(fEQ, fEQMid);
         }
         else if (std::strcmp(key, "eq_high") == 0) {
             fEQHigh = fValue;
-            if (fEffects) regroove_effects_set_eq_high(fEffects, fEQHigh);
+            if (fEQ) fx_eq_set_high(fEQ, fEQHigh);
         }
         else if (std::strcmp(key, "comp_en") == 0) {
             fCompressorEnabled = (fValue >= 0.5f);
-            if (fEffects) regroove_effects_set_compressor_enabled(fEffects, fCompressorEnabled);
+            if (fCompressor) fx_compressor_set_enabled(fCompressor, fCompressorEnabled);
         }
         else if (std::strcmp(key, "comp_thresh") == 0) {
             fCompressorThreshold = fValue;
-            if (fEffects) regroove_effects_set_compressor_threshold(fEffects, fCompressorThreshold);
+            if (fCompressor) fx_compressor_set_threshold(fCompressor, fCompressorThreshold);
         }
         else if (std::strcmp(key, "comp_ratio") == 0) {
             fCompressorRatio = fValue;
-            if (fEffects) regroove_effects_set_compressor_ratio(fEffects, fCompressorRatio);
+            if (fCompressor) fx_compressor_set_ratio(fCompressor, fCompressorRatio);
         }
         else if (std::strcmp(key, "comp_attack") == 0) {
             fCompressorAttack = fValue;
-            if (fEffects) regroove_effects_set_compressor_attack(fEffects, fCompressorAttack);
+            if (fCompressor) fx_compressor_set_attack(fCompressor, fCompressorAttack);
         }
         else if (std::strcmp(key, "comp_release") == 0) {
             fCompressorRelease = fValue;
-            if (fEffects) regroove_effects_set_compressor_release(fEffects, fCompressorRelease);
+            if (fCompressor) fx_compressor_set_release(fCompressor, fCompressorRelease);
         }
         else if (std::strcmp(key, "comp_makeup") == 0) {
             fCompressorMakeup = fValue;
-            if (fEffects) regroove_effects_set_compressor_makeup(fEffects, fCompressorMakeup);
+            if (fCompressor) fx_compressor_set_makeup(fCompressor, fCompressorMakeup);
         }
         else if (std::strcmp(key, "delay_en") == 0) {
             fDelayEnabled = (fValue >= 0.5f);
-            if (fEffects) regroove_effects_set_delay_enabled(fEffects, fDelayEnabled);
+            if (fDelay) fx_delay_set_enabled(fDelay, fDelayEnabled);
         }
         else if (std::strcmp(key, "delay_time") == 0) {
             fDelayTime = fValue;
-            if (fEffects) regroove_effects_set_delay_time(fEffects, fDelayTime);
+            if (fDelay) fx_delay_set_time(fDelay, fDelayTime);
         }
         else if (std::strcmp(key, "delay_fb") == 0) {
             fDelayFeedback = fValue;
-            if (fEffects) regroove_effects_set_delay_feedback(fEffects, fDelayFeedback);
+            if (fDelay) fx_delay_set_feedback(fDelay, fDelayFeedback);
         }
         else if (std::strcmp(key, "delay_mix") == 0) {
             fDelayMix = fValue;
-            if (fEffects) regroove_effects_set_delay_mix(fEffects, fDelayMix);
+            if (fDelay) fx_delay_set_mix(fDelay, fDelayMix);
         }
     }
 
@@ -483,40 +537,46 @@ protected:
 
     void activate() override
     {
-        if (fEffects) {
-            regroove_effects_reset(fEffects);
-            // Restore parameters after reset
-            regroove_effects_set_distortion_enabled(fEffects, fDistortionEnabled);
-            regroove_effects_set_distortion_drive(fEffects, fDistortionDrive);
-            regroove_effects_set_distortion_mix(fEffects, fDistortionMix);
-            regroove_effects_set_filter_enabled(fEffects, fFilterEnabled);
-            regroove_effects_set_filter_cutoff(fEffects, fFilterCutoff);
-            regroove_effects_set_filter_resonance(fEffects, fFilterResonance);
-            regroove_effects_set_eq_enabled(fEffects, fEQEnabled);
-            regroove_effects_set_eq_low(fEffects, fEQLow);
-            regroove_effects_set_eq_mid(fEffects, fEQMid);
-            regroove_effects_set_eq_high(fEffects, fEQHigh);
-            regroove_effects_set_compressor_enabled(fEffects, fCompressorEnabled);
-            regroove_effects_set_compressor_threshold(fEffects, fCompressorThreshold);
-            regroove_effects_set_compressor_ratio(fEffects, fCompressorRatio);
-            regroove_effects_set_compressor_attack(fEffects, fCompressorAttack);
-            regroove_effects_set_compressor_release(fEffects, fCompressorRelease);
-            regroove_effects_set_compressor_makeup(fEffects, fCompressorMakeup);
-            regroove_effects_set_delay_enabled(fEffects, fDelayEnabled);
-            regroove_effects_set_delay_time(fEffects, fDelayTime);
-            regroove_effects_set_delay_feedback(fEffects, fDelayFeedback);
-            regroove_effects_set_delay_mix(fEffects, fDelayMix);
+        // Reset all effects
+        if (fDistortion) {
+            fx_distortion_reset(fDistortion);
+            fx_distortion_set_enabled(fDistortion, fDistortionEnabled);
+            fx_distortion_set_drive(fDistortion, fDistortionDrive);
+            fx_distortion_set_mix(fDistortion, fDistortionMix);
+        }
+        if (fFilter) {
+            fx_filter_reset(fFilter);
+            fx_filter_set_enabled(fFilter, fFilterEnabled);
+            fx_filter_set_cutoff(fFilter, fFilterCutoff);
+            fx_filter_set_resonance(fFilter, fFilterResonance);
+        }
+        if (fEQ) {
+            fx_eq_reset(fEQ);
+            fx_eq_set_enabled(fEQ, fEQEnabled);
+            fx_eq_set_low(fEQ, fEQLow);
+            fx_eq_set_mid(fEQ, fEQMid);
+            fx_eq_set_high(fEQ, fEQHigh);
+        }
+        if (fCompressor) {
+            fx_compressor_reset(fCompressor);
+            fx_compressor_set_enabled(fCompressor, fCompressorEnabled);
+            fx_compressor_set_threshold(fCompressor, fCompressorThreshold);
+            fx_compressor_set_ratio(fCompressor, fCompressorRatio);
+            fx_compressor_set_attack(fCompressor, fCompressorAttack);
+            fx_compressor_set_release(fCompressor, fCompressorRelease);
+            fx_compressor_set_makeup(fCompressor, fCompressorMakeup);
+        }
+        if (fDelay) {
+            fx_delay_reset(fDelay);
+            fx_delay_set_enabled(fDelay, fDelayEnabled);
+            fx_delay_set_time(fDelay, fDelayTime);
+            fx_delay_set_feedback(fDelay, fDelayFeedback);
+            fx_delay_set_mix(fDelay, fDelayMix);
         }
     }
 
     void run(const float** inputs, float** outputs, uint32_t frames) override
     {
-        if (!fEffects) {
-            std::memcpy(outputs[0], inputs[0], sizeof(float) * frames);
-            std::memcpy(outputs[1], inputs[1], sizeof(float) * frames);
-            return;
-        }
-
         // Create interleaved stereo buffer for processing
         float* buffer = new float[frames * 2];
 
@@ -526,8 +586,24 @@ protected:
             buffer[i * 2 + 1] = inputs[1][i];
         }
 
-        // Process using float32 function (no conversion!)
-        regroove_effects_process_f32(fEffects, buffer, frames, (int)getSampleRate());
+        int sample_rate = (int)getSampleRate();
+
+        // Process through effect chain in order (like regroove_effects.c)
+        if (fDistortion) {
+            fx_distortion_process_f32(fDistortion, buffer, frames, sample_rate);
+        }
+        if (fFilter) {
+            fx_filter_process_f32(fFilter, buffer, frames, sample_rate);
+        }
+        if (fEQ) {
+            fx_eq_process_f32(fEQ, buffer, frames, sample_rate);
+        }
+        if (fCompressor) {
+            fx_compressor_process_f32(fCompressor, buffer, frames, sample_rate);
+        }
+        if (fDelay) {
+            fx_delay_process_f32(fDelay, buffer, frames, sample_rate);
+        }
 
         // Deinterleave output channels
         for (uint32_t i = 0; i < frames; i++) {
@@ -539,7 +615,12 @@ protected:
     }
 
 private:
-    RegrooveEffects* fEffects;
+    // Individual effect modules (like RegrooveM1)
+    FXDistortion* fDistortion;
+    FXFilter* fFilter;
+    FXEqualizer* fEQ;
+    FXCompressor* fCompressor;
+    FXDelay* fDelay;
 
     // Store parameters to persist across activate/deactivate
     bool fDistortionEnabled;

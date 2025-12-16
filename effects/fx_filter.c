@@ -50,24 +50,28 @@ void fx_filter_process_frame(FXFilter* fx, float* left, float* right, int sample
 {
     if (!fx || !fx->enabled) return;
 
-    // Map cutoff to frequency (20Hz - 20kHz, exponential)
-    const float min_freq = 20.0f / sample_rate;
-    const float max_freq = 20000.0f / sample_rate;
-    const float freq = min_freq * powf(max_freq / min_freq, fx->cutoff);
+    // Chamberlin state-variable filter (from regroove_effects.c)
+    // Linear cutoff mapping for predictable response
+    float nyquist = sample_rate * 0.5f;
+    float freq = fx->cutoff * nyquist * 0.48f;
+    float f = 2.0f * sinf(3.14159265f * freq / (float)sample_rate);
 
-    // Map resonance to Q (0.5 - 20.0)
-    const float q = 0.5f + fx->resonance * 19.5f;
+    // Resonance (Q) - limit range for stability
+    // 0.0 resonance = q of 0.7 (gentle)
+    // 1.0 resonance = q of 0.1 (strong but stable)
+    float q = 0.7f - fx->resonance * 0.6f;
+    if (q < 0.1f) q = 0.1f;
 
-    // Left channel - State Variable Filter
-    float hp_l = *left - fx->lp[0] - fx->bp[0] * q;  // Fixed: subtract BOTH lp and damped bp
-    fx->lp[0] = fx->lp[0] + freq * fx->bp[0];
-    fx->bp[0] = fx->bp[0] + freq * hp_l;
+    // Process left channel
+    fx->lp[0] += f * fx->bp[0];
+    float hp = *left - fx->lp[0] - q * fx->bp[0];
+    fx->bp[0] += f * hp;
     *left = fx->lp[0];
 
-    // Right channel
-    float hp_r = *right - fx->lp[1] - fx->bp[1] * q;  // Fixed: subtract BOTH lp and damped bp
-    fx->lp[1] = fx->lp[1] + freq * fx->bp[1];
-    fx->bp[1] = fx->bp[1] + freq * hp_r;
+    // Process right channel
+    fx->lp[1] += f * fx->bp[1];
+    hp = *right - fx->lp[1] - q * fx->bp[1];
+    fx->bp[1] += f * hp;
     *right = fx->lp[1];
 }
 

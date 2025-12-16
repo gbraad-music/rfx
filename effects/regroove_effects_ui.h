@@ -77,10 +77,12 @@ inline bool renderFader(const char* id, const char* label, float* value,
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(3);
 
-    // Label
-    ImGui::PushStyleColor(ImGuiCol_Text, Colors::TextDim);
-    ImGui::Text("%s", label);
-    ImGui::PopStyleColor();
+    // Label (only render if not empty)
+    if (label && label[0] != '\0') {
+        ImGui::PushStyleColor(ImGuiCol_Text, Colors::TextDim);
+        ImGui::Text("%s", label);
+        ImGui::PopStyleColor();
+    }
 
     return changed;
 }
@@ -181,6 +183,7 @@ inline bool render(
     float* eqEnabled, float* eqLow, float* eqMid, float* eqHigh,
     // Compressor
     float* compressorEnabled, float* compressorThreshold, float* compressorRatio,
+    float* compressorAttack, float* compressorRelease, float* compressorMakeup,
     // Delay
     float* delayEnabled, float* delayTime, float* delayFeedback, float* delayMix,
     // Layout options
@@ -192,6 +195,7 @@ inline bool render(
     const float faderWidth = 60.0f;
     const float faderHeight = 220.0f;
     const float spacing = 15.0f;
+    const float groupSpacing = 30.0f;  // Extra spacing between effect groups
 
     // Convert float enables to bool
     bool distEnabled = *distortionEnabled >= 0.5f;
@@ -200,83 +204,146 @@ inline bool render(
     bool compEnabled = *compressorEnabled >= 0.5f;
     bool delEnabled = *delayEnabled >= 0.5f;
 
-    // Row 1: Section titles
+    // Row 1: Section titles - positioned at start of each effect group
     ImGui::PushStyleColor(ImGuiCol_Text, Colors::Title);
 
-    // DISTORTION spans 2 faders
-    ImGui::Text("DISTORTION");
-    ImGui::SameLine(0, faderWidth + spacing);
+    float titleX = 0.0f;
+    ImVec2 startPos = ImGui::GetCursorScreenPos();
 
-    // FILTER spans 2 faders
-    ImGui::Text("FILTER");
-    ImGui::SameLine(0, faderWidth + spacing);
+    // DISTORTION (fader 1-2)
+    ImGui::GetWindowDrawList()->AddText(ImVec2(startPos.x + titleX, startPos.y), ImGui::GetColorU32(ImGuiCol_Text), "DISTORTION");
+    titleX += faderWidth * 2 + spacing * 2 + groupSpacing;  // 2 faders + 2 spacings + group gap
 
-    // EQ spans 3 faders
-    ImGui::Text("EQ");
-    ImGui::SameLine(0, faderWidth * 2 + spacing * 2);
+    // FILTER (fader 3-4)
+    ImGui::GetWindowDrawList()->AddText(ImVec2(startPos.x + titleX, startPos.y), ImGui::GetColorU32(ImGuiCol_Text), "FILTER");
+    titleX += faderWidth * 2 + spacing * 2 + groupSpacing;  // 2 faders + 2 spacings + group gap
 
-    // COMPRESSOR spans 2 faders
-    ImGui::Text("COMPRESSOR");
-    ImGui::SameLine(0, faderWidth + spacing);
+    // EQ (fader 5-7)
+    ImGui::GetWindowDrawList()->AddText(ImVec2(startPos.x + titleX, startPos.y), ImGui::GetColorU32(ImGuiCol_Text), "EQ");
+    titleX += faderWidth * 3 + spacing * 3 + groupSpacing;  // 3 faders + 3 spacings + group gap
 
-    // DELAY spans 3 faders
-    ImGui::Text("DELAY");
+    // COMPRESSOR (fader 8-12)
+    ImGui::GetWindowDrawList()->AddText(ImVec2(startPos.x + titleX, startPos.y), ImGui::GetColorU32(ImGuiCol_Text), "COMPRESSOR");
+    titleX += faderWidth * 5 + spacing * 5 + groupSpacing;  // 5 faders + 5 spacings + group gap
+
+    // DELAY (fader 13-15)
+    ImGui::GetWindowDrawList()->AddText(ImVec2(startPos.x + titleX, startPos.y), ImGui::GetColorU32(ImGuiCol_Text), "DELAY");
+
+    // Advance cursor past the title row
+    ImGui::Dummy(ImVec2(0, ImGui::GetTextLineHeight()));
 
     ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0, 5.0f));
 
-    // Row 2: Parameter labels
+    // Row 2: Parameter labels (Dummy for exact width, text overlay)
     ImGui::PushStyleColor(ImGuiCol_Text, Colors::TextDim);
 
-    ImGui::Text("Drive"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Mix"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Cutoff"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Resonance"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Low"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Mid"); ImGui::SameLine(0, spacing);
-    ImGui::Text("High"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Threshold"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Ratio"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Time"); ImGui::SameLine(0, spacing);
-    ImGui::Text("Feedback"); ImGui::SameLine(0, spacing);
+    // Helper: label with exact faderWidth
+    auto Label = [faderWidth](const char* text) {
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(faderWidth, ImGui::GetTextLineHeight()));
+        ImGui::GetWindowDrawList()->AddText(p, ImGui::GetColorU32(ImGuiCol_Text), text);
+    };
+
+    // Distortion - fader 1, 2
+    Label("Drive");
+    ImGui::SameLine(0, spacing);
+
+    Label("Mix");
+    ImGui::SameLine(0, spacing + groupSpacing);
+
+    // Filter - fader 3, 4
+    Label("Cutoff");
+    ImGui::SameLine(0, spacing);
+
+    Label("Resonance");
+    ImGui::SameLine(0, spacing + groupSpacing);
+
+    // EQ - fader 5, 6, 7
+    Label("Low");
+    ImGui::SameLine(0, spacing);
+
+    Label("Mid");
+    ImGui::SameLine(0, spacing);
+
+    Label("High");
+    ImGui::SameLine(0, spacing + groupSpacing);
+
+    // Compressor - fader 8, 9, 10, 11, 12
+    Label("Threshold");
+    ImGui::SameLine(0, spacing);
+
+    Label("Ratio");
+    ImGui::SameLine(0, spacing);
+
+    Label("Attack");
+    ImGui::SameLine(0, spacing);
+
+    Label("Release");
+    ImGui::SameLine(0, spacing);
+
+    Label("Makeup");
+    ImGui::SameLine(0, spacing + groupSpacing);
+
+    // Delay - fader 13, 14, 15
+    Label("Time");
+    ImGui::SameLine(0, spacing);
+
+    Label("Feedback");
+    ImGui::SameLine(0, spacing);
+
     ImGui::Text("Mix");
 
     ImGui::PopStyleColor();
     ImGui::Dummy(ImVec2(0, 5.0f));
 
-    // Row 3: Enable buttons (one per section, aligned with first fader)
-    if (renderEnableButton("E##distortion", &distEnabled, faderWidth)) {
+    // Row 3: Enable buttons using Dummy to match fader positions
+    auto EnableBtn = [faderWidth](const char* id, bool* enabled) -> bool {
+        ImVec2 savePos = ImGui::GetCursorPos();
+        bool ret = renderEnableButton(id, enabled, faderWidth);
+        ImGui::SetCursorPos(savePos);
+        ImGui::Dummy(ImVec2(faderWidth, ImGui::GetFrameHeight()));
+        return ret;
+    };
+
+    // DISTORTION enable (above fader 1)
+    if (EnableBtn("E##distortion", &distEnabled)) {
         changed = true;
     }
     *distortionEnabled = distEnabled ? 1.0f : 0.0f;
+    ImGui::SameLine(0, faderWidth * 1 + spacing * 2 + groupSpacing);  // Skip to next group start
 
-    ImGui::SameLine(0, faderWidth + spacing);
-    if (renderEnableButton("E##filter", &filtEnabled, faderWidth)) {
+    // FILTER enable (above fader 3)
+    if (EnableBtn("E##filter", &filtEnabled)) {
         changed = true;
     }
     *filterEnabled = filtEnabled ? 1.0f : 0.0f;
+    ImGui::SameLine(0, faderWidth * 1 + spacing * 2 + groupSpacing);  // Skip to next group start
 
-    ImGui::SameLine(0, faderWidth + spacing);
-    if (renderEnableButton("E##eq", &eqEn, faderWidth)) {
+    // EQ enable (above fader 5)
+    if (EnableBtn("E##eq", &eqEn)) {
         changed = true;
     }
     *eqEnabled = eqEn ? 1.0f : 0.0f;
+    ImGui::SameLine(0, faderWidth * 2 + spacing * 3 + groupSpacing);  // Skip to next group start
 
-    ImGui::SameLine(0, faderWidth * 2 + spacing * 2);
-    if (renderEnableButton("E##compressor", &compEnabled, faderWidth)) {
+    // COMPRESSOR enable (above fader 8)
+    if (EnableBtn("E##compressor", &compEnabled)) {
         changed = true;
     }
     *compressorEnabled = compEnabled ? 1.0f : 0.0f;
+    ImGui::SameLine(0, faderWidth * 4 + spacing * 5 + groupSpacing);  // Skip to next group start
 
-    ImGui::SameLine(0, faderWidth + spacing);
-    if (renderEnableButton("E##delay", &delEnabled, faderWidth)) {
+    // DELAY enable (above fader 13)
+    if (EnableBtn("E##delay", &delEnabled)) {
         changed = true;
     }
     *delayEnabled = delEnabled ? 1.0f : 0.0f;
 
     ImGui::Dummy(ImVec2(0, 10.0f));
 
-    // Row 4: All 12 faders in ONE horizontal line
+    // Row 4: All 15 faders in ONE horizontal line with group spacing
+    // Distortion (2 faders)
     if (renderFader("##dist_drive", "", distortionDrive, faderWidth, faderHeight)) {
         changed = true;
     }
@@ -285,8 +352,9 @@ inline bool render(
     if (renderFader("##dist_mix", "", distortionMix, faderWidth, faderHeight)) {
         changed = true;
     }
-    ImGui::SameLine(0, spacing);
+    ImGui::SameLine(0, spacing + groupSpacing);  // Group spacing after distortion
 
+    // Filter (2 faders)
     if (renderFader("##filt_cutoff", "", filterCutoff, faderWidth, faderHeight)) {
         changed = true;
     }
@@ -295,8 +363,9 @@ inline bool render(
     if (renderFader("##filt_res", "", filterResonance, faderWidth, faderHeight)) {
         changed = true;
     }
-    ImGui::SameLine(0, spacing);
+    ImGui::SameLine(0, spacing + groupSpacing);  // Group spacing after filter
 
+    // EQ (3 faders)
     if (renderFader("##eq_low", "", eqLow, faderWidth, faderHeight)) {
         changed = true;
     }
@@ -310,8 +379,9 @@ inline bool render(
     if (renderFader("##eq_high", "", eqHigh, faderWidth, faderHeight)) {
         changed = true;
     }
-    ImGui::SameLine(0, spacing);
+    ImGui::SameLine(0, spacing + groupSpacing);  // Group spacing after EQ
 
+    // Compressor (5 faders)
     if (renderFader("##comp_thresh", "", compressorThreshold, faderWidth, faderHeight)) {
         changed = true;
     }
@@ -322,6 +392,22 @@ inline bool render(
     }
     ImGui::SameLine(0, spacing);
 
+    if (renderFader("##comp_attack", "", compressorAttack, faderWidth, faderHeight)) {
+        changed = true;
+    }
+    ImGui::SameLine(0, spacing);
+
+    if (renderFader("##comp_release", "", compressorRelease, faderWidth, faderHeight)) {
+        changed = true;
+    }
+    ImGui::SameLine(0, spacing);
+
+    if (renderFader("##comp_makeup", "", compressorMakeup, faderWidth, faderHeight)) {
+        changed = true;
+    }
+    ImGui::SameLine(0, spacing + groupSpacing);  // Group spacing after compressor
+
+    // Delay (3 faders)
     if (renderFader("##delay_time", "", delayTime, faderWidth, faderHeight)) {
         changed = true;
     }

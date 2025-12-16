@@ -34,6 +34,33 @@ namespace Size {
 }
 
 /**
+ * Apply Regroove style to ImGui (matching RegrooveFX)
+ * Call this once at startup for each plugin
+ */
+inline void setupStyle() {
+    ImGuiStyle& style = ImGui::GetStyle();
+
+    ImVec4* colors = style.Colors;
+    colors[ImGuiCol_WindowBg] = Colors::Background;  // BLACK
+    colors[ImGuiCol_ChildBg] = Colors::Background;   // BLACK
+    colors[ImGuiCol_Border] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+    colors[ImGuiCol_FrameBg] = Colors::FaderBg;
+    colors[ImGuiCol_FrameBgHovered] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);  // Grey, not blue!
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);   // Grey, not blue!
+    colors[ImGuiCol_Button] = Colors::DisabledBtn;
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.36f, 0.37f, 0.40f, 1.00f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.46f, 0.47f, 0.50f, 1.00f);
+    colors[ImGuiCol_Text] = Colors::Text;
+    colors[ImGuiCol_SliderGrab] = Colors::FaderHandle;  // RED fader handle
+    colors[ImGuiCol_SliderGrabActive] = ImVec4(0.91f, 0.20f, 0.32f, 1.0f);
+
+    style.WindowRounding = 0.0f;
+    style.FrameRounding = 3.0f;   // Rounded fader background
+    style.GrabRounding = 3.0f;    // Rounded handle
+    style.ItemSpacing = ImVec2(12, 8);
+}
+
+/**
  * Render a vertical fader in Regroove style (matching RegrooveFX)
  * Note: This renders ONLY the fader, no label. Labels should be rendered in a separate row.
  */

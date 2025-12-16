@@ -61,6 +61,8 @@ private:
             : ImGuiSubWidget(ui),
               fUI(ui)
         {
+            // Setup Regroove style (rounded corners, grey hover)
+            RFX::UI::setupStyle();
         }
 
     protected:

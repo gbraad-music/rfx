@@ -14,7 +14,7 @@ class RM1_TrimPlugin : public Plugin
 {
 public:
     RM1_TrimPlugin()
-        : Plugin(kParameterCount, 0, 1) // 1 parameter, 0 programs, 1 state
+        : Plugin(kParameterCount, 0, 1) // 1 parameter, 0 programs, 1 state (drive)
     {
         fx = fx_model1_trim_create();
         fx_model1_trim_reset(fx);
@@ -68,7 +68,7 @@ protected:
         switch (index)
         {
         case kParameterDrive:
-            parameter.hints = kParameterIsAutomable;
+            parameter.hints = kParameterIsAutomatable;
             parameter.name = "Drive";
             parameter.symbol = "drive";
             parameter.ranges.def = 0.0f;
@@ -100,7 +100,7 @@ protected:
 
     void initState(uint32_t index, String& stateKey, String& defaultStateValue) override
     {
-        // For this simple plugin, we can store the drive value directly.
+        // State for drive level
         if (index == 0) {
             stateKey = "drive";
             defaultStateValue = "0.0";
@@ -127,12 +127,14 @@ protected:
 
     void run(const float** inputs, float** outputs, uint32_t frames) override
     {
-        // Copy input to output
+        // Copy input to output for in-place processing
         memcpy(outputs[0], inputs[0], frames * sizeof(float));
         memcpy(outputs[1], inputs[1], frames * sizeof(float));
 
-        // Process in-place
+        // Apply the drive effect
         fx_model1_trim_process_f32(fx, outputs[0], frames, getSampleRate());
+        // Note: The original `fx_model1_trim_process_f32` only processes one channel.
+        // To make it stereo, we process both.
         fx_model1_trim_process_f32(fx, outputs[1], frames, getSampleRate());
     }
 

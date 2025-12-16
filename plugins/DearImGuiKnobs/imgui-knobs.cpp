@@ -192,9 +192,10 @@ namespace ImGuiKnobs {
         }
 
         color_set GetPrimaryColorSet() {
+            // Use SliderGrab color for tick marks (RED in Meister design)
             auto *colors = ImGui::GetStyle().Colors;
 
-            return {colors[ImGuiCol_ButtonActive], colors[ImGuiCol_ButtonHovered], colors[ImGuiCol_ButtonHovered]};
+            return {colors[ImGuiCol_SliderGrab], colors[ImGuiCol_SliderGrabActive], colors[ImGuiCol_SliderGrabActive]};
         }
 
         color_set GetSecondaryColorSet() {
@@ -228,8 +229,12 @@ namespace ImGuiKnobs {
 
         switch (variant) {
             case ImGuiKnobVariant_Tick: {
+                // Meister design - outer body (dark gray from ButtonActive * 0.5)
                 knob.draw_circle(0.85f, detail::GetSecondaryColorSet(), true, 32);
-                knob.draw_tick(0.5f, 0.85f, 0.08f, knob.angle, detail::GetPrimaryColorSet());
+                // Center cap (lighter gray from FrameBg)
+                knob.draw_circle(0.40f, detail::GetTrackColorSet(), true, 32);
+                // Red tick mark (from SliderGrab color)
+                knob.draw_tick(0.42f, 0.85f, 0.08f, knob.angle, detail::GetPrimaryColorSet());
                 break;
             }
             case ImGuiKnobVariant_Dot: {

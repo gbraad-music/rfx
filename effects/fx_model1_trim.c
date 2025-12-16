@@ -36,8 +36,8 @@ static inline float apply_trim_drive(float sample, float drive) {
     if (drive <= 0.0f) {
         return sample;
     }
-    // As drive approaches 1.0, gain increases significantly
-    float gain = 1.0f + drive * drive * 50.0f;
+    // As drive approaches 1.0, gain increases gradually
+    float gain = 1.0f + drive * drive * 5.0f;
     float driven_sample = sample * gain;
     
     // Apply soft clipping for analog-style overdrive

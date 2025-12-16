@@ -1,53 +1,143 @@
 /*
- * RM1_HPF Plugin UI - DPF
- * Copyright (C) 2024
+ * RM1_HPF Plugin UI - DPF Wrapper
+ * Uses DearImGui for proper dependency management
  */
 
 #include "DistrhoUI.hpp"
-#include "../rfx_imgui_wrapper.h"
-#include "DearImGui/imgui.h"
-#include "DearImGuiKnobs/imgui-knobs.h"
+#include "DearImGui.hpp"
+#include "imgui-knobs.h"
 
 START_NAMESPACE_DISTRHO
+USE_NAMESPACE_DGL
 
-class RM1_HPFUI : public UI,
-                  public ImGuiTopLevelWidget::Callback
+class RM1_HPFUI : public UI
 {
 public:
-    RM1_HPFUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT)
+    RM1_HPFUI()
+        : UI(150, 200)
     {
-        imGuiWidget = new ImGuiTopLevelWidget(this);
-        imGuiWidget->setCallback(this);
+        setGeometryConstraints(150, 200, true);
+        fCutoff = 0.5f;
+
+        fImGuiWidget = new RM1_HPFImGuiWidget(this);
+        fImGuiWidget->setSize(150, 200);
+    }
+
+    ~RM1_HPFUI() override
+    {
+        delete fImGuiWidget;
     }
 
 protected:
-    void parameterChanged(uint32_t, float) override {
-        imGuiWidget->repaint();
+    void parameterChanged(uint32_t index, float value) override
+    {
+        if (index == kParameterCutoff) {
+            fCutoff = value;
+        }
+        fImGuiWidget->repaint();
     }
 
-    void onImGuiDisplay() override
+    void uiIdle() override
     {
-        const float width = getWidth();
-        const float height = getHeight();
+        fImGuiWidget->repaint();
+    }
 
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(width, height));
-
-        ImGui::Begin("RM1_HPF", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-
-        float cutoff = getParameterValue(kParameterCutoff);
-
-        ImGui::PushID("cutoff_knob");
-        if (ImGui::Knob("HPF", &cutoff, 0.0f, 1.0f, 0.01f, "%.2f", ImGuiKnobVariant_Tick)) {
-            setParameterValue(kParameterCutoff, cutoff);
-        }
-        ImGui::PopID();
-
-        ImGui::End();
+    void uiReshape(uint width, uint height) override
+    {
+        UI::uiReshape(width, height);
+        fImGuiWidget->setSize(width, height);
     }
 
 private:
-    ImGuiTopLevelWidget* imGuiWidget;
+    friend class RM1_HPFImGuiWidget;
+
+    float fCutoff;
+
+    class RM1_HPFImGuiWidget : public ImGuiSubWidget
+    {
+    public:
+        explicit RM1_HPFImGuiWidget(RM1_HPFUI* const ui)
+            : ImGuiSubWidget(ui),
+              fUI(ui)
+        {
+        }
+
+    protected:
+        void onImGuiDisplay() override
+        {
+            // Model 1 color scheme matching meister icon-512x512.png
+            // ButtonActive * 0.5 = outer body, so set ButtonActive to 2x target darkness
+            const ImVec4 knobBody = ImVec4(0.33f, 0.33f, 0.33f, 1.0f);       // #545454 → becomes #2a2a2a outer body
+            const ImVec4 knobCenter = ImVec4(0.55f, 0.55f, 0.55f, 1.0f);     // #8c8c8c lighter gray center cap
+            const ImVec4 knobTick = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);          // PURE RED #FF0000
+            const ImVec4 textColor = ImVec4(0.90f, 0.90f, 0.90f, 1.0f);      // Light text
+
+            ImGui::SetNextWindowPos(ImVec2(0, 0));
+            ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
+
+            ImGuiStyle& style = ImGui::GetStyle();
+            style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);  // Pure black background #000000
+            style.Colors[ImGuiCol_Text] = textColor;
+
+            // Set knob colors GLOBALLY
+            style.Colors[ImGuiCol_ButtonActive] = knobBody;
+            style.Colors[ImGuiCol_ButtonHovered] = knobBody;
+            style.Colors[ImGuiCol_Button] = knobBody;
+            style.Colors[ImGuiCol_FrameBg] = knobCenter;
+            style.Colors[ImGuiCol_SliderGrab] = knobTick;
+            style.Colors[ImGuiCol_SliderGrabActive] = knobTick;
+
+            if (ImGui::Begin("RM1 HPF", nullptr,
+                ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse))
+            {
+                ImGui::Dummy(ImVec2(0, 20.0f));
+
+                // Knob styling matching RegrooveM1
+                float knobSize = 80.0f;
+                float knobCenterX = (getWidth() - knobSize) / 2;
+
+                // HPF label
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.2f, 1.0f));
+                float labelWidth = ImGui::CalcTextSize("HPF").x;
+                ImGui::SetCursorPosX(knobCenterX + (knobSize - labelWidth) / 2);
+                ImGui::Text("HPF");
+
+                labelWidth = ImGui::CalcTextSize("CUTOFF").x;
+                ImGui::SetCursorPosX(knobCenterX + (knobSize - labelWidth) / 2);
+                ImGui::Text("CUTOFF");
+                ImGui::PopStyleColor();
+
+                ImGui::SetCursorPosX(knobCenterX);
+                ImGui::Dummy(ImVec2(0, 5.0f));
+
+                // Cutoff knob with Tick style (red tick mark from style colors)
+                ImGui::SetCursorPosX(knobCenterX);
+                if (ImGuiKnobs::Knob("##hpf", &fUI->fCutoff, 0.0f, 1.0f, 0.001f,
+                                     "", ImGuiKnobVariant_Tick, knobSize,
+                                     ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput,
+                                     10)) {
+                    fUI->setParameterValue(kParameterCutoff, fUI->fCutoff);
+                }
+
+                // Range labels
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+                ImGui::SetCursorPosX(knobCenterX - 10);
+                ImGui::Text("FLAT");
+                ImGui::SameLine();
+                ImGui::SetCursorPosX(knobCenterX + knobSize - 25);
+                ImGui::Text("800Hz");
+                ImGui::PopStyleColor();
+            }
+            ImGui::End();
+        }
+
+    private:
+        RM1_HPFUI* const fUI;
+    };
+
+    RM1_HPFImGuiWidget* fImGuiWidget;
+
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RM1_HPFUI)
 };
 

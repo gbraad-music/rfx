@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v11';
+const CACHE_NAME = 'rfx-effects-v13';
 const ASSETS = [
     './',
     './index.html',
@@ -58,11 +58,12 @@ self.addEventListener('fetch', (event) => {
     }
 
     event.respondWith(
-        caches.match(event.request).then((response) => {
-            // Return cached version or fetch from network
-            return response || fetch(event.request).then((fetchResponse) => {
-                // Cache new resources
-                return caches.open(CACHE_NAME).then((cache) => {
+        // IMPORTANT: Only check the CURRENT cache version to avoid serving stale files
+        caches.open(CACHE_NAME).then((cache) => {
+            return cache.match(event.request).then((response) => {
+                // Return cached version or fetch from network
+                return response || fetch(event.request).then((fetchResponse) => {
+                    // Cache new resources
                     cache.put(event.request, fetchResponse.clone());
                     return fetchResponse;
                 });

@@ -164,24 +164,36 @@ class AudioEffectsProcessor {
     }
 
     async startMicrophone() {
+        // Stop any playing audio first
+        if (this.sourceNode && this.sourceNode.stop) {
+            try {
+                this.sourceNode.stop();
+                this.sourceNode.disconnect();
+            } catch (e) {
+                // Already stopped
+            }
+            this.sourceNode = null;
+        }
+
+        // Stop any existing microphone
         if (this.micStream) {
             this.stopMicrophone();
         }
-        
+
         const constraints = {
-            audio: this.selectedMicDeviceId 
+            audio: this.selectedMicDeviceId
                 ? { deviceId: { exact: this.selectedMicDeviceId } }
                 : true
         };
-        
+
         console.log('🎤 Starting microphone...');
         this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
         const source = this.audioContext.createMediaStreamSource(this.micStream);
         this.sourceNode = source;
-        
+
         console.log('🔗 Mic → WASM');
         this.sourceNode.connect(this.workletNode);
-        
+
         this.isPlaying = true;
         console.log('✅ Microphone active');
     }
@@ -203,8 +215,19 @@ class AudioEffectsProcessor {
     }
 
     play() {
+        // Stop microphone if active
+        if (this.micStream) {
+            this.stopMicrophone();
+        }
+
+        // Stop any existing playback
         if (this.sourceNode && this.sourceNode.stop) {
-            this.sourceNode.stop();
+            try {
+                this.sourceNode.stop();
+                this.sourceNode.disconnect();
+            } catch (e) {
+                // Already stopped
+            }
         }
 
         if (this.audioBuffer) {
@@ -651,6 +674,11 @@ document.getElementById('audioFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (file) {
         try {
+            // Stop microphone if active when loading new audio
+            if (processor.micStream) {
+                processor.stopMicrophone();
+                document.getElementById('micBtn').textContent = '🎤 Microphone';
+            }
             updateStatus(`Loading: ${file.name}...`, 'wasm');
             await processor.loadAudioFile(file);
             updateStatus(`Ready: ${file.name}`, 'wasm');
@@ -681,6 +709,8 @@ document.getElementById('micBtn').addEventListener('click', async () => {
 document.getElementById('playBtn').addEventListener('click', () => {
     processor.play();
     updatePlaybackButtons();
+    // Reset mic button text if mic was stopped
+    document.getElementById('micBtn').textContent = '🎤 Microphone';
 });
 
 document.getElementById('stopBtn').addEventListener('click', () => {
@@ -692,6 +722,11 @@ document.getElementById('stopBtn').addEventListener('click', () => {
 
 document.getElementById('testSignal').addEventListener('change', (e) => {
     if (e.target.value) {
+        // Stop microphone if active (generating test signal is like loading a file)
+        if (processor.micStream) {
+            processor.stopMicrophone();
+            document.getElementById('micBtn').textContent = '🎤 Microphone';
+        }
         processor.generateTestSignal(e.target.value);
         updateStatus(`Test: ${e.target.value}`, 'wasm');
         updatePlaybackButtons();

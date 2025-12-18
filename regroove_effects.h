@@ -86,6 +86,15 @@ float regroove_effects_get_delay_time(RegrooveEffects* fx);
 float regroove_effects_get_delay_feedback(RegrooveEffects* fx);
 float regroove_effects_get_delay_mix(RegrooveEffects* fx);
 
+// Stereo Widening parameters (normalized 0.0 - 1.0)
+void regroove_effects_set_stereo_widen_enabled(RegrooveEffects* fx, int enabled);
+void regroove_effects_set_stereo_widen_width(RegrooveEffects* fx, float width);  // 0.0 = mono, 1.0 = max widen
+void regroove_effects_set_stereo_widen_mix(RegrooveEffects* fx, float mix);      // dry/wet
+
+int regroove_effects_get_stereo_widen_enabled(RegrooveEffects* fx);
+float regroove_effects_get_stereo_widen_width(RegrooveEffects* fx);
+float regroove_effects_get_stereo_widen_mix(RegrooveEffects* fx);
+
 #ifdef __cplusplus
 }
 #endif

@@ -13,6 +13,7 @@
 #include "effects/fx_eq.h"
 #include "effects/fx_compressor.h"
 #include "effects/fx_delay.h"
+#include "effects/fx_stereo_widen.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +26,7 @@ struct RegrooveEffects {
     FXEqualizer* eq;
     FXCompressor* compressor;
     FXDelay* delay;
+    FXStereoWiden* stereo_widen;
 
     // Temporary buffer for processing (stereo interleaved)
     float* temp_buffer;
@@ -41,8 +43,9 @@ RegrooveEffects* regroove_effects_create(void) {
     fx->eq = fx_eq_create();
     fx->compressor = fx_compressor_create();
     fx->delay = fx_delay_create();
+    fx->stereo_widen = fx_stereo_widen_create();
 
-    if (!fx->distortion || !fx->filter || !fx->eq || !fx->compressor || !fx->delay) {
+    if (!fx->distortion || !fx->filter || !fx->eq || !fx->compressor || !fx->delay || !fx->stereo_widen) {
         regroove_effects_destroy(fx);
         return NULL;
     }
@@ -62,6 +65,7 @@ void regroove_effects_destroy(RegrooveEffects* fx) {
     if (fx->eq) fx_eq_destroy(fx->eq);
     if (fx->compressor) fx_compressor_destroy(fx->compressor);
     if (fx->delay) fx_delay_destroy(fx->delay);
+    if (fx->stereo_widen) fx_stereo_widen_destroy(fx->stereo_widen);
 
     if (fx->temp_buffer) free(fx->temp_buffer);
 
@@ -76,6 +80,7 @@ void regroove_effects_reset(RegrooveEffects* fx) {
     if (fx->eq) fx_eq_reset(fx->eq);
     if (fx->compressor) fx_compressor_reset(fx->compressor);
     if (fx->delay) fx_delay_reset(fx->delay);
+    if (fx->stereo_widen) fx_stereo_widen_reset(fx->stereo_widen);
 }
 
 // Process audio through the effects chain
@@ -117,6 +122,10 @@ void regroove_effects_process(RegrooveEffects* fx, int16_t* buffer, int frames, 
         fx_delay_process_f32(fx->delay, fx->temp_buffer, frames, sample_rate);
     }
 
+    if (fx->stereo_widen) {
+        fx_stereo_widen_process_interleaved(fx->stereo_widen, fx->temp_buffer, frames, sample_rate);
+    }
+
     // Convert float back to int16
     for (int i = 0; i < frames * 2; i++) {
         float sample = fx->temp_buffer[i];
@@ -151,6 +160,10 @@ void regroove_effects_process_f32(RegrooveEffects* fx, float* buffer, int frames
 
     if (fx->delay) {
         fx_delay_process_f32(fx->delay, buffer, frames, sample_rate);
+    }
+
+    if (fx->stereo_widen) {
+        fx_stereo_widen_process_interleaved(fx->stereo_widen, buffer, frames, sample_rate);
     }
 
     // Note: No clamping needed here - individual effects handle their own gain staging
@@ -319,5 +332,30 @@ float regroove_effects_get_compressor_release(RegrooveEffects* fx) {
 
 float regroove_effects_get_compressor_makeup(RegrooveEffects* fx) {
     return (fx && fx->compressor) ? fx_compressor_get_makeup(fx->compressor) : 0.5f;
+}
+
+// Stereo Widening parameters
+void regroove_effects_set_stereo_widen_enabled(RegrooveEffects* fx, int enabled) {
+    if (fx && fx->stereo_widen) fx_stereo_widen_set_enabled(fx->stereo_widen, enabled);
+}
+
+void regroove_effects_set_stereo_widen_width(RegrooveEffects* fx, float width) {
+    if (fx && fx->stereo_widen) fx_stereo_widen_set_width(fx->stereo_widen, width);
+}
+
+void regroove_effects_set_stereo_widen_mix(RegrooveEffects* fx, float mix) {
+    if (fx && fx->stereo_widen) fx_stereo_widen_set_mix(fx->stereo_widen, mix);
+}
+
+int regroove_effects_get_stereo_widen_enabled(RegrooveEffects* fx) {
+    return (fx && fx->stereo_widen) ? fx_stereo_widen_get_enabled(fx->stereo_widen) : 0;
+}
+
+float regroove_effects_get_stereo_widen_width(RegrooveEffects* fx) {
+    return (fx && fx->stereo_widen) ? fx_stereo_widen_get_width(fx->stereo_widen) : 0.0f;
+}
+
+float regroove_effects_get_stereo_widen_mix(RegrooveEffects* fx) {
+    return (fx && fx->stereo_widen) ? fx_stereo_widen_get_mix(fx->stereo_widen) : 1.0f;
 }
 

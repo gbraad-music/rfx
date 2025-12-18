@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v34';
+const CACHE_NAME = 'rfx-effects-v35';
 const ASSETS = [
     './',
     './index.html',
@@ -50,7 +50,7 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - NETWORK FIRST (always check for updates)
 self.addEventListener('fetch', (event) => {
     // Skip caching external resources
     if (!event.request.url.startsWith(self.location.origin)) {
@@ -58,28 +58,30 @@ self.addEventListener('fetch', (event) => {
     }
 
     event.respondWith(
-        // IMPORTANT: Only check the CURRENT cache version to avoid serving stale files
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.match(event.request).then((response) => {
-                // Return cached version or fetch from network
-                return response || fetch(event.request).then((fetchResponse) => {
-                    // Cache new resources
-                    cache.put(event.request, fetchResponse.clone());
-                    return fetchResponse;
-                });
+        // Try network first, fallback to cache
+        fetch(event.request).then((networkResponse) => {
+            // Update cache with fresh content
+            caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, networkResponse.clone());
             });
+            return networkResponse;
         }).catch(() => {
-            // Fallback for offline
-            if (event.request.destination === 'document') {
-                return caches.match('./index.html');
-            }
-            // Return a proper Response for non-document requests when offline
-            return new Response('Offline', {
-                status: 503,
-                statusText: 'Service Unavailable',
-                headers: new Headers({
-                    'Content-Type': 'text/plain'
-                })
+            // Network failed, try cache
+            return caches.match(event.request).then((cachedResponse) => {
+                if (cachedResponse) {
+                    return cachedResponse;
+                }
+                // No cache either - offline fallback
+                if (event.request.destination === 'document') {
+                    return caches.match('./index.html');
+                }
+                return new Response('Offline', {
+                    status: 503,
+                    statusText: 'Service Unavailable',
+                    headers: new Headers({
+                        'Content-Type': 'text/plain'
+                    })
+                });
             });
         })
     );

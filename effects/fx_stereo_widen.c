@@ -34,6 +34,15 @@ void fx_stereo_widen_set_width(FXStereoWiden* fx, fx_param_t width)
 void fx_stereo_widen_set_mix(FXStereoWiden* fx, fx_param_t mix)
 { if (fx) fx->mix = fmaxf(0.f, fminf(1.f, mix)); }
 
+bool fx_stereo_widen_get_enabled(FXStereoWiden* fx)
+{ return fx ? fx->enabled : false; }
+
+float fx_stereo_widen_get_width(FXStereoWiden* fx)
+{ return fx ? fx->width : 0.5f; }
+
+float fx_stereo_widen_get_mix(FXStereoWiden* fx)
+{ return fx ? fx->mix : 0.5f; }
+
 static inline void ms_encode(float l, float r, float* m, float* s)
 { *m = 0.5f*(l + r); *s = 0.5f*(l - r); }
 

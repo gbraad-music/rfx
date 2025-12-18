@@ -394,8 +394,29 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('Service Worker registered'))
+                    .then(reg => {
+                        console.log('Service Worker registered');
+
+                        // Check for updates every time the page loads
+                        reg.update();
+
+                        // Auto-reload when new service worker takes over
+                        reg.addEventListener('updatefound', () => {
+                            const newWorker = reg.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                                    console.log('New service worker activated - reloading page');
+                                    window.location.reload();
+                                }
+                            });
+                        });
+                    })
                     .catch(err => console.warn('Service Worker registration failed:', err));
+
+                // Listen for service worker updates
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    console.log('Service worker updated');
+                });
             });
         }
     </script>

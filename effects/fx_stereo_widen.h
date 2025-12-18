@@ -18,6 +18,10 @@ void fx_stereo_widen_set_enabled(FXStereoWiden* fx, bool enabled);
 void fx_stereo_widen_set_width(FXStereoWiden* fx, fx_param_t width);   // 0 = mono, 1 = max widen
 void fx_stereo_widen_set_mix(FXStereoWiden* fx, fx_param_t mix);       // dry/wet
 
+bool fx_stereo_widen_get_enabled(FXStereoWiden* fx);
+float fx_stereo_widen_get_width(FXStereoWiden* fx);
+float fx_stereo_widen_get_mix(FXStereoWiden* fx);
+
 void fx_stereo_widen_process_f32(FXStereoWiden* fx, const float* inL, const float* inR,
                                  float* outL, float* outR, int frames, int sample_rate);
 

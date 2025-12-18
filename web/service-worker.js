@@ -60,10 +60,17 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         // Try network first, fallback to cache
         fetch(event.request).then((networkResponse) => {
-            // Update cache with fresh content
-            caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, networkResponse.clone());
-            });
+            // Clone the response immediately before it's consumed
+            // Only cache valid responses (not opaque or error responses)
+            if (networkResponse && networkResponse.status === 200) {
+                const responseToCache = networkResponse.clone();
+                // Cache asynchronously (don't block the response)
+                caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(event.request, responseToCache);
+                }).catch(err => {
+                    console.warn('[ServiceWorker] Failed to cache:', event.request.url, err.message);
+                });
+            }
             return networkResponse;
         }).catch(() => {
             // Network failed, try cache

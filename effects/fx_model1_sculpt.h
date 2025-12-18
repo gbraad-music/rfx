@@ -25,6 +25,7 @@ void fx_model1_sculpt_destroy(FXModel1Sculpt* fx);
 void fx_model1_sculpt_reset(FXModel1Sculpt* fx);
 
 // Process functions
+void fx_model1_sculpt_process_interleaved(FXModel1Sculpt* fx, float* buffer, int frames, int sample_rate);
 void fx_model1_sculpt_process_f32(FXModel1Sculpt* fx, float* left, float* right, int frames, int sample_rate);
 void fx_model1_sculpt_process_i16(FXModel1Sculpt* fx, int16_t* buffer, int frames, int sample_rate);
 void fx_model1_sculpt_process_frame(FXModel1Sculpt* fx, float* left, float* right, int sample_rate);

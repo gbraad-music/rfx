@@ -25,6 +25,7 @@ void fx_model1_lpf_destroy(FXModel1LPF* fx);
 void fx_model1_lpf_reset(FXModel1LPF* fx);
 
 // Process functions
+void fx_model1_lpf_process_interleaved(FXModel1LPF* fx, float* buffer, int frames, int sample_rate);
 void fx_model1_lpf_process_f32(FXModel1LPF* fx, float* left, float* right, int frames, int sample_rate);
 void fx_model1_lpf_process_i16(FXModel1LPF* fx, int16_t* buffer, int frames, int sample_rate);
 void fx_model1_lpf_process_frame(FXModel1LPF* fx, float* left, float* right, int sample_rate);

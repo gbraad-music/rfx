@@ -18,6 +18,8 @@ public:
     {
         fx = fx_model1_trim_create();
         fx_model1_trim_reset(fx);
+        fx_model1_trim_set_enabled(fx, 1);  // Enable by default
+        fx_model1_trim_set_drive(fx, 0.7f); // Set default drive to unity gain
         fPeakLevel = 0.0f;
     }
 

@@ -96,6 +96,7 @@ void fx_model1_hpf_reset(FXModel1HPF* fx) {
     if (!fx) return;
     fx->z1_l = fx->z2_l = 0.0f;
     fx->z1_r = fx->z2_r = 0.0f;
+    fx->coeffs_dirty = 1;  // Force coefficient recalculation
 }
 
 void fx_model1_hpf_process_frame(FXModel1HPF* fx, float* left, float* right, int sample_rate) {
@@ -123,6 +124,20 @@ void fx_model1_hpf_process_f32(FXModel1HPF* fx, float* left, float* right, int f
 
     for (int i = 0; i < frames; i++) {
         fx_model1_hpf_process_frame(fx, &left[i], &right[i], sample_rate);
+    }
+}
+
+void fx_model1_hpf_process_interleaved(FXModel1HPF* fx, float* buffer, int frames, int sample_rate) {
+    if (!fx || !fx->enabled) return;
+
+    for (int i = 0; i < frames; i++) {
+        float left = buffer[i * 2];
+        float right = buffer[i * 2 + 1];
+
+        fx_model1_hpf_process_frame(fx, &left, &right, sample_rate);
+
+        buffer[i * 2] = left;
+        buffer[i * 2 + 1] = right;
     }
 }
 

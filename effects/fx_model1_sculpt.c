@@ -110,6 +110,7 @@ void fx_model1_sculpt_reset(FXModel1Sculpt* fx) {
     if (!fx) return;
     fx->x1_l = fx->x2_l = 0.0f;
     fx->x1_r = fx->x2_r = 0.0f;
+    fx->coeffs_dirty = 1;  // Force coefficient recalculation
 }
 
 void fx_model1_sculpt_process_frame(FXModel1Sculpt* fx, float* left, float* right, int sample_rate) {
@@ -137,6 +138,20 @@ void fx_model1_sculpt_process_f32(FXModel1Sculpt* fx, float* left, float* right,
 
     for (int i = 0; i < frames; i++) {
         fx_model1_sculpt_process_frame(fx, &left[i], &right[i], sample_rate);
+    }
+}
+
+void fx_model1_sculpt_process_interleaved(FXModel1Sculpt* fx, float* buffer, int frames, int sample_rate) {
+    if (!fx || !fx->enabled) return;
+
+    for (int i = 0; i < frames; i++) {
+        float left = buffer[i * 2];
+        float right = buffer[i * 2 + 1];
+
+        fx_model1_sculpt_process_frame(fx, &left, &right, sample_rate);
+
+        buffer[i * 2] = left;
+        buffer[i * 2 + 1] = right;
     }
 }
 

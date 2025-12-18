@@ -22,12 +22,16 @@ void fx_model1_trim_destroy(FXModel1Trim* fx);
 void fx_model1_trim_reset(FXModel1Trim* fx);
 
 // Processing
+void fx_model1_trim_process_interleaved(FXModel1Trim* fx, float* buffer, int frames, int sample_rate);
 void fx_model1_trim_process_f32(FXModel1Trim* fx, float* buffer, int frames, int sample_rate);
 void fx_model1_trim_process_frame(FXModel1Trim* fx, float* left, float* right, int sample_rate);
 
 // Parameters (0.0 - 1.0)
+void fx_model1_trim_set_enabled(FXModel1Trim* fx, int enabled);
+int fx_model1_trim_get_enabled(FXModel1Trim* fx);
 void fx_model1_trim_set_drive(FXModel1Trim* fx, float drive);
 float fx_model1_trim_get_drive(FXModel1Trim* fx);
+float fx_model1_trim_get_peak_level(FXModel1Trim* fx);  // Returns peak output level (0.0+)
 
 #ifdef __cplusplus
 }

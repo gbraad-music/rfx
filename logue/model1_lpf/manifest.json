@@ -4,13 +4,12 @@
     "module": "modfx",
     "api": "1.1-0",
     "dev_id": 0,
-    "prg_id": 1,
+    "prg_id": 11,
     "version": "1.0-0",
-    "name": "RGFilter",
-    "num_param": 2,
+    "name": "RM1LPF",
+    "num_param": 1,
     "params": [
-      ["Cutoff", 0, 1023, 800],
-      ["Resonance", 0, 1023, 300]
+      ["Cutoff", 0, 1023, 1023]
     ]
   }
 }

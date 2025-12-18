@@ -4,13 +4,14 @@
     "module": "modfx",
     "api": "1.1-0",
     "dev_id": 0,
-    "prg_id": 0,
+    "prg_id": 3,
     "version": "1.0-0",
-    "name": "RGDistortion",
-    "num_param": 2,
+    "name": "RFXComp",
+    "num_param": 3,
     "params": [
-      ["Drive", 0, 1023, 512],
-      ["Mix", 0, 1023, 512]
+      ["Threshold", 0, 1023, 400],
+      ["Ratio", 0, 1023, 400],
+      ["Makeup", 0, 1023, 665]
     ]
   }
 }

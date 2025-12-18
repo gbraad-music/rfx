@@ -4,14 +4,12 @@
     "module": "modfx",
     "api": "1.1-0",
     "dev_id": 0,
-    "prg_id": 2,
+    "prg_id": 10,
     "version": "1.0-0",
-    "name": "RGEQ",
-    "num_param": 3,
+    "name": "RM1HPF",
+    "num_param": 1,
     "params": [
-      ["Low", 0, 1023, 512],
-      ["Mid", 0, 1023, 512],
-      ["High", 0, 1023, 512]
+      ["Cutoff", 0, 1023, 0]
     ]
   }
 }

@@ -22,7 +22,7 @@ echo "SDK path: $TOOLSDIR"
 echo ""
 
 # Build each effect
-EFFECTS="distortion filter eq compressor delay model1_lpf model1_hpf model1_sculpt"
+EFFECTS="distortion filter eq compressor delay phaser reverb stereo_widen model1_lpf model1_hpf model1_sculpt model1_trim"
 
 for effect in $EFFECTS; do
     echo "Building $effect..."

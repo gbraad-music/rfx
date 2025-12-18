@@ -1,17 +1,17 @@
 {
   "header": {
     "platform": "nutekt-digital",
-    "module": "delfx",
+    "module": "modfx",
     "api": "1.1-0",
     "dev_id": 0,
-    "prg_id": 0,
+    "prg_id": 6,
     "version": "1.0-0",
-    "name": "RGDelay",
+    "name": "RFXPhaser",
     "num_param": 3,
     "params": [
-      ["Time", 0, 1023, 512],
-      ["Feedback", 0, 1023, 400],
-      ["Mix", 0, 1023, 300]
+      ["Rate", 0, 1023, 512],
+      ["Depth", 0, 1023, 512],
+      ["Feedback", 0, 1023, 512]
     ]
   }
 }

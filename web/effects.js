@@ -180,22 +180,49 @@ class AudioEffectsProcessor {
             this.stopMicrophone();
         }
 
+        // CRITICAL: Resume AudioContext (browsers suspend it until user interaction)
+        if (this.audioContext.state !== 'running') {
+            console.log(`⚠️ AudioContext state: ${this.audioContext.state}`);
+            await this.audioContext.resume();
+            console.log(`✅ AudioContext resumed: ${this.audioContext.state}`);
+        }
+
+        // Request stereo audio input
         const constraints = {
-            audio: this.selectedMicDeviceId
-                ? { deviceId: { exact: this.selectedMicDeviceId } }
-                : true
+            audio: {
+                deviceId: this.selectedMicDeviceId ? { exact: this.selectedMicDeviceId } : undefined,
+                channelCount: 2,  // Request stereo
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            }
         };
 
         console.log('🎤 Starting microphone...');
         this.micStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // Log actual track settings
+        const track = this.micStream.getAudioTracks()[0];
+        const settings = track.getSettings();
+        console.log(`   Track settings: ${settings.channelCount} channels @ ${settings.sampleRate}Hz`);
+
         const source = this.audioContext.createMediaStreamSource(this.micStream);
+
+        // CRITICAL: Preserve stereo channels
+        source.channelCount = 2;
+        source.channelCountMode = 'explicit';
+        source.channelInterpretation = 'speakers';
+
         this.sourceNode = source;
 
         console.log('🔗 Mic → WASM');
+        console.log(`   Source channels: ${source.channelCount}`);
         this.sourceNode.connect(this.workletNode);
 
         this.isPlaying = true;
         console.log('✅ Microphone active');
+        console.log(`   AudioContext: ${this.audioContext.state}`);
+        console.log(`   Sample rate: ${this.audioContext.sampleRate}Hz`);
     }
 
     stopMicrophone() {
@@ -400,6 +427,18 @@ function createModel1UI() {
             processor.toggleEffect(def.name, enabled);
             toggle.classList.toggle('active', enabled);
             card.classList.toggle('enabled', enabled);
+
+            // CRITICAL: Re-send current parameter values when enabling
+            if (enabled) {
+                def.params.forEach(paramName => {
+                    const knob = document.getElementById(`${def.name}-${paramName}-knob`);
+                    if (knob) {
+                        const value = parseFloat(knob.getAttribute('value')) / 100;
+                        processor.setParameter(def.name, paramName, value);
+                        console.log(`[Toggle] Restoring ${def.name}.${paramName} = ${value}`);
+                    }
+                });
+            }
         };
         header.appendChild(toggle);
         if (enabledByDefault) {
@@ -524,8 +563,20 @@ function createEffectUI() {
             processor.toggleEffect(def.name, enabled);
             toggle.classList.toggle('active', enabled);
             card.classList.toggle('enabled', enabled);
+
+            // CRITICAL: Re-send current parameter values when enabling
+            if (enabled) {
+                def.params.forEach(paramName => {
+                    const knob = document.getElementById(`${def.name}-${paramName}-knob`);
+                    if (knob) {
+                        const value = parseFloat(knob.getAttribute('value')) / 100;
+                        processor.setParameter(def.name, paramName, value);
+                        console.log(`[Toggle] Restoring ${def.name}.${paramName} = ${value}`);
+                    }
+                });
+            }
         };
-        
+
         header.appendChild(title);
         header.appendChild(toggle);
         card.appendChild(header);

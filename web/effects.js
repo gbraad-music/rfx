@@ -11,9 +11,12 @@ class AudioEffectsProcessor {
         this.micStream = null;
         this.selectedMicDeviceId = null;
         this.playbackGain = null;  // For fade out
-        
+
         this.wasmModule = null;
         this.workletNode = null;
+
+        // Stereo peaks from worklet for VU meter
+        this.stereoPeaks = { left: 0, right: 0 };
     }
 
     async init() {
@@ -78,6 +81,10 @@ class AudioEffectsProcessor {
                 } else if (e.data.type === 'peakLevel') {
                     // Update M1 TRIM LED indicator
                     this.updateTrimLED(e.data.level);
+                } else if (e.data.type === 'stereoPeaks') {
+                    // Update stereo peaks for VU meter
+                    this.stereoPeaks.left = e.data.left;
+                    this.stereoPeaks.right = e.data.right;
                 }
             };
         });
@@ -402,7 +409,8 @@ const effectDefinitions = [
     { name: 'compressor', title: 'Compressor', params: ['threshold', 'ratio', 'attack', 'release'] },
     { name: 'delay', title: 'Delay', params: ['time', 'feedback', 'mix'] },
     { name: 'reverb', title: 'Reverb', params: ['size', 'damping', 'mix'] },
-    { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] }
+    { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] },
+    { name: 'stereo_widen', title: 'Stereo Widening', params: ['width', 'mix'] }
 ];
 
 function createModel1UI() {
@@ -654,22 +662,9 @@ function drawVUMeter() {
     const width = canvas.width;
     const height = canvas.height;
 
-    // Get stereo channel data
-    const bufferLength = processor.analyser.fftSize;
-    const timeData = new Float32Array(bufferLength);
-    processor.analyser.getFloatTimeDomainData(timeData);
-
-    // Calculate PEAK for left and right channels (interleaved stereo)
-    let leftPeak = 0;
-    let rightPeak = 0;
-
-    // Assume stereo interleaved: L R L R L R...
-    for (let i = 0; i < timeData.length; i += 2) {
-        leftPeak = Math.max(leftPeak, Math.abs(timeData[i]));
-        if (i + 1 < timeData.length) {
-            rightPeak = Math.max(rightPeak, Math.abs(timeData[i + 1]));
-        }
-    }
+    // Get stereo peaks from worklet (proper stereo separation!)
+    const leftPeak = processor.stereoPeaks.left;
+    const rightPeak = processor.stereoPeaks.right;
 
     // Convert to dB and map to needle position
     // -20dB at rest (bottom), 0dBFS at max (RED/clipping)

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v29';
+const CACHE_NAME = 'rfx-effects-v34';
 const ASSETS = [
     './',
     './index.html',

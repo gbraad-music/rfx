@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regroove Effects Tester</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #2a2a2a;
+            --accent: #CF1A37;
+            --accent-dim: #a01528;
+            --text-primary: #ffffff;
+            --text-secondary: #aaaaaa;
+            --border: #333333;
+            --shadow: rgba(207, 26, 55, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #2a2a2a;
+            padding-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #0066FF;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-bar {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 10px 15px;
+            margin-bottom: 20px;
+            font-size: 0.85em;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-bar.wasm {
+            border-color: #0066FF;
+            color: #0066FF;
+        }
+
+        .status-bar.fallback {
+            border-color: #ff9900;
+            color: #ff9900;
+        }
+
+        .control-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            color: #0066FF;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 2px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 5px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button, select {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            padding: 10px 15px;
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        button:hover, select:hover {
+            border-color: #4a4a4a;
+            background: #3a3a3a;
+        }
+
+        button:active {
+            background: #0066FF;
+            color: #fff;
+        }
+
+        button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        button:disabled:hover {
+            border-color: var(--border);
+            color: var(--text-primary);
+            box-shadow: none;
+        }
+
+        .file-input {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-input input[type=file] {
+            position: absolute;
+            font-size: 100px;
+            opacity: 0;
+            right: 0;
+            top: 0;
+            cursor: pointer;
+        }
+
+        .visualizer-container {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            height: 120px;
+            position: relative;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .effects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .effect-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            padding: 15px;
+            transition: all 0.3s;
+        }
+
+        .effect-card.enabled {
+            border-color: #CF1A37;
+            box-shadow: 0 0 15px rgba(207, 26, 55, 0.3);
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #2a1a1a 100%);
+        }
+
+        .effect-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .effect-title {
+            font-size: 1.1em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-primary);
+        }
+
+        .effect-card.enabled .effect-title {
+            color: #CF1A37;
+        }
+
+        .toggle-switch {
+            width: 50px;
+            height: 24px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            position: relative;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            background: var(--text-secondary);
+            left: 2px;
+            top: 2px;
+            transition: all 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #a01528;
+            border-color: #CF1A37;
+        }
+
+        .toggle-switch.active::after {
+            left: 28px;
+            background: #CF1A37;
+        }
+
+        .param-control {
+            margin-bottom: 12px;
+        }
+
+        .param-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+        }
+
+        .param-value {
+            color: #CF1A37;
+            font-weight: bold;
+        }
+
+        /* Keep input[type="range"] styles for any remaining range inputs */
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            background: #CF1A37;
+            cursor: pointer;
+            border: 1px solid #CF1A37;
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            background: #CF1A37;
+            cursor: pointer;
+            border: 1px solid #CF1A37;
+        }
+
+        /* Knob container styling */
+        pad-knob {
+            display: inline-block;
+        }
+
+        .device-selector {
+            margin-top: 10px;
+        }
+
+        .device-selector select {
+            width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.5em;
+            }
+            
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .effects-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Regroove Effects</h1>
+            <div class="subtitle">Web Audio Processor</div>
+        </header>
+
+        <div id="status-bar" class="status-bar">
+            <span id="status-text">Initializing...</span>
+            <span id="mode-indicator">—</span>
+        </div>
+
+        <div class="control-section">
+            <div class="section-title">Audio Source</div>
+            
+            <div class="controls-grid">
+                <div class="file-input">
+                    <button>📁 Load Audio File</button>
+                    <input type="file" id="audioFile" accept="audio/*">
+                </div>
+                
+                <button id="micBtn">🎤 Microphone</button>
+                <button id="playBtn" disabled>▶ Play</button>
+                <button id="stopBtn" disabled>⏹ Stop</button>
+                
+                <select id="testSignal">
+                    <option value="">Test Signal</option>
+                    <option value="sine">Sine 440Hz</option>
+                    <option value="noise">White Noise</option>
+                    <option value="sweep">Frequency Sweep</option>
+                </select>
+            </div>
+
+            <div id="micDeviceSelector" class="device-selector" style="display: none;">
+                <select id="micDeviceList">
+                    <option value="">Select Microphone...</option>
+                </select>
+            </div>
+
+            <div class="visualizer-container">
+                <canvas id="visualizer"></canvas>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <div class="section-title">Effects Chain</div>
+            <div id="effects" class="effects-grid"></div>
+        </div>
+    </div>
+
+    <!-- Custom UI components from Revision -->
+    <script type="module" src="svg-slider.js"></script>
+    <script type="module" src="pad-knob.js"></script>
+    <script type="module" src="fader-components.js"></script>
+
+    <script src="effects.js" type="module"></script>
+</body>
+</html>

@@ -358,9 +358,19 @@
                 </select>
             </div>
 
-            <div class="visualizer-container">
-                <canvas id="visualizer"></canvas>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+                <div class="visualizer-container" style="flex: 1;">
+                    <canvas id="visualizer"></canvas>
+                </div>
+                <div class="visualizer-container" style="flex: 1;">
+                    <canvas id="spectrum"></canvas>
+                </div>
             </div>
+        </div>
+
+        <div class="control-section">
+            <div class="section-title">MODEL 1 Input Processing</div>
+            <div id="model1-effects" class="effects-grid"></div>
         </div>
 
         <div class="control-section">

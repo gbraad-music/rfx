@@ -11,6 +11,7 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         this.lastFrame = [0, 0]; // Store last frame to prevent clicks
         this.dcBlockerX = [0, 0]; // Previous input for DC blocker
         this.dcBlockerY = [0, 0]; // Previous output for DC blocker
+        this.peakLevelFrameCounter = 0; // Counter for peak level polling
 
         this.port.onmessage = this.handleMessage.bind(this);
 
@@ -73,7 +74,12 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
     }
     
     initEffects() {
+        // Processing order: TRIM → SCULPT → LPF → HPF → other effects
         const effects = [
+            { name: 'model1_trim', create: 'Ha', prefix: 'model1_trim' },
+            { name: 'model1_sculpt', create: 'eb', prefix: 'model1_sculpt' },
+            { name: 'model1_lpf', create: 'Ya', prefix: 'model1_lpf' },
+            { name: 'model1_hpf', create: 'Qa', prefix: 'model1_hpf' },
             { name: 'distortion', create: 'd', prefix: 'distortion' },
             { name: 'filter', create: 'p', prefix: 'filter' },
             { name: 'eq', create: 'z', prefix: 'eq' },
@@ -82,17 +88,40 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             { name: 'reverb', create: 'ja', prefix: 'reverb' },
             { name: 'phaser', create: 'va', prefix: 'phaser' }
         ];
-        
+
+        // Map for set_enabled functions
+        const toggleMap = {
+            model1_trim: 'Na',
+            model1_hpf: 'Ua',
+            model1_lpf: 'ab',
+            model1_sculpt: 'ib',
+            distortion: 'j', filter: 't', eq: 'D', compressor: 'P',
+            delay: 'ba', reverb: 'na', phaser: 'za'
+        };
+
         for (const effect of effects) {
             const createFn = this.wasmModule[effect.create];
             if (createFn) {
                 const ptr = createFn();
+                // All MODEL 1 effects enabled by default
+                const isModel1 = effect.name.startsWith('model1_');
+                const defaultEnabled = isModel1;
+
                 this.effects.set(effect.name, {
                     ptr: ptr,
                     name: effect.name,
-                    enabled: false
+                    enabled: defaultEnabled
                 });
-                console.log(`[Worklet] ${effect.name}: 0x${ptr.toString(16)}`);
+
+                // Actually enable MODEL 1 effects in WASM
+                if (defaultEnabled) {
+                    const setEnabledFn = this.wasmModule[toggleMap[effect.name]];
+                    if (setEnabledFn) {
+                        setEnabledFn(ptr, 1);
+                    }
+                }
+
+                console.log(`[Worklet] ${effect.name}: 0x${ptr.toString(16)} (${defaultEnabled ? 'enabled' : 'disabled'})`);
             }
         }
     }
@@ -103,28 +132,37 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
 
         // Map to mangled names
         const toggleMap = {
+            model1_trim: 'Na',
+            model1_hpf: 'Ua',
+            model1_lpf: 'ab',
+            model1_sculpt: 'ib',
             distortion: 'j', filter: 't', eq: 'D', compressor: 'P',
             delay: 'ba', reverb: 'na', phaser: 'za'
         };
 
         const resetMap = {
+            model1_trim: 'Ja',
+            model1_hpf: 'Sa',
+            model1_lpf: '_a',
+            model1_sculpt: 'gb',
             distortion: 'f', filter: 'q', eq: 'A', compressor: 'M',
             delay: '$', reverb: 'la', phaser: 'xa'
         };
 
-        // Always reset effect state when toggling to avoid clicks
+        // Reset filter state BEFORE changing enabled state to clear any artifacts
         const resetFn = this.wasmModule[resetMap[name]];
         if (resetFn) {
             resetFn(effect.ptr);
         }
 
+        // Set enabled/disabled state
         const setEnabledFn = this.wasmModule[toggleMap[name]];
         if (setEnabledFn) {
             setEnabledFn(effect.ptr, enabled ? 1 : 0);
             effect.enabled = enabled;
         }
 
-        // Reset DC blocker state when toggling effects to prevent clicks
+        // Reset DC blocker state when toggling to prevent clicks
         this.dcBlockerX = [0, 0];
         this.dcBlockerY = [0, 0];
     }
@@ -135,6 +173,10 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         
         // Map to mangled function names
         const paramMap = {
+            model1_trim: { drive: 'La' },
+            model1_hpf: { cutoff: 'Va' },
+            model1_lpf: { cutoff: 'bb' },
+            model1_sculpt: { frequency: 'jb', gain: 'kb' },
             distortion: { drive: 'k', mix: 'l' },
             filter: { cutoff: 'u', resonance: 'v' },
             eq: { low: 'E', mid: 'F', high: 'G' },
@@ -183,6 +225,10 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         
         // Process through enabled effects
         const processMap = {
+            model1_trim: 'Ka',
+            model1_hpf: 'Ta',
+            model1_lpf: '$a',
+            model1_sculpt: 'hb',
             distortion: 'i', filter: 's', eq: 'C', compressor: 'O',
             delay: 'aa', reverb: 'ma', phaser: 'ya'
         };
@@ -191,11 +237,25 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             if (effect.enabled) {
                 const processFn = this.wasmModule[processMap[name]];
                 if (processFn) {
-                    processFn(effect.ptr, this.audioBufferPtr, frames, 48000);
+                    processFn(effect.ptr, this.audioBufferPtr, frames, sampleRate);
                 }
             }
         }
-        
+
+        // Poll M1 TRIM peak level periodically (every 128 frames ~= 2.7ms at 48kHz for responsive LED)
+        this.peakLevelFrameCounter += frames;
+        if (this.peakLevelFrameCounter >= 128) {
+            this.peakLevelFrameCounter = 0;
+            const trimEffect = this.effects.get('model1_trim');
+            if (trimEffect && trimEffect.enabled) {
+                const getPeakLevelFn = this.wasmModule['Pa']; // fx_model1_trim_get_peak_level
+                if (getPeakLevelFn) {
+                    const peakLevel = getPeakLevelFn(trimEffect.ptr);
+                    this.port.postMessage({ type: 'peakLevel', level: peakLevel });
+                }
+            }
+        }
+
         // De-interleave output with soft clipping and DC removal
         const outputL = output[0];
         const outputR = output[1] || output[0];
@@ -206,34 +266,16 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             let l = heapF32[i * 2];
             let r = heapF32[i * 2 + 1];
 
-            // Proper DC blocker (high-pass filter): y[n] = x[n] - x[n-1] + alpha * y[n-1]
-            const dcL = l - this.dcBlockerX[0] + alpha * this.dcBlockerY[0];
-            const dcR = r - this.dcBlockerX[1] + alpha * this.dcBlockerY[1];
-
-            this.dcBlockerX[0] = l;
-            this.dcBlockerX[1] = r;
-            this.dcBlockerY[0] = dcL;
-            this.dcBlockerY[1] = dcR;
-
-            // Soft clip to prevent harsh distortion
-            l = Math.tanh(dcL * 0.8);
-            r = Math.tanh(dcR * 0.8);
-
-            // Smooth crossfade at buffer boundaries to prevent clicks
-            if (i < 8) {
-                const fade = i / 8;
-                l = this.lastFrame[0] * (1 - fade) + l * fade;
-                r = this.lastFrame[1] * (1 - fade) + r * fade;
+            // Only soft clip if signal is actually clipping (> 1.0)
+            if (Math.abs(l) > 1.0) {
+                l = Math.sign(l) * Math.tanh(Math.abs(l));
+            }
+            if (Math.abs(r) > 1.0) {
+                r = Math.sign(r) * Math.tanh(Math.abs(r));
             }
 
             outputL[i] = l;
             outputR[i] = r;
-
-            // Store last few samples for next buffer
-            if (i === frames - 1) {
-                this.lastFrame[0] = l;
-                this.lastFrame[1] = r;
-            }
         }
         
         return true;

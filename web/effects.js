@@ -75,6 +75,9 @@ class AudioEffectsProcessor {
                 } else if (e.data.type === 'error') {
                     clearTimeout(timeout);
                     reject(new Error(`Worklet: ${e.data.error}`));
+                } else if (e.data.type === 'peakLevel') {
+                    // Update M1 TRIM LED indicator
+                    this.updateTrimLED(e.data.level);
                 }
             };
         });
@@ -127,6 +130,32 @@ class AudioEffectsProcessor {
         });
     }
 
+    updateTrimLED(peakLevel) {
+        const led = document.getElementById('trim-drive-led');
+        if (!led) return;
+
+        // LED glows based on peak level (matching plugin behavior)
+        // Starts glowing at 0.5 (-6dB), full red at 1.0+ (0dB/clipping)
+        const threshold = 0.5;
+        let glow = (peakLevel - threshold) / (1.0 - threshold);
+        glow = Math.max(0, Math.min(glow, 1)); // Clamp 0-1
+
+        // Fill the circle based on glow level
+        if (glow > 0.01) {
+            const r = Math.round(180 + glow * 75); // 180 -> 255
+            led.style.backgroundColor = `rgb(${r}, 0, 0)`;
+            const shadowIntensity = 3 + glow * 8;
+            led.style.boxShadow = `
+                0 0 ${shadowIntensity}px rgba(255, 0, 0, ${glow * 0.8}),
+                inset 0 0 3px rgba(255, 255, 255, ${glow * 0.3})
+            `;
+        } else {
+            // Dark/off state
+            led.style.backgroundColor = '#300';
+            led.style.boxShadow = 'inset 0 1px 2px rgba(0,0,0,0.5)';
+        }
+    }
+
     async loadAudioFile(file) {
         console.log(`📂 Loading: ${file.name}`);
         const arrayBuffer = await file.arrayBuffer();
@@ -168,24 +197,28 @@ class AudioEffectsProcessor {
         }
         this.isPlaying = false;
         console.log('⏹ Microphone stopped');
+
+        // Reset Drive LED when microphone stops
+        this.updateTrimLED(0);
     }
 
     play() {
         if (this.sourceNode && this.sourceNode.stop) {
             this.sourceNode.stop();
         }
-        
+
         if (this.audioBuffer) {
-            console.log('▶️ Playing...');
+            console.log('▶️ Playing (looped)...');
             this.sourceNode = this.audioContext.createBufferSource();
             this.sourceNode.buffer = this.audioBuffer;
-            
+            this.sourceNode.loop = true;  // Enable looping
+
             console.log('🔗 File → WASM');
             this.sourceNode.connect(this.workletNode);
-            
+
             this.sourceNode.start(0);
             this.isPlaying = true;
-            
+
             this.sourceNode.onended = () => {
                 this.isPlaying = false;
                 updatePlaybackButtons();
@@ -215,10 +248,19 @@ class AudioEffectsProcessor {
             } else if (type === 'sweep') {
                 const startFreq = 20;
                 const endFreq = 20000;
+                const logRatio = Math.log(endFreq / startFreq);
+
+                // Exponential sweep with continuous phase
                 for (let i = 0; i < data.length; i++) {
                     const t = i / sampleRate;
-                    const freq = startFreq * Math.pow(endFreq / startFreq, t / duration);
-                    data[i] = Math.sin(2 * Math.PI * freq * t) * 0.3;
+                    const progress = t / duration;
+
+                    // Phase accumulation for exponential sweep (integral of frequency)
+                    // phase(t) = 2π * f0 * T / ln(f1/f0) * [(f1/f0)^(t/T) - 1]
+                    const phase = 2 * Math.PI * startFreq * duration / logRatio *
+                                  (Math.exp(logRatio * progress) - 1);
+
+                    data[i] = Math.sin(phase) * 0.3;
                 }
             }
         }
@@ -271,6 +313,9 @@ class AudioEffectsProcessor {
         }
         this.stopMicrophone();
         this.isPlaying = false;
+
+        // Reset Drive LED when playback stops
+        this.updateTrimLED(0);
     }
 
     getAnalyserData() {
@@ -285,6 +330,16 @@ class AudioEffectsProcessor {
 const processor = new AudioEffectsProcessor();
 let visualizerAnimationId = null;
 
+// MODEL 1 input effects (all enabled by default)
+// Display order: TRIM → HPF → SCULPT → LPF
+const model1EffectDefinitions = [
+    { name: 'model1_trim', title: 'M1 Trim', params: ['drive'], enabledByDefault: true },
+    { name: 'model1_hpf', title: 'M1 HPF', params: ['cutoff'], enabledByDefault: true },
+    { name: 'model1_sculpt', title: 'M1 Sculpt', params: ['frequency', 'gain'], enabledByDefault: true },
+    { name: 'model1_lpf', title: 'M1 LPF', params: ['cutoff'], enabledByDefault: true }
+];
+
+// Standard effects (with on/off toggle)
 const effectDefinitions = [
     { name: 'distortion', title: 'Distortion', params: ['drive', 'mix'] },
     { name: 'filter', title: 'Filter', params: ['cutoff', 'resonance'] },
@@ -295,9 +350,136 @@ const effectDefinitions = [
     { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] }
 ];
 
+function createModel1UI() {
+    const container = document.getElementById('model1-effects');
+    if (!container) return;
+
+    model1EffectDefinitions.forEach(def => {
+        const card = document.createElement('div');
+        card.className = 'effect-card';
+        card.id = `effect-${def.name}`;
+
+        const header = document.createElement('div');
+        header.className = 'effect-header';
+
+        const title = document.createElement('div');
+        title.className = 'effect-title';
+        title.textContent = def.title;
+
+        // Add toggle switch for all MODEL 1 effects
+        const toggle = document.createElement('div');
+        const enabledByDefault = def.enabledByDefault || false;
+        toggle.className = enabledByDefault ? 'toggle-switch active' : 'toggle-switch';
+        toggle.dataset.enabled = enabledByDefault ? 'true' : 'false';
+        toggle.onclick = () => {
+            const enabled = toggle.dataset.enabled !== 'true';
+            toggle.dataset.enabled = enabled;
+            processor.toggleEffect(def.name, enabled);
+            toggle.classList.toggle('active', enabled);
+            card.classList.toggle('enabled', enabled);
+        };
+        header.appendChild(toggle);
+        if (enabledByDefault) {
+            card.classList.add('enabled');
+        }
+
+        header.appendChild(title);
+        card.appendChild(header);
+
+        // Create knobs container for parameters
+        const knobsContainer = document.createElement('div');
+        knobsContainer.style.cssText = 'display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; justify-content: center;';
+
+        def.params.forEach((paramName, idx) => {
+            // Set defaults based on effect and parameter
+            let defaultValue = 50;
+            if (def.name === 'model1_trim' && paramName === 'drive') {
+                defaultValue = 70; // 0.7 = neutral, no drive
+            } else if (def.name === 'model1_hpf' && paramName === 'cutoff') {
+                defaultValue = 0; // FLAT (20Hz)
+            } else if (def.name === 'model1_lpf' && paramName === 'cutoff') {
+                defaultValue = 100; // FLAT (20kHz)
+            } else if (def.name === 'model1_sculpt') {
+                if (paramName === 'frequency') {
+                    defaultValue = 50; // Mid frequency
+                } else if (paramName === 'gain') {
+                    defaultValue = 50; // 0dB (neutral)
+                }
+            }
+
+            // Container for knob + LED
+            const knobWrapper = document.createElement('div');
+            const isTrim = def.name === 'model1_trim' && paramName === 'drive';
+            knobWrapper.style.cssText = isTrim
+                ? 'display: flex; flex-direction: row; align-items: center; gap: 20px;'
+                : 'display: flex; flex-direction: column; align-items: center;';
+
+            // Use pad-knob component for each parameter
+            const knob = document.createElement('pad-knob');
+            knob.id = `${def.name}-${paramName}-knob`;
+            // For TRIM effect, label it as "TRIM" not "DRIVE"
+            knob.setAttribute('label', isTrim ? 'TRIM' : paramName.toUpperCase());
+            knob.setAttribute('cc', String(idx + 1));
+            knob.setAttribute('value', String(defaultValue));
+            knob.setAttribute('min', '0');
+            knob.setAttribute('max', '100');
+            knob.style.cssText = 'width: 100px; height: 140px;';
+
+            // Listen for value changes
+            knob.addEventListener('cc-change', (e) => {
+                const value = e.detail.value / 100;
+                processor.setParameter(def.name, paramName, value);
+            });
+
+            knobWrapper.appendChild(knob);
+
+            // Add LED indicator for TRIM drive
+            if (isTrim) {
+                const ledContainer = document.createElement('div');
+                ledContainer.style.cssText = 'display: flex; flex-direction: column; align-items: center; gap: 5px;';
+
+                const led = document.createElement('div');
+                led.id = 'trim-drive-led';
+                led.style.cssText = `
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background-color: #300;
+                    border: 2px solid #666;
+                    box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+                    transition: background-color 0.05s, box-shadow 0.05s;
+                `;
+
+                const ledLabel = document.createElement('div');
+                ledLabel.textContent = 'DRIVE';
+                ledLabel.style.cssText = 'color: #aaa; font-size: 11px; font-weight: bold; margin-top: 2px;';
+
+                ledContainer.appendChild(led);
+                ledContainer.appendChild(ledLabel);
+                knobWrapper.appendChild(ledContainer);
+
+                // Store LED reference for later updates
+                window.trimDriveLED = led;
+            }
+
+            knobsContainer.appendChild(knobWrapper);
+        });
+
+        card.appendChild(knobsContainer);
+        container.appendChild(card);
+    });
+
+    // Set default values for Model 1 effects
+    processor.setParameter('model1_trim', 'drive', 0.7);
+    processor.setParameter('model1_hpf', 'cutoff', 0.0);  // FLAT (20Hz)
+    processor.setParameter('model1_lpf', 'cutoff', 1.0);  // FLAT (20kHz)
+    processor.setParameter('model1_sculpt', 'frequency', 0.5);  // Mid frequency
+    processor.setParameter('model1_sculpt', 'gain', 0.5);  // 0dB neutral
+}
+
 function createEffectUI() {
     const container = document.getElementById('effects');
-    
+
     effectDefinitions.forEach(def => {
         const card = document.createElement('div');
         card.className = 'effect-card';
@@ -340,14 +522,12 @@ function createEffectUI() {
             knob.setAttribute('value', String(defaultValue));
             knob.setAttribute('min', '0');
             knob.setAttribute('max', '100');
-            knob.setAttribute('sublabel', '50%');
             knob.style.cssText = 'width: 100px; height: 140px;';
 
             // Listen for value changes
             knob.addEventListener('cc-change', (e) => {
                 const value = e.detail.value / 100;
                 processor.setParameter(def.name, paramName, value);
-                knob.setAttribute('sublabel', `${e.detail.value}%`);
             });
 
             knobsContainer.appendChild(knob);
@@ -359,21 +539,56 @@ function createEffectUI() {
     });
 }
 
+function drawSpectrum() {
+    const canvas = document.getElementById('spectrum');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const bufferLength = processor.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    processor.analyser.getByteFrequencyData(dataArray);
+
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const barWidth = (canvas.width / bufferLength) * 2.5;
+    let barHeight;
+    let x = 0;
+
+    for (let i = 0; i < bufferLength; i++) {
+        barHeight = (dataArray[i] / 255) * canvas.height;
+
+        const hue = (i / bufferLength) * 20; // Red spectrum
+        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        x += barWidth + 1;
+    }
+}
+
 function drawVisualizer() {
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
-    
+
+    // Initialize spectrum canvas
+    const spectrumCanvas = document.getElementById('spectrum');
+    if (spectrumCanvas) {
+        spectrumCanvas.width = spectrumCanvas.offsetWidth;
+        spectrumCanvas.height = spectrumCanvas.offsetHeight;
+    }
+
     const draw = () => {
         visualizerAnimationId = requestAnimationFrame(draw);
-        
+
         const dataArray = processor.getAnalyserData();
         const bufferLength = dataArray.length;
-        
+
         ctx.fillStyle = '#0a0a0a';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
+
         // Grid
         ctx.strokeStyle = '#1a1a1a';
         ctx.lineWidth = 1;
@@ -384,32 +599,35 @@ function drawVisualizer() {
             ctx.lineTo(canvas.width, y);
             ctx.stroke();
         }
-        
+
         // Waveform
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#CF1A37';
         ctx.beginPath();
-        
+
         const sliceWidth = canvas.width / bufferLength;
         let x = 0;
-        
+
         for (let i = 0; i < bufferLength; i++) {
             const v = dataArray[i] / 128.0;
             const y = v * canvas.height / 2;
-            
+
             if (i === 0) {
                 ctx.moveTo(x, y);
             } else {
                 ctx.lineTo(x, y);
             }
-            
+
             x += sliceWidth;
         }
-        
+
         ctx.lineTo(canvas.width, canvas.height / 2);
         ctx.stroke();
+
+        // Draw spectrum analyzer
+        drawSpectrum();
     };
-    
+
     draw();
 }
 
@@ -485,6 +703,7 @@ document.getElementById('testSignal').addEventListener('change', (e) => {
 (async () => {
     try {
         await processor.init();
+        createModel1UI();
         createEffectUI();
         drawVisualizer();
     } catch (error) {

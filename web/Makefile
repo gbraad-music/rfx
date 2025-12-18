@@ -15,6 +15,10 @@ SOURCES = $(EFFECTS_DIR)/fx_distortion.c \
           $(EFFECTS_DIR)/fx_delay.c \
           $(EFFECTS_DIR)/fx_reverb.c \
           $(EFFECTS_DIR)/fx_phaser.c \
+          $(EFFECTS_DIR)/fx_model1_trim.c \
+          $(EFFECTS_DIR)/fx_model1_hpf.c \
+          $(EFFECTS_DIR)/fx_model1_lpf.c \
+          $(EFFECTS_DIR)/fx_model1_sculpt.c \
           wasm_bindings.c
 
 OUTPUT = regroove-effects.js
@@ -52,7 +56,23 @@ EXPORTED_FUNCTIONS = \
     "_fx_phaser_create", "_fx_phaser_destroy", "_fx_phaser_reset",\
     "_fx_phaser_set_enabled", "_fx_phaser_set_rate", "_fx_phaser_set_depth", "_fx_phaser_set_feedback",\
     "_fx_phaser_get_enabled", "_fx_phaser_get_rate", "_fx_phaser_get_depth", "_fx_phaser_get_feedback",\
-    "_fx_phaser_process_f32"\
+    "_fx_phaser_process_f32",\
+    "_fx_model1_trim_create", "_fx_model1_trim_destroy", "_fx_model1_trim_reset",\
+    "_fx_model1_trim_set_enabled", "_fx_model1_trim_set_drive",\
+    "_fx_model1_trim_get_enabled", "_fx_model1_trim_get_drive", "_fx_model1_trim_get_peak_level",\
+    "_fx_model1_trim_process_interleaved",\
+    "_fx_model1_hpf_create", "_fx_model1_hpf_destroy", "_fx_model1_hpf_reset",\
+    "_fx_model1_hpf_set_enabled", "_fx_model1_hpf_set_cutoff",\
+    "_fx_model1_hpf_get_enabled", "_fx_model1_hpf_get_cutoff",\
+    "_fx_model1_hpf_process_interleaved",\
+    "_fx_model1_lpf_create", "_fx_model1_lpf_destroy", "_fx_model1_lpf_reset",\
+    "_fx_model1_lpf_set_enabled", "_fx_model1_lpf_set_cutoff",\
+    "_fx_model1_lpf_get_enabled", "_fx_model1_lpf_get_cutoff",\
+    "_fx_model1_lpf_process_interleaved",\
+    "_fx_model1_sculpt_create", "_fx_model1_sculpt_destroy", "_fx_model1_sculpt_reset",\
+    "_fx_model1_sculpt_set_enabled", "_fx_model1_sculpt_set_frequency", "_fx_model1_sculpt_set_gain",\
+    "_fx_model1_sculpt_get_enabled", "_fx_model1_sculpt_get_frequency", "_fx_model1_sculpt_get_gain",\
+    "_fx_model1_sculpt_process_interleaved"\
   ]'
 
 all: $(OUTPUT)

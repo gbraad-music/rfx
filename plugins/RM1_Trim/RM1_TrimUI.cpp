@@ -6,6 +6,7 @@
 #include "DistrhoUI.hpp"
 #include "DearImGui.hpp"
 #include "imgui-knobs.h"
+#include "../rfx_ui_utils.h"
 
 START_NAMESPACE_DISTRHO
 USE_NAMESPACE_DGL
@@ -72,6 +73,9 @@ private:
     protected:
         void onImGuiDisplay() override
         {
+            // Apply Regroove style (black background, red accent)
+            RFX::UI::setupStyle();
+
             ImGui::SetNextWindowPos(ImVec2(0, 0));
             ImGui::SetNextWindowSize(ImVec2(getWidth(), getHeight()));
 

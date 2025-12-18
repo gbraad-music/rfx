@@ -380,6 +380,11 @@ class AudioEffectsProcessor {
 const processor = new AudioEffectsProcessor();
 let visualizerAnimationId = null;
 
+// VU Meter state (peak hold with decay)
+let vuLeftPeak = 0;
+let vuRightPeak = 0;
+const VU_DECAY_RATE = 0.92;  // Smoother decay (more dampening)
+
 // MODEL 1 input effects (all enabled by default)
 // Display order: TRIM → HPF → SCULPT → LPF
 const model1EffectDefinitions = [
@@ -641,6 +646,190 @@ function drawSpectrum() {
     }
 }
 
+function drawVUMeter() {
+    const canvas = document.getElementById('vumeter');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Get stereo channel data
+    const bufferLength = processor.analyser.fftSize;
+    const timeData = new Float32Array(bufferLength);
+    processor.analyser.getFloatTimeDomainData(timeData);
+
+    // Calculate PEAK for left and right channels (interleaved stereo)
+    let leftPeak = 0;
+    let rightPeak = 0;
+
+    // Assume stereo interleaved: L R L R L R...
+    for (let i = 0; i < timeData.length; i += 2) {
+        leftPeak = Math.max(leftPeak, Math.abs(timeData[i]));
+        if (i + 1 < timeData.length) {
+            rightPeak = Math.max(rightPeak, Math.abs(timeData[i + 1]));
+        }
+    }
+
+    // Convert to dB and map to needle position
+    // -20dB at rest (bottom), 0dBFS at max (RED/clipping)
+    const peakToDb = (peak) => {
+        if (peak < 0.00001) return -100; // Silence
+        return 20 * Math.log10(peak);
+    };
+
+    const dbToNeedle = (db) => {
+        // Map -20dB to 0.0 (bottom), 0dBFS to 1.0 (top/RED)
+        return Math.max(0, Math.min(1, (db + 20) / 20));
+    };
+
+    const leftDb = peakToDb(leftPeak);
+    const rightDb = peakToDb(rightPeak);
+    const leftNeedle = dbToNeedle(leftDb);
+    const rightNeedle = dbToNeedle(rightDb);
+
+    // Peak hold with decay
+    vuLeftPeak = Math.max(leftNeedle, vuLeftPeak * VU_DECAY_RATE);
+    vuRightPeak = Math.max(rightNeedle, vuRightPeak * VU_DECAY_RATE);
+
+    // Clear canvas
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, width, height);
+
+    // Dimensions
+    const pivotY = height / 2;  // Center vertically
+    const arcRadius = Math.min(width * 0.4, height * 0.45);
+    const needleLength = arcRadius * 0.85;  // Needle shorter than arc
+
+    // LEFT METER (pivot on left edge)
+    const leftPivotX = width * 0.08;
+
+    // Draw left arc scale - from +90° to -90° counterclockwise (bottom, through right, to top) - INWARD
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(leftPivotX, pivotY, arcRadius, Math.PI / 2, -Math.PI / 2, true);
+    ctx.stroke();
+
+    // Scale marks for left
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const angle = Math.PI / 2 - (Math.PI * i / 10);
+        const x1 = leftPivotX + arcRadius * Math.cos(angle);
+        const y1 = pivotY + arcRadius * Math.sin(angle);
+        const x2 = leftPivotX + (arcRadius - 8) * Math.cos(angle);
+        const y2 = pivotY + (arcRadius - 8) * Math.sin(angle);
+
+        // Red zone for top ticks (last 20%)
+        ctx.strokeStyle = i >= 8 ? '#CF1A37' : '#666';
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+    }
+
+    // LEFT needle: rests at +90° (bottom), swings toward -90°/270° (top)
+    const leftAngle = Math.PI / 2 - vuLeftPeak * Math.PI;
+    ctx.save();
+    ctx.translate(leftPivotX, pivotY);
+    ctx.rotate(leftAngle);
+
+    // Needle shadow
+    ctx.strokeStyle = 'rgba(207, 26, 55, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(needleLength, 0);
+    ctx.stroke();
+
+    // Needle
+    ctx.strokeStyle = '#CF1A37';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(needleLength, 0);
+    ctx.stroke();
+
+    // Needle tip
+    ctx.fillStyle = '#CF1A37';
+    ctx.beginPath();
+    ctx.arc(needleLength, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // Pivot point
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    ctx.arc(leftPivotX, pivotY, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // RIGHT METER (pivot on right edge)
+    const rightPivotX = width * 0.92;
+
+    // Draw right arc scale - from +90° to +270° (bottom, through left, to top) - INWARD
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(rightPivotX, pivotY, arcRadius, Math.PI / 2, Math.PI * 3 / 2);
+    ctx.stroke();
+
+    // Scale marks for right
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+        const angle = Math.PI / 2 + (Math.PI * i / 10);
+        const x1 = rightPivotX + arcRadius * Math.cos(angle);
+        const y1 = pivotY + arcRadius * Math.sin(angle);
+        const x2 = rightPivotX + (arcRadius - 8) * Math.cos(angle);
+        const y2 = pivotY + (arcRadius - 8) * Math.sin(angle);
+
+        // Red zone for top ticks (last 20%)
+        ctx.strokeStyle = i >= 8 ? '#CF1A37' : '#666';
+
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+    }
+
+    // RIGHT needle: rests at +90° (bottom), swings toward +270° (top)
+    const rightAngle = Math.PI / 2 + vuRightPeak * Math.PI;
+    ctx.save();
+    ctx.translate(rightPivotX, pivotY);
+    ctx.rotate(rightAngle);
+
+    // Needle shadow
+    ctx.strokeStyle = 'rgba(207, 26, 55, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(needleLength, 0);
+    ctx.stroke();
+
+    // Needle
+    ctx.strokeStyle = '#CF1A37';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(needleLength, 0);
+    ctx.stroke();
+
+    // Needle tip
+    ctx.fillStyle = '#CF1A37';
+    ctx.beginPath();
+    ctx.arc(needleLength, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // Pivot point
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    ctx.arc(rightPivotX, pivotY, 5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
 function drawVisualizer() {
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
@@ -652,6 +841,13 @@ function drawVisualizer() {
     if (spectrumCanvas) {
         spectrumCanvas.width = spectrumCanvas.offsetWidth;
         spectrumCanvas.height = spectrumCanvas.offsetHeight;
+    }
+
+    // Initialize VU meter canvas
+    const vuCanvas = document.getElementById('vumeter');
+    if (vuCanvas) {
+        vuCanvas.width = vuCanvas.offsetWidth;
+        vuCanvas.height = vuCanvas.offsetHeight;
     }
 
     const draw = () => {
@@ -700,6 +896,9 @@ function drawVisualizer() {
 
         // Draw spectrum analyzer
         drawSpectrum();
+
+        // Draw VU meter
+        drawVUMeter();
     };
 
     draw();

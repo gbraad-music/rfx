@@ -1,0 +1,12 @@
+# Generated files from Emscripten build
+regroove-effects.js
+regroove-effects.wasm
+*.js.mem
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db

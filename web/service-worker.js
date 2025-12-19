@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v60';
+const CACHE_NAME = 'rfx-effects-v61';
 const ASSETS = [
     './',
     './index.html',
@@ -50,7 +50,7 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Fetch event - NETWORK FIRST (always check for updates)
+// Fetch event - CACHE FIRST (offline-first, reliable on flaky networks)
 self.addEventListener('fetch', (event) => {
     // Skip caching external resources
     if (!event.request.url.startsWith(self.location.origin)) {
@@ -58,27 +58,37 @@ self.addEventListener('fetch', (event) => {
     }
 
     event.respondWith(
-        // Try network first, fallback to cache
-        fetch(event.request).then((networkResponse) => {
-            // Clone the response immediately before it's consumed
-            // Only cache valid responses (not opaque or error responses)
-            if (networkResponse && networkResponse.status === 200) {
-                const responseToCache = networkResponse.clone();
-                // Cache asynchronously (don't block the response)
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                }).catch(err => {
-                    console.warn('[ServiceWorker] Failed to cache:', event.request.url, err.message);
+        // Try cache FIRST for instant response
+        caches.match(event.request).then((cachedResponse) => {
+            if (cachedResponse) {
+                // Serve from cache immediately (offline-first)
+                console.log('[ServiceWorker] Serving from cache:', event.request.url);
+
+                // Update cache in background (stale-while-revalidate)
+                fetch(event.request).then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(event.request, networkResponse.clone());
+                        });
+                    }
+                }).catch(() => {
+                    // Network failed, but we already served from cache, so ignore
                 });
+
+                return cachedResponse;
             }
-            return networkResponse;
-        }).catch(() => {
-            // Network failed, try cache
-            return caches.match(event.request).then((cachedResponse) => {
-                if (cachedResponse) {
-                    return cachedResponse;
+
+            // Not in cache, try network
+            return fetch(event.request).then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200) {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, responseToCache);
+                    });
                 }
-                // No cache either - offline fallback
+                return networkResponse;
+            }).catch(() => {
+                // Network failed and not in cache - offline fallback
                 if (event.request.destination === 'document') {
                     return caches.match('./index.html');
                 }

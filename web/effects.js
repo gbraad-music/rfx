@@ -1180,23 +1180,60 @@ document.getElementById('testSignal').addEventListener('change', (e) => {
     }
 });
 
-// Click-to-seek on progress bar
-document.getElementById('playbackProgress').addEventListener('click', (e) => {
-    const progressContainer = e.currentTarget;
-    // Find the actual progress bar background (the container with the border)
+// Drag/click to seek on progress bar
+(function() {
+    const progressContainer = document.getElementById('playbackProgress');
     const progressBarBg = progressContainer.querySelector('div[style*="background: var(--bg-tertiary)"]');
-    if (!progressBarBg) return;
+    let isDragging = false;
 
-    const rect = progressBarBg.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+    function seekToPosition(clientX) {
+        if (!progressBarBg) return;
 
-    const pos = processor.getCurrentPosition();
-    if (pos.duration > 0) {
-        const seekTime = percentage * pos.duration;
-        processor.seek(seekTime);
+        const rect = progressBarBg.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const percentage = Math.max(0, Math.min(1, x / rect.width));
+
+        const pos = processor.getCurrentPosition();
+        if (pos.duration > 0) {
+            const seekTime = percentage * pos.duration;
+            processor.seek(seekTime);
+        }
     }
-});
+
+    // Mouse events
+    progressContainer.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        seekToPosition(e.clientX);
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            seekToPosition(e.clientX);
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+
+    // Touch events
+    progressContainer.addEventListener('touchstart', (e) => {
+        isDragging = true;
+        seekToPosition(e.touches[0].clientX);
+        e.preventDefault();
+    });
+
+    document.addEventListener('touchmove', (e) => {
+        if (isDragging) {
+            seekToPosition(e.touches[0].clientX);
+        }
+    });
+
+    document.addEventListener('touchend', () => {
+        isDragging = false;
+    });
+})();
 
 // Initialize
 (async () => {
@@ -1230,13 +1267,15 @@ document.getElementById('playbackProgress').addEventListener('click', (e) => {
             const value = parseFloat(e.target.value);
             const percentage = processor.setTempo(value);
 
-            // Update display
-            tempoValue.textContent = `${percentage.toFixed(1)}%`;
+            // Show as delta from 100%
+            const delta = percentage - 100;
+            const sign = delta > 0 ? '+' : '';
+            tempoValue.textContent = `${sign}${delta.toFixed(1)}%`;
         });
 
         // Set initial tempo value (64 = 100% neutral)
         processor.setTempo(64);
-        tempoValue.textContent = '100.0%';
+        tempoValue.textContent = '0.0%';
 
     } catch (error) {
         console.error('INIT ERROR:', error);

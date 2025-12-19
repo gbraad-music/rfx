@@ -17,6 +17,11 @@ class AudioEffectsProcessor {
 
         // Stereo peaks from worklet for VU meter
         this.stereoPeaks = { left: 0, right: 0 };
+        
+        // Streaming playback
+        this.mediaElementSource = null;
+        this.audioElement = null;
+        this.isStreaming = false;
     }
 
     async init() {
@@ -164,10 +169,39 @@ class AudioEffectsProcessor {
     }
 
     async loadAudioFile(file) {
-        console.log(`📂 Loading: ${file.name}`);
-        const arrayBuffer = await file.arrayBuffer();
-        this.audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
-        console.log(`✅ Loaded: ${(this.audioBuffer.duration).toFixed(1)}s @ ${this.audioBuffer.sampleRate}Hz`);
+        console.log(`📂 Streaming: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        
+        // Use MediaElement for instant streaming playback
+        this.cleanupAudioElement();
+        
+        this.audioElement = new Audio();
+        this.audioElement.loop = true;
+        this.audioElement.src = URL.createObjectURL(file);
+        
+        // Wait for enough data to start playing
+        await new Promise((resolve, reject) => {
+            this.audioElement.oncanplay = resolve;
+            this.audioElement.onerror = reject;
+            this.audioElement.load();
+        });
+        
+        console.log(`✅ Ready to stream: ${file.name}`);
+        this.isStreaming = true;
+    }
+    
+    cleanupAudioElement() {
+        if (this.mediaElementSource) {
+            this.mediaElementSource.disconnect();
+            this.mediaElementSource = null;
+        }
+        if (this.audioElement) {
+            this.audioElement.pause();
+            if (this.audioElement.src) {
+                URL.revokeObjectURL(this.audioElement.src);
+            }
+            this.audioElement = null;
+        }
+        this.isStreaming = false;
     }
 
     async startMicrophone() {
@@ -264,11 +298,23 @@ class AudioEffectsProcessor {
             }
         }
 
-        if (this.audioBuffer) {
+        if (this.isStreaming && this.audioElement) {
+            console.log('▶️ Streaming playback...');
+            
+            if (!this.mediaElementSource) {
+                this.mediaElementSource = this.audioContext.createMediaElementSource(this.audioElement);
+                console.log('🔗 Stream → WASM');
+                this.mediaElementSource.connect(this.workletNode);
+            }
+            
+            this.audioElement.play();
+            this.isPlaying = true;
+            
+        } else if (this.audioBuffer) {
             console.log('▶️ Playing (looped)...');
             this.sourceNode = this.audioContext.createBufferSource();
             this.sourceNode.buffer = this.audioBuffer;
-            this.sourceNode.loop = true;  // Enable looping
+            this.sourceNode.loop = true;
 
             console.log('🔗 File → WASM');
             this.sourceNode.connect(this.workletNode);
@@ -327,6 +373,11 @@ class AudioEffectsProcessor {
     }
 
     stop() {
+        if (this.audioElement) {
+            this.audioElement.pause();
+            this.audioElement.currentTime = 0;
+        }
+        
         if (this.sourceNode && this.sourceNode.stop) {
             try {
                 // Create a fade-out gain node
@@ -373,6 +424,16 @@ class AudioEffectsProcessor {
 
         // Reset Drive LED when playback stops
         this.updateTrimLED(0);
+    }
+    
+    getCurrentPosition() {
+        if (this.audioElement && this.isPlaying) {
+            return {
+                current: this.audioElement.currentTime,
+                duration: this.audioElement.duration || 0
+            };
+        }
+        return { current: 0, duration: 0 };
     }
 
     getAnalyserData() {
@@ -825,6 +886,27 @@ function drawVUMeter() {
     ctx.fill();
 }
 
+function updatePlaybackPosition() {
+    const pos = processor.getCurrentPosition();
+    const progressContainer = document.getElementById('playbackProgress');
+    
+    if (pos.duration > 0) {
+        progressContainer.style.display = 'block';
+        
+        const formatTime = (seconds) => {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        };
+        
+        document.getElementById('currentTime').textContent = formatTime(pos.current);
+        document.getElementById('totalTime').textContent = formatTime(pos.duration);
+        document.getElementById('progressBar').style.width = `${(pos.current / pos.duration) * 100}%`;
+    } else {
+        progressContainer.style.display = 'none';
+    }
+}
+
 function drawVisualizer() {
     const canvas = document.getElementById('visualizer');
     const ctx = canvas.getContext('2d');
@@ -894,13 +976,17 @@ function drawVisualizer() {
 
         // Draw VU meter
         drawVUMeter();
+        
+        // Update playback position
+        updatePlaybackPosition();
     };
 
     draw();
 }
 
 function updatePlaybackButtons() {
-    document.getElementById('playBtn').disabled = !processor.audioBuffer || processor.isPlaying;
+    const hasAudio = processor.audioBuffer || processor.isStreaming;
+    document.getElementById('playBtn').disabled = !hasAudio || processor.isPlaying;
     document.getElementById('stopBtn').disabled = !processor.isPlaying;
 }
 
@@ -924,8 +1010,13 @@ document.getElementById('audioFile').addEventListener('change', async (e) => {
                 processor.stopMicrophone();
                 document.getElementById('micBtn').textContent = '🎤 Microphone';
             }
-            updateStatus(`Loading: ${file.name}...`, 'wasm');
+            processor.stop();
+            
+            const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+            updateStatus(`Streaming ${sizeMB}MB: ${file.name}...`, 'wasm');
+            
             await processor.loadAudioFile(file);
+            
             updateStatus(`Ready: ${file.name}`, 'wasm');
             updatePlaybackButtons();
         } catch (error) {

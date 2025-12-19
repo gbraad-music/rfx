@@ -358,6 +358,16 @@
                 </select>
             </div>
 
+            <div id="playbackProgress" style="display: none; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">
+                    <span id="currentTime">0:00</span>
+                    <span id="totalTime">0:00</span>
+                </div>
+                <div style="background: var(--bg-tertiary); height: 4px; border: 1px solid var(--border); position: relative;">
+                    <div id="progressBar" style="background: #CF1A37; height: 100%; width: 0%; transition: width 0.1s;"></div>
+                </div>
+            </div>
+
             <div style="display: flex; gap: 10px; margin-bottom: 20px;">
                 <div class="visualizer-container" style="flex: 2.5;">
                     <canvas id="visualizer"></canvas>

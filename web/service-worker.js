@@ -1,11 +1,14 @@
-const CACHE_NAME = 'rfx-effects-v62';
+const CACHE_NAME = 'rfx-effects-v63';
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
-    './icon.svg',
-    './icon-192.png',
-    './icon-512.png',
+    './favicon.svg',
+    './favicon.ico',
+    './favicon-96x96.png',
+    './apple-touch-icon.png',
+    './icon-192x192.png',
+    './icon-512x512.png',
     './effects.js',
     './audio-worklet-processor.js',
     './regroove-effects.js',

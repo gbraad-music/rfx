@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regrooved Synthesizer Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #CF1A37;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .section {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            color: #0066FF;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #2a2a2a;
+            padding-bottom: 5px;
+        }
+
+        /* MIDI Source Selection */
+        .midi-source {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        select, button {
+            background: #2a2a2a;
+            color: #fff;
+            border: 1px solid #3a3a3a;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        select:hover, button:hover {
+            border-color: #4a4a4a;
+        }
+
+        button:active {
+            background: #0066FF;
+        }
+
+        button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        /* Synth Engine Selection */
+        .synth-engines {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .synth-engines button.active {
+            background: #CF1A37;
+            border-color: #CF1A37;
+        }
+
+        /* Visualizations Section */
+        .viz-container {
+            display: grid;
+            grid-template-columns: 200px 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        /* Frequency Visualizer */
+        .freq-viz {
+            display: flex;
+            gap: 10px;
+            height: 150px;
+            align-items: flex-end;
+            background: #0a0a0a;
+            padding: 10px;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+        }
+
+        .freq-bar {
+            flex: 1;
+            background: linear-gradient(to top, #CF1A37, #ff3333);
+            min-height: 2px;
+            border-radius: 2px;
+            transition: height 0.1s;
+            position: relative;
+        }
+
+        .freq-label {
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: #666;
+            white-space: nowrap;
+        }
+
+        /* Waveform/Spectrum Canvas */
+        canvas {
+            width: 100%;
+            height: 150px;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+        }
+
+        /* Drum Pads */
+        .drum-pads {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+
+        .drum-pad {
+            aspect-ratio: 1;
+            background: #2a2a2a;
+            border: 2px solid #3a3a3a;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.1s;
+        }
+
+        .drum-pad:hover {
+            border-color: #4a4a4a;
+        }
+
+        .drum-pad:active, .drum-pad.active {
+            background: #CF1A37;
+            border-color: #ff3333;
+            transform: scale(0.95);
+        }
+
+        .drum-pad-name {
+            font-size: 12px;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .drum-pad-note {
+            font-size: 10px;
+            color: #666;
+        }
+
+        /* Status */
+        .status {
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+        }
+
+        .status-item {
+            color: #666;
+        }
+
+        .status-item span {
+            color: #0066FF;
+            font-weight: bold;
+        }
+
+        .status-item.connected span {
+            color: #00FF00;
+        }
+
+        /* Info */
+        .info {
+            font-size: 11px;
+            color: #666;
+            margin-top: 10px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Visualizations Section (at the top) -->
+        <div class="section">
+            <div class="section-title">Audio Analysis</div>
+            <div class="viz-container">
+                <div class="freq-viz">
+                    <div class="freq-bar" id="bassBar">
+                        <div class="freq-label">Bass</div>
+                    </div>
+                    <div class="freq-bar" id="midBar">
+                        <div class="freq-label">Mid</div>
+                    </div>
+                    <div class="freq-bar" id="highBar">
+                        <div class="freq-label">High</div>
+                    </div>
+                </div>
+                <canvas id="waveform"></canvas>
+                <canvas id="spectrum"></canvas>
+            </div>
+        </div>
+
+        <!-- MIDI Input Section -->
+        <div class="section">
+            <div class="section-title">MIDI Input Source</div>
+            <div class="midi-source">
+                <select id="midiInput">
+                    <option value="">Select MIDI Input...</option>
+                </select>
+                <button id="webrtcBtn">WebRTC MIDI</button>
+            </div>
+            <div class="status">
+                <div class="status-item" id="midiStatus">
+                    MIDI: <span>Not Connected</span>
+                </div>
+                <div class="status-item" id="synthStatus">
+                    Synth: <span>Not Initialized</span>
+                </div>
+            </div>
+
+            <!-- WebRTC MIDI Configuration (collapsible) -->
+            <div id="webrtc-config" style="display: none; margin-top: 15px; padding: 15px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 4px;">
+                <div style="padding: 10px; border-radius: 4px; margin-bottom: 15px; background: #0a0a0a; border: 1px solid #2a2a2a; font-size: 12px;" id="webrtc-status">
+                    ⚪ Not Connected
+                </div>
+
+                <div id="webrtc-setup">
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase; display: block; margin-bottom: 5px;">Step 1: Paste Offer from MIDI Bridge</label>
+                    <textarea id="webrtc-offer-input" placeholder="Paste the offer from midi-bridge here..." style="width: 100%; height: 120px; background: #0a0a0a; color: #fff; border: 1px solid #2a2a2a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; margin-bottom: 10px; resize: vertical;"></textarea>
+
+                    <button id="btnGenerateAnswer" style="width: 100%; padding: 10px; background: #0066FF; border: 1px solid #0088FF; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; margin-bottom: 15px;">Generate Answer</button>
+
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase; display: block; margin-bottom: 5px;">Step 2: Copy Answer and Paste in MIDI Bridge</label>
+                    <textarea id="webrtc-answer-output" readonly placeholder="Answer will appear here..." style="width: 100%; height: 120px; background: #0a0a0a; color: #0f0; border: 1px solid #2a2a2a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; margin-bottom: 10px; resize: vertical;"></textarea>
+
+                    <button id="btnCopyAnswer" style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 4px; color: white; cursor: pointer; margin-bottom: 15px;">Copy Answer to Clipboard</button>
+                </div>
+
+                <button id="btnDisconnectWebRTC" style="width: 100%; padding: 10px; background: #cc0000; border: 1px solid #ff0000; border-radius: 4px; color: white; cursor: pointer;">Disconnect</button>
+            </div>
+        </div>
+
+        <!-- Synth Engine Selection -->
+        <div class="section">
+            <div class="section-title">Synth Engine</div>
+            <div class="synth-engines">
+                <button id="btnSimple" class="active">Simple</button>
+                <button id="btnRGResonate1">RGResonate1 (WASM)</button>
+            </div>
+            <button id="btnInitSynth">Initialize Synthesizer</button>
+            <div class="info">
+                Simple: Basic Web Audio oscillators<br>
+                RGResonate1: WASM polyphonic synthesizer with resonant filters
+            </div>
+        </div>
+
+        <!-- RG909 Drum Machine -->
+        <div class="section">
+            <div class="section-title">Drum Engine</div>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button id="btnInitDrum">Initialize RG909 Drum</button>
+                <button id="btnRenderDrums" disabled>Render All Drums to WAV</button>
+            </div>
+            <div id="renderStatus" style="font-size: 12px; color: #666; margin-bottom: 15px;"></div>
+            <div class="drum-pads">
+                <div class="drum-pad" data-note="36">
+                    <div class="drum-pad-name">Bass Drum</div>
+                    <div class="drum-pad-note">C1 (36)</div>
+                </div>
+                <div class="drum-pad" data-note="38">
+                    <div class="drum-pad-name">Snare</div>
+                    <div class="drum-pad-note">D1 (38)</div>
+                </div>
+                <div class="drum-pad" data-note="37">
+                    <div class="drum-pad-name">Rimshot</div>
+                    <div class="drum-pad-note">C#1 (37)</div>
+                </div>
+                <div class="drum-pad" data-note="39">
+                    <div class="drum-pad-name">Hand Clap</div>
+                    <div class="drum-pad-note">D#1 (39)</div>
+                </div>
+                <div class="drum-pad" data-note="41">
+                    <div class="drum-pad-name">Tom Low</div>
+                    <div class="drum-pad-note">F1 (41)</div>
+                </div>
+                <div class="drum-pad" data-note="47">
+                    <div class="drum-pad-name">Tom Mid</div>
+                    <div class="drum-pad-note">B1 (47)</div>
+                </div>
+                <div class="drum-pad" data-note="50">
+                    <div class="drum-pad-name">Tom High</div>
+                    <div class="drum-pad-note">D2 (50)</div>
+                </div>
+                <div class="drum-pad" data-note="36">
+                    <div class="drum-pad-name">-</div>
+                    <div class="drum-pad-note">-</div>
+                </div>
+            </div>
+            <div class="info">
+                Click pads to trigger drums. MIDI notes C1-C#2 (36-49) trigger different drum sounds.
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Load MIDI stack (ES6 modules not needed for standalone scripts) -->
+    <script src="external/midi-manager.js"></script>
+    <script src="external/frequency-analyzer.js"></script>
+    <script src="external/midi-audio-synth.js"></script>
+    <script src="external/rgresonate1-synth.js"></script>
+    <script src="external/rg909-drum.js"></script>
+
+    <!-- Load WASM modules -->
+    <script src="synths/rg909-drum.js"></script>
+
+    <!-- WebRTC MIDI (loaded as module) -->
+    <script type="module" src="external/midi-rtc-bridge.js"></script>
+    <script type="module">
+        // Import and expose BrowserMIDIRTC globally for non-module scripts
+        import { BrowserMIDIRTC } from './external/midi-rtc-bridge.js';
+        window.BrowserMIDIRTC = BrowserMIDIRTC;
+    </script>
+
+    <script>
+        let audioContext;
+        let midiManager;
+        let webrtcMidi = null;
+        let currentSynth = null;
+        let drumSynth = null;
+        let sharedAnalyzer = null;
+        let selectedEngine = 'simple';
+        let isAudible = true;
+
+        // UI elements
+        const midiInput = document.getElementById('midiInput');
+        const midiStatus = document.getElementById('midiStatus');
+        const synthStatus = document.getElementById('synthStatus');
+        const bassBar = document.getElementById('bassBar');
+        const midBar = document.getElementById('midBar');
+        const highBar = document.getElementById('highBar');
+        const waveformCanvas = document.getElementById('waveform');
+        const spectrumCanvas = document.getElementById('spectrum');
+
+        // Initialize
+        async function init() {
+            // Create AudioContext
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            console.log('[Synth Test] AudioContext created:', audioContext.sampleRate, 'Hz');
+
+            // Initialize MIDI
+            midiManager = new MIDIManager();
+            const success = await midiManager.initialize();
+
+            if (success) {
+                updateMIDIInputList();
+                midiStatus.innerHTML = 'MIDI: <span>Ready</span>';
+            } else {
+                midiStatus.innerHTML = 'MIDI: <span style="color: #ff3333;">Not Available</span>';
+            }
+
+            // MIDI input selection
+            midiInput.addEventListener('change', (e) => {
+                if (e.target.value) {
+                    midiManager.connectInput(e.target.value);
+                    midiStatus.innerHTML = 'MIDI: <span class="connected">Connected</span>';
+                    midiStatus.classList.add('connected');
+                }
+            });
+
+            // WebRTC MIDI buttons
+            document.getElementById('webrtcBtn').addEventListener('click', toggleWebRTCConfig);
+            document.getElementById('btnGenerateAnswer').addEventListener('click', generateWebRTCAnswer);
+            document.getElementById('btnCopyAnswer').addEventListener('click', copyAnswerToClipboard);
+            document.getElementById('btnDisconnectWebRTC').addEventListener('click', disconnectWebRTCMIDI);
+
+            // Setup MIDI handlers (always listen to MIDI manager)
+            setupMIDIHandlers();
+
+            // Synth engine selection
+            document.getElementById('btnSimple').addEventListener('click', () => {
+                selectedEngine = 'simple';
+                document.getElementById('btnSimple').classList.add('active');
+                document.getElementById('btnRGResonate1').classList.remove('active');
+            });
+
+            document.getElementById('btnRGResonate1').addEventListener('click', () => {
+                selectedEngine = 'rgresonate1';
+                document.getElementById('btnRGResonate1').classList.add('active');
+                document.getElementById('btnSimple').classList.remove('active');
+            });
+
+            // Initialize synth
+            document.getElementById('btnInitSynth').addEventListener('click', initializeSynth);
+
+            // Initialize drum
+            document.getElementById('btnInitDrum').addEventListener('click', initializeDrum);
+
+            // Render drums
+            document.getElementById('btnRenderDrums').addEventListener('click', renderAllDrums);
+
+            // Drum pads
+            document.querySelectorAll('.drum-pad').forEach(pad => {
+                pad.addEventListener('mousedown', () => {
+                    const note = parseInt(pad.dataset.note);
+                    triggerDrum(note);
+                    pad.classList.add('active');
+                });
+                pad.addEventListener('mouseup', () => {
+                    pad.classList.remove('active');
+                });
+                pad.addEventListener('mouseleave', () => {
+                    pad.classList.remove('active');
+                });
+            });
+
+            // Start visualization
+            requestAnimationFrame(visualize);
+        }
+
+        function updateMIDIInputList() {
+            const inputs = midiManager.getInputs();
+            midiInput.innerHTML = '<option value="">Select MIDI Input...</option>';
+            inputs.forEach(input => {
+                const option = document.createElement('option');
+                option.value = input.id;
+                option.textContent = input.name;
+                midiInput.appendChild(option);
+            });
+        }
+
+        async function initializeSynth() {
+            // Resume AudioContext if needed
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            // Destroy existing synth
+            if (currentSynth) {
+                currentSynth.destroy();
+                currentSynth = null;
+            }
+
+            // Create shared analyzer if not exists
+            if (!sharedAnalyzer) {
+                sharedAnalyzer = new FrequencyAnalyzer(audioContext, {
+                    fftSize: 8192,
+                    smoothing: 0.8,
+                    updateRate: 50,
+                    sourceName: 'midi-synth',
+                    enableDecay: true
+                });
+                sharedAnalyzer.start();
+                console.log('[Synth Test] Created shared frequency analyzer');
+
+                // Listen to frequency events
+                sharedAnalyzer.on('*', (event) => {
+                    if (event.type === 'frequency' && event.data && event.data.bands) {
+                        updateFrequencyBars(event.data.bands);
+                    }
+                });
+            }
+
+            // Create synth based on selected engine
+            if (selectedEngine === 'rgresonate1') {
+                currentSynth = new RGResonate1Synth(audioContext);
+            } else {
+                currentSynth = new MIDIAudioSynth(audioContext);
+            }
+
+            await currentSynth.initialize();
+
+            // Connect synth to shared analyzer
+            currentSynth.masterGain.connect(sharedAnalyzer.inputGain);
+            console.log('[Synth Test] Connected synth to shared analyzer');
+
+            // Connect analyzer to speakers
+            sharedAnalyzer.connectTo(audioContext.destination);
+
+            synthStatus.innerHTML = `Synth: <span>${selectedEngine === 'rgresonate1' ? 'RGResonate1' : 'Simple'}</span>`;
+
+            // Don't call setAudible(true) - already connected through analyzer
+            // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
+        }
+
+        async function initializeDrum() {
+            // Resume AudioContext if needed
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            if (drumSynth) {
+                console.log('[Synth Test] RG909 Drum already initialized');
+                return;
+            }
+
+            drumSynth = new RG909Drum(audioContext);
+            await drumSynth.initialize();
+
+            // Create shared analyzer if not exists
+            if (!sharedAnalyzer) {
+                sharedAnalyzer = new FrequencyAnalyzer(audioContext, {
+                    fftSize: 8192,
+                    smoothing: 0.8,
+                    updateRate: 50,
+                    sourceName: 'midi-synth',
+                    enableDecay: true
+                });
+                sharedAnalyzer.start();
+                console.log('[Synth Test] Created shared frequency analyzer');
+
+                // Listen to frequency events
+                sharedAnalyzer.on('*', (event) => {
+                    if (event.type === 'frequency' && event.data && event.data.bands) {
+                        updateFrequencyBars(event.data.bands);
+                    }
+                });
+            }
+
+            // Connect drum to shared analyzer
+            drumSynth.masterGain.connect(sharedAnalyzer.inputGain);
+            console.log('[Synth Test] Connected drum to shared analyzer');
+
+            // Connect analyzer to speakers
+            sharedAnalyzer.connectTo(audioContext.destination);
+
+            // Don't call setAudible(true) - already connected through analyzer
+            // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
+
+            document.getElementById('btnInitDrum').textContent = 'RG909 Drum Initialized';
+            document.getElementById('btnInitDrum').disabled = true;
+            document.getElementById('btnRenderDrums').disabled = false;
+        }
+
+        function toggleWebRTCConfig() {
+            const config = document.getElementById('webrtc-config');
+            config.style.display = config.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function generateWebRTCAnswer() {
+            try {
+                const offerInput = document.getElementById('webrtc-offer-input');
+                const answerOutput = document.getElementById('webrtc-answer-output');
+                const statusEl = document.getElementById('webrtc-status');
+
+                const offerText = offerInput.value.trim();
+                if (!offerText) {
+                    statusEl.textContent = '❌ Please paste an offer first';
+                    statusEl.style.color = '#ff0000';
+                    return;
+                }
+
+                // Check if BrowserMIDIRTC is available
+                if (!window.BrowserMIDIRTC) {
+                    throw new Error('BrowserMIDIRTC not loaded yet - please wait');
+                }
+
+                console.log('[WebRTC MIDI] Creating receiver...');
+                statusEl.textContent = '🔄 Connecting...';
+                statusEl.style.color = '#ffaa00';
+
+                // Create WebRTC MIDI receiver
+                webrtcMidi = new window.BrowserMIDIRTC('receiver');
+                await webrtcMidi.initialize();
+                console.log('[WebRTC MIDI] Receiver initialized');
+
+                // Handle incoming MIDI messages
+                webrtcMidi.onMIDIMessage = (message) => {
+                    console.log('[WebRTC MIDI] Received:', message);
+                    // Forward to MIDI manager
+                    if (midiManager && message.data) {
+                        const midiData = new Uint8Array(message.data);
+                        const event = { data: midiData, timeStamp: message.timestamp || performance.now() };
+                        midiManager._handleMIDIMessage(event);
+                    }
+                };
+
+                // Handle connection state changes
+                webrtcMidi.onConnectionStateChange = (state) => {
+                    console.log('[WebRTC MIDI] Connection state:', state);
+                    if (state === 'connected') {
+                        statusEl.textContent = '✅ Connected - MIDI is flowing!';
+                        statusEl.style.color = '#00ff00';
+                        midiStatus.querySelector('span').textContent = 'WebRTC Connected';
+                        midiStatus.style.color = '#00ff00';
+                    } else if (state === 'disconnected' || state === 'failed') {
+                        statusEl.textContent = '❌ Connection failed or disconnected';
+                        statusEl.style.color = '#ff0000';
+                        midiStatus.querySelector('span').textContent = 'WebRTC Disconnected';
+                        midiStatus.style.color = '#ff0000';
+                    }
+                };
+
+                // Handle offer and get answer
+                const answer = await webrtcMidi.handleOffer(offerText);
+
+                // Display answer
+                answerOutput.value = answer;
+                statusEl.textContent = '🔵 Waiting for bridge to connect...';
+                statusEl.style.color = '#0066FF';
+                console.log('[WebRTC MIDI] Answer generated');
+
+            } catch (error) {
+                console.error('[WebRTC MIDI] Error:', error);
+                const statusEl = document.getElementById('webrtc-status');
+                statusEl.textContent = '❌ Error: ' + error.message;
+                statusEl.style.color = '#ff0000';
+            }
+        }
+
+        function copyAnswerToClipboard() {
+            const answerOutput = document.getElementById('webrtc-answer-output');
+            answerOutput.select();
+            navigator.clipboard.writeText(answerOutput.value).then(() => {
+                console.log('[WebRTC MIDI] Answer copied to clipboard');
+            }).catch(err => {
+                console.error('[WebRTC MIDI] Failed to copy:', err);
+            });
+        }
+
+        function disconnectWebRTCMIDI() {
+            if (webrtcMidi) {
+                webrtcMidi.close();
+                webrtcMidi = null;
+            }
+            const statusEl = document.getElementById('webrtc-status');
+            statusEl.textContent = '⚪ Not Connected';
+            statusEl.style.color = '#666';
+            document.getElementById('webrtc-offer-input').value = '';
+            document.getElementById('webrtc-answer-output').value = '';
+            midiStatus.querySelector('span').textContent = 'Not Connected';
+            midiStatus.style.color = '';
+            console.log('[WebRTC MIDI] Disconnected');
+        }
+
+        function setupMIDIHandlers() {
+            // Handle note on from regular MIDI
+            midiManager.on('noteon', (data) => {
+                console.log('[MIDI] Note ON:', data);
+                if (currentSynth) {
+                    currentSynth.handleNoteOn(data.note, data.velocity);
+                }
+                // Drum notes (MIDI notes 36-49)
+                if (drumSynth && data.note >= 36 && data.note <= 49) {
+                    drumSynth.triggerDrum(data.note, data.velocity);
+                }
+            });
+
+            // Handle note off from regular MIDI
+            midiManager.on('noteoff', (data) => {
+                console.log('[MIDI] Note OFF:', data);
+                if (currentSynth) {
+                    currentSynth.handleNoteOff(data.note);
+                }
+            });
+        }
+
+        function triggerDrum(note) {
+            if (!drumSynth) {
+                console.warn('[Synth Test] Drum not initialized');
+                return;
+            }
+            drumSynth.triggerDrum(note, 127);
+        }
+
+        async function toggleAudible() {
+            // Resume AudioContext if needed
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            isAudible = !isAudible;
+
+            if (currentSynth) {
+                await currentSynth.setAudible(isAudible);
+            }
+
+            if (drumSynth) {
+                await drumSynth.setAudible(isAudible);
+            }
+
+            document.getElementById('btnMute').textContent = isAudible ? 'Mute' : 'Unmute';
+        }
+
+        function stopAllNotes() {
+            if (currentSynth && currentSynth.stopAll) {
+                currentSynth.stopAll();
+            }
+        }
+
+        function updateFrequencyBars(bands) {
+            bassBar.style.height = (bands.bass * 100) + '%';
+            midBar.style.height = (bands.mid * 100) + '%';
+            highBar.style.height = (bands.high * 100) + '%';
+        }
+
+        function visualize() {
+            requestAnimationFrame(visualize);
+
+            if (!sharedAnalyzer) return;
+
+            const analyser = sharedAnalyzer.getAnalyser();
+            if (!analyser) return;
+
+            // Waveform
+            const waveformCtx = waveformCanvas.getContext('2d');
+            const waveformData = new Uint8Array(analyser.fftSize);
+            analyser.getByteTimeDomainData(waveformData);
+
+            waveformCtx.fillStyle = '#0a0a0a';
+            waveformCtx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+
+            waveformCtx.lineWidth = 2;
+            waveformCtx.strokeStyle = '#CF1A37';
+            waveformCtx.beginPath();
+
+            const sliceWidth = waveformCanvas.width / waveformData.length;
+            let x = 0;
+
+            for (let i = 0; i < waveformData.length; i++) {
+                const v = waveformData[i] / 128.0;
+                const y = v * waveformCanvas.height / 2;
+
+                if (i === 0) {
+                    waveformCtx.moveTo(x, y);
+                } else {
+                    waveformCtx.lineTo(x, y);
+                }
+
+                x += sliceWidth;
+            }
+
+            waveformCtx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);
+            waveformCtx.stroke();
+
+            // Spectrum
+            const spectrumCtx = spectrumCanvas.getContext('2d');
+            const frequencyData = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(frequencyData);
+
+            spectrumCtx.fillStyle = '#0a0a0a';
+            spectrumCtx.fillRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
+
+            const barWidth = (spectrumCanvas.width / frequencyData.length) * 2.5;
+            let barX = 0;
+
+            for (let i = 0; i < frequencyData.length; i++) {
+                const barHeight = (frequencyData[i] / 255) * spectrumCanvas.height;
+
+                const hue = (i / frequencyData.length) * 120; // Red to green
+                spectrumCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+                spectrumCtx.fillRect(barX, spectrumCanvas.height - barHeight, barWidth, barHeight);
+
+                barX += barWidth + 1;
+            }
+        }
+
+        // WAV file encoding
+        function encodeWAV(samples, sampleRate) {
+            const buffer = new ArrayBuffer(44 + samples.length * 2);
+            const view = new DataView(buffer);
+
+            // WAV header
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + samples.length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true); // PCM format
+            view.setUint16(20, 1, true);  // Mono
+            view.setUint16(22, 1, true);  // Channels
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true); // Byte rate
+            view.setUint16(32, 2, true);  // Block align
+            view.setUint16(34, 16, true); // Bits per sample
+            writeString(36, 'data');
+            view.setUint32(40, samples.length * 2, true);
+
+            // Convert float samples to 16-bit PCM
+            let offset = 44;
+            for (let i = 0; i < samples.length; i++) {
+                const s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return buffer;
+        }
+
+        // Render a single drum sound
+        async function renderDrumSound(note, drumName, duration = 2.0) {
+            // Use AudioContext's native sample rate to avoid resampling artifacts
+            const sampleRate = audioContext.sampleRate;
+            const totalFrames = Math.floor(duration * sampleRate);
+
+            // Load and patch WASM module to expose memory (same as worklet processor)
+            const jsResponse = await fetch('synths/rg909-drum.js');
+            const jsCode = await jsResponse.text();
+            const wasmResponse = await fetch('synths/rg909-drum.wasm');
+            const wasmBytes = await wasmResponse.arrayBuffer();
+
+            // Patch to expose wasmMemory
+            const modifiedCode = jsCode.replace(
+                ';return moduleRtn',
+                ';globalThis.__wasmMemoryRender=wasmMemory;return moduleRtn'
+            );
+
+            // Load module with patched code in isolated scope
+            let PatchedRG909Module;
+            (function() {
+                eval(modifiedCode);
+                PatchedRG909Module = RG909Module;
+            })();
+
+            const RG909Module = await PatchedRG909Module({
+                wasmBinary: wasmBytes
+            });
+
+            // Get memory reference
+            const wasmMemory = globalThis.__wasmMemoryRender;
+            delete globalThis.__wasmMemoryRender;
+
+            console.log('[Render] WASM module loaded with memory access');
+
+            // Create synth instance
+            const synthPtr = RG909Module._rg909_create(sampleRate);
+
+            // Trigger the drum
+            RG909Module._rg909_trigger_drum(synthPtr, note, 127, sampleRate);
+
+            // Allocate buffer for rendering
+            const framesPerBlock = 128;
+            const bufferPtr = RG909Module._malloc(framesPerBlock * 2 * 4); // stereo float32
+
+            // Output buffer (stereo)
+            const outputLeft = new Float32Array(totalFrames);
+            const outputRight = new Float32Array(totalFrames);
+
+            // Render in blocks
+            let currentFrame = 0;
+            while (currentFrame < totalFrames) {
+                const framesToRender = Math.min(framesPerBlock, totalFrames - currentFrame);
+
+                // Process audio
+                RG909Module._rg909_process_f32(synthPtr, bufferPtr, framesToRender, sampleRate);
+
+                // Access heap using memory reference (same as worklet)
+                const heapF32 = new Float32Array(
+                    wasmMemory.buffer,
+                    bufferPtr,
+                    framesToRender * 2
+                );
+
+                // Read samples from heap
+                for (let i = 0; i < framesToRender; i++) {
+                    outputLeft[currentFrame + i] = heapF32[i * 2];
+                    outputRight[currentFrame + i] = heapF32[i * 2 + 1];
+                }
+
+                currentFrame += framesToRender;
+            }
+
+            // Cleanup
+            RG909Module._free(bufferPtr);
+            RG909Module._rg909_destroy(synthPtr);
+
+            // Mix stereo to mono for comparison
+            const monoSamples = new Float32Array(totalFrames);
+            for (let i = 0; i < totalFrames; i++) {
+                monoSamples[i] = (outputLeft[i] + outputRight[i]) / 2;
+            }
+
+            // Encode to WAV
+            const wavBuffer = encodeWAV(monoSamples, sampleRate);
+            const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+
+            return {
+                name: drumName,
+                blob: blob,
+                url: URL.createObjectURL(blob)
+            };
+        }
+
+        // Render all drums
+        async function renderAllDrums() {
+            const renderBtn = document.getElementById('btnRenderDrums');
+            const statusDiv = document.getElementById('renderStatus');
+
+            renderBtn.disabled = true;
+            statusDiv.innerHTML = 'Rendering drums...';
+
+            const drums = [
+                { note: 36, name: 'BD_BassDrum' },
+                { note: 38, name: 'SD_Snare' },
+                { note: 37, name: 'RS_Rimshot' },
+                { note: 39, name: 'HC_HandClap' },
+                { note: 41, name: 'LT_TomLow' },
+                { note: 47, name: 'MT_TomMid' },
+                { note: 50, name: 'HT_TomHigh' }
+            ];
+
+            try {
+                const renderedFiles = [];
+
+                for (let i = 0; i < drums.length; i++) {
+                    const drum = drums[i];
+                    statusDiv.innerHTML = `Rendering ${drum.name}... (${i + 1}/${drums.length})`;
+
+                    const result = await renderDrumSound(drum.note, drum.name);
+                    renderedFiles.push(result);
+
+                    console.log(`[Render] Completed: ${drum.name}`);
+                }
+
+                // Create download links
+                statusDiv.innerHTML = `
+                    <div style="color: #00FF00; margin-bottom: 10px;">
+                        [DONE] All drums rendered successfully! Click links below to download:
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;">
+                        ${renderedFiles.map(file => `
+                            <a href="${file.url}" download="RG909_${file.name}.wav"
+                               style="color: #0066FF; text-decoration: none; padding: 5px; background: #2a2a2a; border-radius: 3px; text-align: center;">
+                                ${file.name}
+                            </a>
+                        `).join('')}
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('[Render] Error:', error);
+                statusDiv.innerHTML = `<span style="color: #ff3333;">Render failed: ${error.message}</span>`;
+            } finally {
+                renderBtn.disabled = false;
+            }
+        }
+
+        // Initialize on load
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

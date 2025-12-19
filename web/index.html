@@ -326,11 +326,6 @@
             <div class="subtitle">Web Audio Processor</div>
         </header>
 
-        <div id="status-bar" class="status-bar">
-            <span id="status-text">Initializing...</span>
-            <span id="mode-indicator">—</span>
-        </div>
-
         <div style="display: grid; grid-template-columns: 1fr auto; gap: 15px; margin-bottom: 20px;">
             <!-- Audio Source Section -->
             <div class="control-section" style="margin-bottom: 0;">
@@ -338,13 +333,13 @@
 
                 <div class="controls-grid">
                     <div class="file-input">
-                        <button>📁 Load Audio File</button>
+                        <button>📁 Load File</button>
                         <input type="file" id="audioFile" accept="audio/*">
                     </div>
 
-                    <button id="micBtn">🎤 Microphone</button>
+                    <button id="micBtn">🎤 Input/Mic</button>
                     <button id="playBtn" disabled>▶ Play</button>
-                    <button id="stopBtn" disabled>⏹ Stop</button>
+                    <button id="stopBtn" disabled>◼ Stop</button>
 
                     <select id="testSignal">
                         <option value="">Test Signal</option>
@@ -354,10 +349,14 @@
                     </select>
                 </div>
 
-                <div id="micDeviceSelector" class="device-selector" style="display: none;">
-                    <select id="micDeviceList">
+                <div id="audioSourceInfo" class="device-selector" style="display: none;">
+                    <!-- Shows mic selector OR file name (mutually exclusive) -->
+                    <select id="micDeviceList" style="display: none;">
                         <option value="">Select Microphone...</option>
                     </select>
+                    <div id="currentFileName" style="display: none; color: var(--text-primary); font-size: 0.85em; padding: 10px 15px; background: var(--bg-tertiary); border: 1px solid var(--border); letter-spacing: 1px; font-family: Arial, sans-serif; box-sizing: border-box; min-height: 38px;">
+                        <span style="color: var(--text-secondary); text-transform: uppercase;">Playing:</span> <span id="fileNameText"></span>
+                    </div>
                 </div>
 
                 <div id="playbackProgress" style="visibility: hidden; cursor: pointer; margin-top: 10px; height: 26px;" title="Click to seek">

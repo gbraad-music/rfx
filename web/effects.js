@@ -42,12 +42,9 @@ class AudioEffectsProcessor {
         this.masterGain.connect(this.analyser);
         this.analyser.connect(this.audioContext.destination);
 
-        updateStatus('Loading WebAssembly...', 'fallback');
-
         await this.initWasm();
 
         console.log('✅ WASM READY - Using Real C Code!');
-        updateStatus('✅ WASM LOADED - Real C Implementation', 'wasm');
 
         await this.enumerateDevices();
     }
@@ -114,21 +111,24 @@ class AudioEffectsProcessor {
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const audioInputs = devices.filter(d => d.kind === 'audioinput');
-            
+
             const selector = document.getElementById('micDeviceList');
             selector.innerHTML = '<option value="">Default Microphone</option>';
-            
+
             audioInputs.forEach(device => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
                 option.textContent = device.label || `Microphone ${selector.options.length}`;
                 selector.appendChild(option);
             });
-            
+
             if (audioInputs.length > 0) {
-                document.getElementById('micDeviceSelector').style.display = 'block';
+                // Show mic selector by default (no file loaded yet)
+                document.getElementById('audioSourceInfo').style.display = 'block';
+                document.getElementById('micDeviceList').style.display = 'block';
+                document.getElementById('currentFileName').style.display = 'none';
             }
-            
+
             selector.onchange = () => {
                 this.selectedMicDeviceId = selector.value || null;
                 console.log('🎤 Selected device:', selector.options[selector.selectedIndex].text);
@@ -214,21 +214,30 @@ class AudioEffectsProcessor {
 
     async loadAudioFile(file) {
         console.log(`📂 Streaming: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
-        
+
         this.cleanupAudioElement();
-        
+
         this.audioElement = new Audio();
         this.audioElement.loop = true;
         this.audioElement.src = URL.createObjectURL(file);
-        
+
         await new Promise((resolve, reject) => {
             this.audioElement.oncanplay = resolve;
             this.audioElement.onerror = reject;
             this.audioElement.load();
         });
-        
+
         console.log(`✅ Ready to stream: ${file.name}`);
         this.isStreaming = true;
+
+        // Show file name, hide mic selector
+        document.getElementById('audioSourceInfo').style.display = 'block';
+        document.getElementById('micDeviceList').style.display = 'none';
+        document.getElementById('currentFileName').style.display = 'block';
+        document.getElementById('fileNameText').textContent = file.name;
+
+        // Update page title
+        document.title = `RFX: ${file.name}`;
     }
     
     cleanupAudioElement() {
@@ -244,6 +253,19 @@ class AudioEffectsProcessor {
             this.audioElement = null;
         }
         this.isStreaming = false;
+
+        // Hide file name, show mic selector (if available)
+        const micDeviceList = document.getElementById('micDeviceList');
+        if (micDeviceList && micDeviceList.options.length > 0) {
+            document.getElementById('audioSourceInfo').style.display = 'block';
+            document.getElementById('micDeviceList').style.display = 'block';
+            document.getElementById('currentFileName').style.display = 'none';
+        } else {
+            document.getElementById('audioSourceInfo').style.display = 'none';
+        }
+
+        // Reset page title
+        document.title = 'Regroove Effects Tester';
     }
 
     async startMicrophone() {
@@ -392,6 +414,10 @@ class AudioEffectsProcessor {
 
     generateTestSignal(type) {
         console.log(`🔊 Generating ${type} signal...`);
+
+        // Clean up any loaded audio file first
+        this.cleanupAudioElement();
+
         const duration = 5;
         const sampleRate = this.audioContext.sampleRate;
         const buffer = this.audioContext.createBuffer(2, duration * sampleRate, sampleRate);
@@ -433,10 +459,8 @@ class AudioEffectsProcessor {
     }
 
     stop() {
-        if (this.audioElement) {
-            this.audioElement.pause();
-            this.audioElement.currentTime = 0;
-        }
+        // Clean up audio file/stream
+        this.cleanupAudioElement();
         
         if (this.sourceNode && this.sourceNode.stop) {
             try {
@@ -481,6 +505,9 @@ class AudioEffectsProcessor {
         }
         this.stopMicrophone();
         this.isPlaying = false;
+
+        // Clear audio buffer (for test signals)
+        this.audioBuffer = null;
 
         // Reset Drive LED when playback stops
         this.updateTrimLED(0);
@@ -550,10 +577,10 @@ const VU_SMOOTHING = 0.7;  // Heavy smoothing on incoming values (0.0 = no smoot
 // MODEL 1 input effects (all enabled by default)
 // Display order: TRIM → HPF → SCULPT → LPF
 const model1EffectDefinitions = [
-    { name: 'model1_trim', title: 'M1 Trim', params: ['drive'], enabledByDefault: true },
-    { name: 'model1_hpf', title: 'M1 HPF (Contour)', params: ['cutoff'], enabledByDefault: true },
-    { name: 'model1_sculpt', title: 'M1 Sculpt', params: ['frequency', 'gain'], enabledByDefault: true },
-    { name: 'model1_lpf', title: 'M1 LPF (Contour)', params: ['cutoff'], enabledByDefault: true }
+    { name: 'model1_trim', title: 'Trim', params: ['drive'], enabledByDefault: true },
+    { name: 'model1_hpf', title: 'Contour (HPF)', params: ['cutoff'], enabledByDefault: true },
+    { name: 'model1_sculpt', title: 'Sculpt (Cut/Boost)', params: ['frequency', 'gain'], enabledByDefault: true },
+    { name: 'model1_lpf', title: 'Contour (LPF)', params: ['cutoff'], enabledByDefault: true }
 ];
 
 // Standard effects (with on/off toggle)
@@ -1088,16 +1115,6 @@ function updatePlaybackButtons() {
     document.getElementById('stopBtn').disabled = !processor.isPlaying;
 }
 
-function updateStatus(message, type = 'fallback') {
-    const statusBar = document.getElementById('status-bar');
-    const statusText = document.getElementById('status-text');
-    const modeIndicator = document.getElementById('mode-indicator');
-    
-    statusText.textContent = message;
-    statusBar.className = `status-bar ${type}`;
-    modeIndicator.textContent = type === 'wasm' ? '[WASM]' : '[LOADING...]';
-}
-
 // Event Listeners
 document.getElementById('audioFile').addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -1106,19 +1123,14 @@ document.getElementById('audioFile').addEventListener('change', async (e) => {
             // Stop microphone if active when loading new audio
             if (processor.micStream) {
                 processor.stopMicrophone();
-                document.getElementById('micBtn').textContent = '🎤 Microphone';
             }
             processor.stop();
-            
-            const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-            updateStatus(`Streaming: ${file.name}...`, 'wasm');
-            
+
             await processor.loadAudioFile(file);
-            
-            updateStatus(`Ready: ${file.name}`, 'wasm');
+
             updatePlaybackButtons();
         } catch (error) {
-            updateStatus(`Error: ${error.message}`, 'fallback');
+            console.error('Error loading file:', error);
         }
     }
 });
@@ -1127,31 +1139,23 @@ document.getElementById('micBtn').addEventListener('click', async () => {
     try {
         if (processor.micStream) {
             processor.stopMicrophone();
-            updateStatus('Microphone stopped', 'wasm');
-            document.getElementById('micBtn').textContent = '🎤 Microphone';
         } else {
             await processor.startMicrophone();
-            updateStatus('Microphone ACTIVE', 'wasm');
-            document.getElementById('micBtn').textContent = '🎤 Stop Mic';
         }
         updatePlaybackButtons();
     } catch (error) {
-        updateStatus(`Mic error: ${error.message}`, 'fallback');
+        console.error('Mic error:', error);
     }
 });
 
 document.getElementById('playBtn').addEventListener('click', async () => {
     await processor.play();
     updatePlaybackButtons();
-    // Reset mic button text if mic was stopped
-    document.getElementById('micBtn').textContent = '🎤 Microphone';
 });
 
 document.getElementById('stopBtn').addEventListener('click', () => {
     processor.stop();
     updatePlaybackButtons();
-    document.getElementById('micBtn').textContent = '🎤 Microphone';
-    updateStatus('Stopped', 'wasm');
 });
 
 document.getElementById('testSignal').addEventListener('change', (e) => {
@@ -1159,10 +1163,18 @@ document.getElementById('testSignal').addEventListener('change', (e) => {
         // Stop microphone if active (generating test signal is like loading a file)
         if (processor.micStream) {
             processor.stopMicrophone();
-            document.getElementById('micBtn').textContent = '🎤 Microphone';
         }
         processor.generateTestSignal(e.target.value);
-        updateStatus(`Test: ${e.target.value}`, 'wasm');
+
+        // Show test signal name
+        document.getElementById('audioSourceInfo').style.display = 'block';
+        document.getElementById('micDeviceList').style.display = 'none';
+        document.getElementById('currentFileName').style.display = 'block';
+        document.getElementById('fileNameText').textContent = `Test: ${e.target.value}`;
+
+        // Update page title
+        document.title = `RFX: Test ${e.target.value}`;
+
         updatePlaybackButtons();
         e.target.value = '';
     }
@@ -1227,7 +1239,6 @@ document.getElementById('playbackProgress').addEventListener('click', (e) => {
         tempoValue.textContent = '100.0%';
 
     } catch (error) {
-        updateStatus(`❌ ERROR: ${error.message}`, 'fallback');
         console.error('INIT ERROR:', error);
         console.error('Stack:', error.stack);
     }

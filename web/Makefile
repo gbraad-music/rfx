@@ -84,6 +84,13 @@ all: $(OUTPUT)
 
 $(OUTPUT): $(SOURCES)
 	$(CC) $(CFLAGS) $(EXPORTED_FUNCTIONS) $(SOURCES) -o $(OUTPUT)
+	@echo "🔄 Auto-updating WASM function mappings..."
+	@python3 update-wasm-mappings.py || echo "⚠️ Failed to update mappings (continuing anyway)"
+	@echo "📦 Copying drop-in files to revision project..."
+	@if [ -d ~/Projects/revision/effects ]; then \
+		cp regroove-effects.wasm regroove-effects.js wasm-mappings.json ~/Projects/revision/effects/ && \
+		echo "   ✅ Copied to ~/Projects/revision/effects/"; \
+	fi
 
 clean:
 	rm -f $(OUTPUT) regroove-effects.wasm

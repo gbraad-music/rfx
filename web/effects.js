@@ -10,14 +10,15 @@ class AudioEffectsProcessor {
         this.audioBuffer = null;
         this.micStream = null;
         this.selectedMicDeviceId = null;
-        this.playbackGain = null;
+        this.masterGain = null;
+        this.playbackRate = 1.0; // Tempo control
 
         this.wasmModule = null;
         this.workletNode = null;
 
         // Stereo peaks from worklet for VU meter
         this.stereoPeaks = { left: 0, right: 0 };
-        
+
         // Streaming playback
         this.mediaElementSource = null;
         this.audioElement = null;
@@ -26,19 +27,28 @@ class AudioEffectsProcessor {
 
     async init() {
         console.log('🚀 Initializing Regroove Effects (WASM ONLY)');
-        
+
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Create master gain node
+        this.masterGain = this.audioContext.createGain();
+        this.masterGain.gain.value = 1.0; // Unity gain (0 dB)
+
+        // Create analyser
         this.analyser = this.audioContext.createAnalyser();
         this.analyser.fftSize = 2048;
+
+        // Audio graph: worklet → masterGain → analyser → destination
+        this.masterGain.connect(this.analyser);
         this.analyser.connect(this.audioContext.destination);
-        
+
         updateStatus('Loading WebAssembly...', 'fallback');
-        
+
         await this.initWasm();
-        
+
         console.log('✅ WASM READY - Using Real C Code!');
         updateStatus('✅ WASM LOADED - Real C Implementation', 'wasm');
-        
+
         await this.enumerateDevices();
     }
 
@@ -94,10 +104,10 @@ class AudioEffectsProcessor {
             };
         });
         
-        this.workletNode.connect(this.analyser);
-        
+        this.workletNode.connect(this.masterGain);
+
         console.log('🎉 COMPLETE!');
-        console.log('🔊 Audio: Source → WASM → Speakers');
+        console.log('🔊 Audio: Source → WASM → Master Gain → Speakers');
     }
 
     async enumerateDevices() {
@@ -140,6 +150,40 @@ class AudioEffectsProcessor {
             type: 'setParam',
             data: { effect: effectName, param: paramName, value }
         });
+    }
+
+    setMasterGain(value) {
+        // value is 0-127 from fader
+        // Map to 0-100% linearly (0 = 0%, 127 = 100%)
+        const percentage = (value / 127) * 100;
+        const gainLinear = value / 127; // 0.0 to 1.0
+
+        this.masterGain.gain.value = gainLinear;
+
+        return percentage;
+    }
+
+    setTempo(value) {
+        // value is 0-127 from fader
+        // 64 = 100% (neutral)
+        // 0 = 90% (10% slower)
+        // 127 = 110% (10% faster)
+
+        // Map 0-127 to 0.90-1.10
+        const percentage = 90 + (value / 127) * 20; // 90% to 110%
+        const playbackRate = percentage / 100;
+
+        // Apply tempo to streaming audio
+        if (this.audioElement && this.isStreaming) {
+            this.audioElement.playbackRate = playbackRate;
+        }
+
+        // For buffered audio (BufferSource), we can't change tempo on the fly
+        // It would require restarting with a new playback rate
+        // We'll just store it for the next time play() is called
+        this.playbackRate = playbackRate;
+
+        return percentage;
     }
 
     updateTrimLED(peakLevel) {
@@ -304,16 +348,19 @@ class AudioEffectsProcessor {
 
         if (this.isStreaming && this.audioElement) {
             console.log('▶️ Streaming playback...');
-            
+
             if (!this.mediaElementSource) {
                 this.mediaElementSource = this.audioContext.createMediaElementSource(this.audioElement);
                 console.log('🔗 Stream → WASM → Speakers');
                 this.mediaElementSource.connect(this.workletNode);
             }
-            
+
+            // Apply tempo (playback rate)
+            this.audioElement.playbackRate = this.playbackRate;
+
             await this.audioElement.play();
             this.isPlaying = true;
-            console.log('✅ Streaming');
+            console.log(`✅ Streaming at ${(this.playbackRate * 100).toFixed(1)}% tempo`);
             
         } else if (this.audioBuffer) {
             console.log('▶️ Playing (looped)...');
@@ -324,6 +371,7 @@ class AudioEffectsProcessor {
             this.sourceNode = this.audioContext.createBufferSource();
             this.sourceNode.buffer = this.audioBuffer;
             this.sourceNode.loop = true;
+            this.sourceNode.playbackRate.value = this.playbackRate; // Apply tempo
 
             console.log('🔗 Audio graph: BufferSource → WorkletNode → Analyser → Speakers');
             console.log(`   Worklet connected to: ${this.workletNode.numberOfOutputs} outputs`);
@@ -332,7 +380,7 @@ class AudioEffectsProcessor {
             this.sourceNode.start(0);
             this.isPlaying = true;
             this.startTime = this.audioContext.currentTime;
-            console.log(`✅ Playback started at ${this.startTime.toFixed(3)}s`);
+            console.log(`✅ Playback started at ${this.startTime.toFixed(3)}s, ${(this.playbackRate * 100).toFixed(1)}% tempo`);
 
             this.sourceNode.onended = () => {
                 this.isPlaying = false;
@@ -456,6 +504,29 @@ class AudioEffectsProcessor {
         return { current: 0, duration: 0 };
     }
 
+    seek(time) {
+        // Only streaming audio (audioElement) supports seeking
+        if (this.audioElement && this.isStreaming) {
+            this.audioElement.currentTime = time;
+            console.log(`⏩ Seeked to ${time.toFixed(1)}s`);
+        } else if (this.audioBuffer && this.isPlaying) {
+            // For buffered audio, we need to restart from the new position
+            const wasPlaying = this.isPlaying;
+            this.stop();
+            if (wasPlaying) {
+                this.sourceNode = this.audioContext.createBufferSource();
+                this.sourceNode.buffer = this.audioBuffer;
+                this.sourceNode.loop = true;
+                this.sourceNode.playbackRate.value = this.playbackRate; // Apply tempo
+                this.sourceNode.connect(this.workletNode);
+                this.sourceNode.start(0, time % this.audioBuffer.duration);
+                this.isPlaying = true;
+                this.startTime = this.audioContext.currentTime - time;
+                console.log(`⏩ Seeked to ${time.toFixed(1)}s (restarted buffer)`);
+            }
+        }
+    }
+
     getAnalyserData() {
         const bufferLength = this.analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
@@ -477,9 +548,9 @@ const VU_DECAY_RATE = 0.92;  // Smoother decay (more dampening)
 // Display order: TRIM → HPF → SCULPT → LPF
 const model1EffectDefinitions = [
     { name: 'model1_trim', title: 'M1 Trim', params: ['drive'], enabledByDefault: true },
-    { name: 'model1_hpf', title: 'M1 HPF', params: ['cutoff'], enabledByDefault: true },
+    { name: 'model1_hpf', title: 'M1 HPF (Contour)', params: ['cutoff'], enabledByDefault: true },
     { name: 'model1_sculpt', title: 'M1 Sculpt', params: ['frequency', 'gain'], enabledByDefault: true },
-    { name: 'model1_lpf', title: 'M1 LPF', params: ['cutoff'], enabledByDefault: true }
+    { name: 'model1_lpf', title: 'M1 LPF (Contour)', params: ['cutoff'], enabledByDefault: true }
 ];
 
 // Standard effects (with on/off toggle)
@@ -727,8 +798,8 @@ function drawSpectrum() {
     for (let i = 0; i < bufferLength; i++) {
         barHeight = (dataArray[i] / 255) * canvas.height;
 
-        const hue = (i / bufferLength) * 20; // Red spectrum
-        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+        //const hue = (i / bufferLength) * 20; // Red spectrum
+        ctx.fillStyle = `rgb(207, 26, 55)`;
 
         ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
         x += barWidth + 1;
@@ -1090,6 +1161,24 @@ document.getElementById('testSignal').addEventListener('change', (e) => {
     }
 });
 
+// Click-to-seek on progress bar
+document.getElementById('playbackProgress').addEventListener('click', (e) => {
+    const progressContainer = e.currentTarget;
+    // Find the actual progress bar background (the container with the border)
+    const progressBarBg = progressContainer.querySelector('div[style*="background: var(--bg-tertiary)"]');
+    if (!progressBarBg) return;
+
+    const rect = progressBarBg.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = Math.max(0, Math.min(1, clickX / rect.width));
+
+    const pos = processor.getCurrentPosition();
+    if (pos.duration > 0) {
+        const seekTime = percentage * pos.duration;
+        processor.seek(seekTime);
+    }
+});
+
 // Initialize
 (async () => {
     try {
@@ -1097,6 +1186,39 @@ document.getElementById('testSignal').addEventListener('change', (e) => {
         createModel1UI();
         createEffectUI();
         drawVisualizer();
+
+        // Setup master gain fader after processor is initialized
+        const gainFader = document.getElementById('gainFader');
+        const gainValue = document.getElementById('gainValue');
+
+        gainFader.addEventListener('change', (e) => {
+            const value = parseFloat(e.target.value);
+            const percentage = processor.setMasterGain(value);
+
+            // Update display
+            gainValue.textContent = `${percentage.toFixed(0)}%`;
+        });
+
+        // Set initial volume value (127 = 100%)
+        processor.setMasterGain(127);
+        gainValue.textContent = '100%';
+
+        // Setup tempo fader
+        const tempoFader = document.getElementById('tempoFader');
+        const tempoValue = document.getElementById('tempoValue');
+
+        tempoFader.addEventListener('change', (e) => {
+            const value = parseFloat(e.target.value);
+            const percentage = processor.setTempo(value);
+
+            // Update display
+            tempoValue.textContent = `${percentage.toFixed(1)}%`;
+        });
+
+        // Set initial tempo value (64 = 100% neutral)
+        processor.setTempo(64);
+        tempoValue.textContent = '100.0%';
+
     } catch (error) {
         updateStatus(`❌ ERROR: ${error.message}`, 'fallback');
         console.error('INIT ERROR:', error);

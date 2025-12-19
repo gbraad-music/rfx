@@ -10,7 +10,7 @@ class AudioEffectsProcessor {
         this.audioBuffer = null;
         this.micStream = null;
         this.selectedMicDeviceId = null;
-        this.playbackGain = null;  // For fade out
+        this.playbackGain = null;
 
         this.wasmModule = null;
         this.workletNode = null;
@@ -171,14 +171,12 @@ class AudioEffectsProcessor {
     async loadAudioFile(file) {
         console.log(`📂 Streaming: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
         
-        // Use MediaElement for instant streaming playback
         this.cleanupAudioElement();
         
         this.audioElement = new Audio();
         this.audioElement.loop = true;
         this.audioElement.src = URL.createObjectURL(file);
         
-        // Wait for enough data to start playing
         await new Promise((resolve, reject) => {
             this.audioElement.oncanplay = resolve;
             this.audioElement.onerror = reject;
@@ -282,7 +280,7 @@ class AudioEffectsProcessor {
         this.updateTrimLED(0);
     }
 
-    play() {
+    async play() {
         // Stop microphone if active
         if (this.micStream) {
             this.stopMicrophone();
@@ -298,29 +296,43 @@ class AudioEffectsProcessor {
             }
         }
 
+        // Resume AudioContext if suspended
+        if (this.audioContext.state !== 'running') {
+            await this.audioContext.resume();
+            console.log('✅ AudioContext resumed');
+        }
+
         if (this.isStreaming && this.audioElement) {
             console.log('▶️ Streaming playback...');
             
             if (!this.mediaElementSource) {
                 this.mediaElementSource = this.audioContext.createMediaElementSource(this.audioElement);
-                console.log('🔗 Stream → WASM');
+                console.log('🔗 Stream → WASM → Speakers');
                 this.mediaElementSource.connect(this.workletNode);
             }
             
-            this.audioElement.play();
+            await this.audioElement.play();
             this.isPlaying = true;
+            console.log('✅ Streaming');
             
         } else if (this.audioBuffer) {
             console.log('▶️ Playing (looped)...');
+            console.log(`   Buffer: ${this.audioBuffer.duration.toFixed(1)}s, ${this.audioBuffer.numberOfChannels}ch`);
+            console.log(`   AudioContext state: ${this.audioContext.state}`);
+            console.log(`   WorkletNode: ${this.workletNode ? 'READY' : 'MISSING!'}`);
+            
             this.sourceNode = this.audioContext.createBufferSource();
             this.sourceNode.buffer = this.audioBuffer;
             this.sourceNode.loop = true;
 
-            console.log('🔗 File → WASM');
+            console.log('🔗 Audio graph: BufferSource → WorkletNode → Analyser → Speakers');
+            console.log(`   Worklet connected to: ${this.workletNode.numberOfOutputs} outputs`);
             this.sourceNode.connect(this.workletNode);
 
             this.sourceNode.start(0);
             this.isPlaying = true;
+            this.startTime = this.audioContext.currentTime;
+            console.log(`✅ Playback started at ${this.startTime.toFixed(3)}s`);
 
             this.sourceNode.onended = () => {
                 this.isPlaying = false;
@@ -427,10 +439,18 @@ class AudioEffectsProcessor {
     }
     
     getCurrentPosition() {
-        if (this.audioElement && this.isPlaying) {
+        if (this.audioElement && this.isStreaming) {
             return {
                 current: this.audioElement.currentTime,
                 duration: this.audioElement.duration || 0
+            };
+        }
+        if (this.audioBuffer && this.isPlaying && this.startTime !== undefined) {
+            const elapsed = this.audioContext.currentTime - this.startTime;
+            const position = elapsed % this.audioBuffer.duration;
+            return {
+                current: position,
+                duration: this.audioBuffer.duration
             };
         }
         return { current: 0, duration: 0 };
@@ -467,7 +487,7 @@ const effectDefinitions = [
     { name: 'distortion', title: 'Distortion', params: ['drive', 'mix'] },
     { name: 'filter', title: 'Filter', params: ['cutoff', 'resonance'] },
     { name: 'eq', title: 'EQ', params: ['low', 'mid', 'high'] },
-    { name: 'compressor', title: 'Compressor', params: ['threshold', 'ratio', 'attack', 'release'] },
+    { name: 'compressor', title: 'Compressor', params: ['threshold', 'ratio', 'attack', 'release', 'makeup'] },
     { name: 'delay', title: 'Delay', params: ['time', 'feedback', 'mix'] },
     { name: 'reverb', title: 'Reverb', params: ['size', 'damping', 'mix'] },
     { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] },
@@ -985,7 +1005,7 @@ function drawVisualizer() {
 }
 
 function updatePlaybackButtons() {
-    const hasAudio = processor.audioBuffer || processor.isStreaming;
+    const hasAudio = processor.audioBuffer !== null || processor.isStreaming;
     document.getElementById('playBtn').disabled = !hasAudio || processor.isPlaying;
     document.getElementById('stopBtn').disabled = !processor.isPlaying;
 }
@@ -1013,7 +1033,7 @@ document.getElementById('audioFile').addEventListener('change', async (e) => {
             processor.stop();
             
             const sizeMB = (file.size / 1024 / 1024).toFixed(1);
-            updateStatus(`Streaming ${sizeMB}MB: ${file.name}...`, 'wasm');
+            updateStatus(`Streaming: ${file.name}...`, 'wasm');
             
             await processor.loadAudioFile(file);
             
@@ -1042,8 +1062,8 @@ document.getElementById('micBtn').addEventListener('click', async () => {
     }
 });
 
-document.getElementById('playBtn').addEventListener('click', () => {
-    processor.play();
+document.getElementById('playBtn').addEventListener('click', async () => {
+    await processor.play();
     updatePlaybackButtons();
     // Reset mic button text if mic was stopped
     document.getElementById('micBtn').textContent = '🎤 Microphone';

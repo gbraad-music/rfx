@@ -13,41 +13,41 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         this.dcBlockerY = [0, 0]; // Previous output for DC blocker
         this.peakLevelFrameCounter = 0; // Counter for peak level polling
 
-        // WASM function name mappings (mangled keys from Emscripten)
+        // WASM function name mappings (mangled keys from Emscripten after rebuild)
         this.WASM_FUNCS = {
             create: {
-                model1_trim: 'Ra', model1_sculpt: 'ob', model1_lpf: 'gb', model1_hpf: '_a',
+                model1_trim: 'Ta', model1_sculpt: 'qb', model1_lpf: 'ib', model1_hpf: 'ab',
                 distortion: 'd', filter: 'p', eq: 'z', compressor: 'L',
-                delay: 'Z', reverb: 'ja', phaser: 'va', stereo_widen: 'Ha'
-            },
-            set_enabled: {
-                model1_trim: 'Xa', model1_hpf: 'cb', model1_lpf: 'kb', model1_sculpt: 'sb',
-                distortion: 'j', filter: 't', eq: 'D', compressor: 'P',
-                delay: 'ba', reverb: 'na', phaser: 'za', stereo_widen: 'Ka'
-            },
-            reset: {
-                model1_trim: 'Ta', model1_hpf: 'ab', model1_lpf: 'ib', model1_sculpt: 'qb',
-                distortion: 'f', filter: 'q', eq: 'A', compressor: 'M',
                 delay: '$', reverb: 'la', phaser: 'xa', stereo_widen: 'Ja'
             },
+            set_enabled: {
+                model1_trim: 'Za', model1_hpf: 'eb', model1_lpf: 'mb', model1_sculpt: 'ub',
+                distortion: 'j', filter: 't', eq: 'D', compressor: 'P',
+                delay: 'da', reverb: 'pa', phaser: 'Ba', stereo_widen: 'Ma'
+            },
+            reset: {
+                model1_trim: 'Va', model1_hpf: 'cb', model1_lpf: 'kb', model1_sculpt: 'sb',
+                distortion: 'f', filter: 'q', eq: 'A', compressor: 'M',
+                delay: 'ba', reverb: 'na', phaser: 'za', stereo_widen: 'La'
+            },
             process: {
-                model1_trim: 'Ua', model1_hpf: 'bb', model1_lpf: 'jb', model1_sculpt: 'rb',
+                model1_trim: 'Wa', model1_hpf: 'db', model1_lpf: 'lb', model1_sculpt: 'tb',
                 distortion: 'i', filter: 's', eq: 'C', compressor: 'O',
-                delay: 'aa', reverb: 'ma', phaser: 'ya', stereo_widen: 'Qa'
+                delay: 'ca', reverb: 'oa', phaser: 'Aa', stereo_widen: 'Sa'
             },
             params: {
-                model1_trim: { drive: 'Va' },
-                model1_hpf: { cutoff: 'db' },
-                model1_lpf: { cutoff: 'lb' },
-                model1_sculpt: { frequency: 'tb', gain: 'ub' },
+                model1_trim: { drive: 'Xa' },
+                model1_hpf: { cutoff: 'fb' },
+                model1_lpf: { cutoff: 'nb' },
+                model1_sculpt: { frequency: 'vb', gain: 'wb' },
                 distortion: { drive: 'k', mix: 'l' },
                 filter: { cutoff: 'u', resonance: 'v' },
                 eq: { low: 'E', mid: 'F', high: 'G' },
-                compressor: { threshold: 'Q', ratio: 'R', attack: 'S', release: 'T' },
-                delay: { time: 'ca', feedback: 'da', mix: 'ea' },
-                reverb: { size: 'oa', damping: 'pa', mix: 'qa' },
-                phaser: { rate: 'Aa', depth: 'Ba', feedback: 'Ca' },
-                stereo_widen: { width: 'La', mix: 'Ma' }
+                compressor: { threshold: 'Q', ratio: 'R', attack: 'S', release: 'T', makeup: 'U' },
+                delay: { time: 'ea', feedback: 'fa', mix: 'ga' },
+                reverb: { size: 'qa', damping: 'ra', mix: 'sa' },
+                phaser: { rate: 'Ca', depth: 'Da', feedback: 'Ea' },
+                stereo_widen: { width: 'Na', mix: 'Oa' }
             }
         };
 
@@ -255,7 +255,7 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             this.peakLevelFrameCounter = 0;
             const trimEffect = this.effects.get('model1_trim');
             if (trimEffect && trimEffect.enabled) {
-                const getPeakLevelFn = this.wasmModule['Za']; // fx_model1_trim_get_peak_level
+                const getPeakLevelFn = this.wasmModule['$a']; // fx_model1_trim_get_peak_level
                 if (getPeakLevelFn) {
                     const peakLevel = getPeakLevelFn(trimEffect.ptr);
                     this.port.postMessage({ type: 'peakLevel', level: peakLevel });

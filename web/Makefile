@@ -42,9 +42,9 @@ EXPORTED_FUNCTIONS = \
     "_fx_eq_process_f32",\
     "_fx_compressor_create", "_fx_compressor_destroy", "_fx_compressor_reset",\
     "_fx_compressor_set_enabled", "_fx_compressor_set_threshold", "_fx_compressor_set_ratio",\
-    "_fx_compressor_set_attack", "_fx_compressor_set_release",\
+    "_fx_compressor_set_attack", "_fx_compressor_set_release", "_fx_compressor_set_makeup",\
     "_fx_compressor_get_enabled", "_fx_compressor_get_threshold", "_fx_compressor_get_ratio",\
-    "_fx_compressor_get_attack", "_fx_compressor_get_release",\
+    "_fx_compressor_get_attack", "_fx_compressor_get_release", "_fx_compressor_get_makeup",\
     "_fx_compressor_process_f32",\
     "_fx_delay_create", "_fx_delay_destroy", "_fx_delay_reset",\
     "_fx_delay_set_enabled", "_fx_delay_set_time", "_fx_delay_set_feedback", "_fx_delay_set_mix",\

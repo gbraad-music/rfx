@@ -1,19 +1,39 @@
-const CACHE_NAME = 'rfx-effects-v62';
+const CACHE_NAME = 'rfx-effects-v79';
 const ASSETS = [
     './',
     './index.html',
+    './synth.html',
     './manifest.json',
-    './icon.svg',
-    './icon-192.png',
-    './icon-512.png',
+    './favicon.svg',
+    './favicon.ico',
+    './favicon-96x96.png',
+    './apple-touch-icon.png',
+    './icon-192x192.png',
+    './icon-512x512.png',
     './effects.js',
     './audio-worklet-processor.js',
     './regroove-effects.js',
     './regroove-effects.wasm',
-    './wasm-mappings.json',
     './pad-knob.js',
     './svg-slider.js',
-    './fader-components.js'
+    './fader-components.js',
+    // Synth test page dependencies
+    './external/midi-rtc/midi-codec.js',
+    './external/midi-rtc/midi-utils.js',
+    './external/remote-channel.js',
+    './external/midi-rtc-bridge.js',
+    './external/webrtc-midi-source.js',
+    './external/midi-manager.js',
+    './external/frequency-analyzer.js',
+    './external/midi-audio-synth.js',
+    './external/rgresonate1-synth.js',
+    './external/rg909-drum.js',
+    './synths/synth-worklet-processor.js',
+    './synths/drum-worklet-processor.js',
+    './synths/rgresonate1-synth.js',
+    './synths/rgresonate1-synth.wasm',
+    './synths/rg909-drum.js',
+    './synths/rg909-drum.wasm'
 ];
 
 // Install event - cache assets

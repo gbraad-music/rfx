@@ -542,7 +542,10 @@ let visualizerAnimationId = null;
 // VU Meter state (peak hold with decay)
 let vuLeftPeak = 0;
 let vuRightPeak = 0;
-const VU_DECAY_RATE = 0.92;  // Smoother decay (more dampening)
+let vuLeftSmoothed = 0;
+let vuRightSmoothed = 0;
+const VU_DECAY_RATE = 0.95;  // Slower decay (more dampening)
+const VU_SMOOTHING = 0.7;  // Heavy smoothing on incoming values (0.0 = no smoothing, 1.0 = max smoothing)
 
 // MODEL 1 input effects (all enabled by default)
 // Display order: TRIM → HPF → SCULPT → LPF
@@ -835,9 +838,13 @@ function drawVUMeter() {
     const leftNeedle = dbToNeedle(leftDb);
     const rightNeedle = dbToNeedle(rightDb);
 
-    // Peak hold with decay
-    vuLeftPeak = Math.max(leftNeedle, vuLeftPeak * VU_DECAY_RATE);
-    vuRightPeak = Math.max(rightNeedle, vuRightPeak * VU_DECAY_RATE);
+    // Apply exponential smoothing to incoming values first
+    vuLeftSmoothed = vuLeftSmoothed * VU_SMOOTHING + leftNeedle * (1 - VU_SMOOTHING);
+    vuRightSmoothed = vuRightSmoothed * VU_SMOOTHING + rightNeedle * (1 - VU_SMOOTHING);
+
+    // Peak hold with decay on smoothed values
+    vuLeftPeak = Math.max(vuLeftSmoothed, vuLeftPeak * VU_DECAY_RATE);
+    vuRightPeak = Math.max(vuRightSmoothed, vuRightPeak * VU_DECAY_RATE);
 
     // Clear canvas
     ctx.fillStyle = '#0a0a0a';
@@ -845,21 +852,21 @@ function drawVUMeter() {
 
     // Dimensions
     const pivotY = height / 2;  // Center vertically
-    const arcRadius = Math.min(width * 0.4, height * 0.45);
+    const arcRadius = Math.min(width * 0.45, height * 0.6);  // Bigger arc for taller meters
     const needleLength = arcRadius * 0.85;  // Needle shorter than arc
 
     // LEFT METER (pivot on left edge)
-    const leftPivotX = width * 0.08;
+    const leftPivotX = width * 0.05;
 
     // Draw left arc scale - from +90° to -90° counterclockwise (bottom, through right, to top) - INWARD
     ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(leftPivotX, pivotY, arcRadius, Math.PI / 2, -Math.PI / 2, true);
     ctx.stroke();
 
     // Scale marks for left
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     for (let i = 0; i <= 10; i++) {
         const angle = Math.PI / 2 - (Math.PI * i / 10);
         const x1 = leftPivotX + arcRadius * Math.cos(angle);
@@ -909,21 +916,21 @@ function drawVUMeter() {
     // Pivot point
     ctx.fillStyle = '#666';
     ctx.beginPath();
-    ctx.arc(leftPivotX, pivotY, 5, 0, Math.PI * 2);
+    ctx.arc(leftPivotX, pivotY, 6, 0, Math.PI * 2);
     ctx.fill();
 
     // RIGHT METER (pivot on right edge)
-    const rightPivotX = width * 0.92;
+    const rightPivotX = width * 0.95;
 
     // Draw right arc scale - from +90° to +270° (bottom, through left, to top) - INWARD
     ctx.strokeStyle = '#333';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(rightPivotX, pivotY, arcRadius, Math.PI / 2, Math.PI * 3 / 2);
     ctx.stroke();
 
     // Scale marks for right
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1.5;
     for (let i = 0; i <= 10; i++) {
         const angle = Math.PI / 2 + (Math.PI * i / 10);
         const x1 = rightPivotX + arcRadius * Math.cos(angle);
@@ -973,28 +980,28 @@ function drawVUMeter() {
     // Pivot point
     ctx.fillStyle = '#666';
     ctx.beginPath();
-    ctx.arc(rightPivotX, pivotY, 5, 0, Math.PI * 2);
+    ctx.arc(rightPivotX, pivotY, 6, 0, Math.PI * 2);
     ctx.fill();
 }
 
 function updatePlaybackPosition() {
     const pos = processor.getCurrentPosition();
     const progressContainer = document.getElementById('playbackProgress');
-    
+
     if (pos.duration > 0) {
-        progressContainer.style.display = 'block';
-        
+        progressContainer.style.visibility = 'visible';
+
         const formatTime = (seconds) => {
             const mins = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         };
-        
+
         document.getElementById('currentTime').textContent = formatTime(pos.current);
         document.getElementById('totalTime').textContent = formatTime(pos.duration);
         document.getElementById('progressBar').style.width = `${(pos.current / pos.duration) * 100}%`;
     } else {
-        progressContainer.style.display = 'none';
+        progressContainer.style.visibility = 'hidden';
     }
 }
 

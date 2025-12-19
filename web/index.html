@@ -164,7 +164,7 @@
         .visualizer-container {
             background: var(--bg-primary);
             border: 1px solid var(--border);
-            height: 120px;
+            height: 200px;
             position: relative;
         }
 
@@ -360,7 +360,7 @@
                     </select>
                 </div>
 
-                <div id="playbackProgress" style="display: none; cursor: pointer; margin-top: 10px;" title="Click to seek">
+                <div id="playbackProgress" style="visibility: hidden; cursor: pointer; margin-top: 10px; height: 26px;" title="Click to seek">
                     <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">
                         <span id="currentTime">0:00</span>
                         <span id="totalTime">0:00</span>
@@ -371,13 +371,13 @@
                 </div>
 
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <div class="visualizer-container" style="flex: 2.5;">
+                    <div class="visualizer-container" style="flex: 2.5; height: 200px;">
                         <canvas id="visualizer"></canvas>
                     </div>
-                    <div class="visualizer-container" style="flex: 2.5;">
+                    <div class="visualizer-container" style="flex: 2.5; height: 200px;">
                         <canvas id="spectrum"></canvas>
                     </div>
-                    <div class="visualizer-container" style="flex: 0.7;">
+                    <div class="visualizer-container" style="flex: 1.0; height: 200px;">
                         <canvas id="vumeter"></canvas>
                     </div>
                 </div>

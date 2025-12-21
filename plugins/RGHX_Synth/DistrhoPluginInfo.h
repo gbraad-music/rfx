@@ -1,0 +1,33 @@
+/*
+ * RGHX Synth Plugin Info
+ */
+
+#ifndef DISTRHO_PLUGIN_INFO_H
+#define DISTRHO_PLUGIN_INFO_H
+
+#define RGHX_DISPLAY_NAME "RGHX - Regroove AHX Synth"
+#define RGHX_DESCRIPTION "AHX-style chiptune synthesizer"
+#define RGHX_WINDOW_TITLE "RGHX Synth"
+
+#define DISTRHO_PLUGIN_BRAND "Regroove"
+#define DISTRHO_PLUGIN_NAME  RGHX_DISPLAY_NAME
+#define DISTRHO_PLUGIN_URI   "https://github.com/gbraad/rfx/plugins/RGHX_Synth"
+
+#define DISTRHO_PLUGIN_HAS_UI        1
+#define DISTRHO_PLUGIN_IS_RT_SAFE    1
+#define DISTRHO_PLUGIN_IS_SYNTH      1
+#define DISTRHO_PLUGIN_NUM_INPUTS    0
+#define DISTRHO_PLUGIN_NUM_OUTPUTS   2
+#define DISTRHO_PLUGIN_WANT_PROGRAMS 0
+#define DISTRHO_PLUGIN_WANT_STATE    0
+#define DISTRHO_PLUGIN_WANT_TIMEPOS  0
+
+#define DISTRHO_UI_USE_NANOVG        0
+#define DISTRHO_UI_USER_RESIZABLE    0
+#define DISTRHO_UI_DEFAULT_WIDTH     700
+#define DISTRHO_UI_DEFAULT_HEIGHT    500
+
+#define DISTRHO_PLUGIN_LV2_CATEGORY "lv2:InstrumentPlugin"
+#define DISTRHO_PLUGIN_VST3_CATEGORIES "Instrument|Synth"
+
+#endif // DISTRHO_PLUGIN_INFO_H

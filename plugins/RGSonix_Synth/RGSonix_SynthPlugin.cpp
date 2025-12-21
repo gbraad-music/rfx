@@ -178,22 +178,22 @@ protected:
             break;
 
         case kParameterVelToAmp:
-            param.name = "Vel → Amp";
+            param.name = "Velocity to Amplitude";
             param.symbol = "vel_to_amp";
             param.ranges.def = 0.5f;
             break;
         case kParameterVelToPitch:
-            param.name = "Vel → Pitch";
+            param.name = "Velocity to Pitch";
             param.symbol = "vel_to_pitch";
             param.ranges.def = 0.0f;
             break;
         case kParameterVelToAttack:
-            param.name = "Vel → Attack";
+            param.name = "Velocity to Attack Time";
             param.symbol = "vel_to_attack";
             param.ranges.def = 0.0f;
             break;
         case kParameterVelToWave:
-            param.name = "Vel → Wave";
+            param.name = "Velocity to Waveform";
             param.symbol = "vel_to_wave";
             param.ranges.def = 0.0f;
             break;
@@ -288,7 +288,7 @@ protected:
 
         while (framePos < frames) {
             renderFrame(outL, outR, framePos, sampleRate);
-            framePos++;;
+            framePos++;
         }
     }
 

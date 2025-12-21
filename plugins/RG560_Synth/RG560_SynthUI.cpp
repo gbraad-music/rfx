@@ -54,10 +54,8 @@ private:
             if (ImGui::Begin(RG560_WINDOW_TITLE, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar))
             {
                 ImGui::SetCursorPosY(10);
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(RG560_DISPLAY_NAME).x) * 0.5f);
                 ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "%s", RG560_DISPLAY_NAME);
-                ImGui::PopFont();
                 ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
 
                 ImGui::Columns(3, "sections", false);

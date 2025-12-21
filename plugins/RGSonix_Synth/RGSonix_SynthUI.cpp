@@ -166,10 +166,8 @@ private:
             {
                 // Title
                 ImGui::SetCursorPosY(5);
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(RGSONIX_DISPLAY_NAME).x) * 0.5f);
                 ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.6f, 1.0f), "%s", RGSONIX_DISPLAY_NAME);
-                ImGui::PopFont();
 
                 ImGui::Spacing();
                 ImGui::Separator();
@@ -250,13 +248,13 @@ private:
                 ImGui::PopStyleColor();
                 ImGui::Spacing();
 
-                KNOB(kParameterVelToAmp, "Amp", 0.0f, 1.0f, knobSize);
+                KNOB(kParameterVelToAmp, "V:Amp", 0.0f, 1.0f, knobSize);
                 ImGui::SameLine();
-                KNOB(kParameterVelToPitch, "Pitch", 0.0f, 1.0f, knobSize);
+                KNOB(kParameterVelToPitch, "V:Pitch", 0.0f, 1.0f, knobSize);
 
-                KNOB(kParameterVelToAttack, "Attack", 0.0f, 1.0f, knobSize);
+                KNOB(kParameterVelToAttack, "V:Atk", 0.0f, 1.0f, knobSize);
                 ImGui::SameLine();
-                KNOB(kParameterVelToWave, "Wave", 0.0f, 1.0f, knobSize);
+                KNOB(kParameterVelToWave, "V:Wave", 0.0f, 1.0f, knobSize);
 
                 ImGui::NextColumn();
 

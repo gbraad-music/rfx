@@ -51,10 +51,8 @@ private:
             if (ImGui::Begin(RGKS_WINDOW_TITLE, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar))
             {
                 ImGui::SetCursorPosY(10);
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(RGKS_DISPLAY_NAME).x) * 0.5f);
                 ImGui::TextColored(ImVec4(0.2f, 0.8f, 1.0f, 1.0f), "%s", RGKS_DISPLAY_NAME);
-                ImGui::PopFont();
                 ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
 
                 // Center the knobs

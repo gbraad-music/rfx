@@ -13,7 +13,7 @@
 
 #define DISTRHO_PLUGIN_BRAND "Regroove"
 #define DISTRHO_PLUGIN_NAME  RG909_DISPLAY_NAME
-#define DISTRHO_PLUGIN_URI   "https://https://music.gbraad.nl/regrooved/rg909"
+#define DISTRHO_PLUGIN_URI   "https://music.gbraad.nl/regrooved/rg909"
 
 #define DISTRHO_PLUGIN_HAS_UI        1
 #define DISTRHO_PLUGIN_IS_RT_SAFE    1

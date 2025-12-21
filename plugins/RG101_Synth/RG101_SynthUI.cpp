@@ -100,10 +100,8 @@ private:
             {
                 // Title
                 ImGui::SetCursorPosY(10);
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]); // Large font
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(RG101_DISPLAY_NAME).x) * 0.5f);
                 ImGui::TextColored(ImVec4(0.3f, 0.6f, 1.0f, 1.0f), "%s", RG101_DISPLAY_NAME);
-                ImGui::PopFont();
 
                 ImGui::Spacing();
                 ImGui::Separator();

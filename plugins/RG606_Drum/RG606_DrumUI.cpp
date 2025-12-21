@@ -62,10 +62,8 @@ private:
             if (ImGui::Begin(RG606_WINDOW_TITLE, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar))
             {
                 ImGui::SetCursorPosY(10);
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(RG606_DISPLAY_NAME).x) * 0.5f);
                 ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "%s", RG606_DISPLAY_NAME);
-                ImGui::PopFont();
                 ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
 
                 ImGui::Columns(4, "drums", false);

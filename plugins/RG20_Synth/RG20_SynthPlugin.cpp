@@ -621,17 +621,20 @@ private:
             vco2_sample = vco2_sample * (1.0f - fVCOSync) + vco1_sample * vco2_sample * fVCOSync * 2.0f;
         }
 
-        // Ring modulation (VCO1 × VCO2)
-        float ring_mod_sample = vco1_sample * vco2_sample * fRingModLevel * 2.0f;
+        // MS-20 Normalled Path: VCO1 + VCO2 mix
+        float sample = vco1_sample + vco2_sample;
 
-        // Noise
-        float noise_sample = synth_noise_process(fVoice.noise) * fNoiseLevel;
+        // External inputs (patch panel simulation)
+        // Ring mod and noise can be patched into the signal path via mix controls
+        if (fRingModLevel > 0.0f) {
+            float ring_mod_sample = vco1_sample * vco2_sample * fRingModLevel * 2.0f;
+            sample += ring_mod_sample;
+        }
 
-        // Mix
-        float sample = vco1_sample + vco2_sample + ring_mod_sample + noise_sample;
-
-        // Reduce level (multiple sources)
-        sample *= 0.15f;
+        if (fNoiseLevel > 0.0f) {
+            float noise_sample = synth_noise_process(fVoice.noise) * fNoiseLevel;
+            sample += noise_sample;
+        }
 
         // Get envelope values
         float amp_env_value = synth_envelope_process(fVoice.amp_env, sampleRate);

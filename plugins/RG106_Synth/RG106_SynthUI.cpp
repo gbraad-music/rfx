@@ -99,10 +99,8 @@ private:
             {
                 // Title
                 ImGui::SetCursorPosY(10);
-                ImGui::PushFont(ImGui::GetIO().Fonts->Fonts[1]);
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(RG106_DISPLAY_NAME).x) * 0.5f);
                 ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.6f, 1.0f), "%s", RG106_DISPLAY_NAME);
-                ImGui::PopFont();
 
                 ImGui::Spacing();
                 ImGui::Separator();

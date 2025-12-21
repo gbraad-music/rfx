@@ -33,9 +33,12 @@ public:
         fParameters[kParameterAmpDecay] = 0.3f;
         fParameters[kParameterAmpSustain] = 0.7f;
         fParameters[kParameterAmpRelease] = 0.1f;
+        fParameters[kParameterLFOWaveform] = 0.0f;
         fParameters[kParameterLFORate] = 0.25f; // 5Hz mapped to 0-1
         fParameters[kParameterLFOPitchDepth] = 0.0f;
         fParameters[kParameterLFOFilterDepth] = 0.0f;
+        fParameters[kParameterLFOAmpDepth] = 0.0f;
+        fParameters[kParameterVelocitySensitivity] = 0.5f;
         fParameters[kParameterPortamento] = 0.0f;
         fParameters[kParameterVolume] = 0.7f;
 
@@ -289,6 +292,14 @@ private:
                 ImGui::PopStyleColor();
                 ImGui::Spacing();
 
+                // LFO Waveform
+                float lfoWaveform = fUI->fParameters[kParameterLFOWaveform];
+                if (ImGuiKnobs::Knob("LFO Wave", &lfoWaveform, 0.0f, 1.0f, 0.001f,
+                                    "", ImGuiKnobVariant_Tick, knobSize, ImGuiKnobFlags_NoInput, 10)) {
+                    fUI->fParameters[kParameterLFOWaveform] = lfoWaveform;
+                    fUI->setParameterValue(kParameterLFOWaveform, lfoWaveform);
+                }
+
                 // LFO Rate
                 float lfoRate = fUI->fParameters[kParameterLFORate];
                 if (ImGuiKnobs::Knob("LFO Rate", &lfoRate, 0.1f, 20.0f, 0.01f,
@@ -313,9 +324,25 @@ private:
                     fUI->setParameterValue(kParameterLFOFilterDepth, lfoFilter);
                 }
 
+                // LFO Amp Depth
+                float lfoAmp = fUI->fParameters[kParameterLFOAmpDepth];
+                if (ImGuiKnobs::Knob("LFO Amp", &lfoAmp, 0.0f, 1.0f, 0.001f,
+                                    "", ImGuiKnobVariant_Tick, knobSize, ImGuiKnobFlags_NoInput, 10)) {
+                    fUI->fParameters[kParameterLFOAmpDepth] = lfoAmp;
+                    fUI->setParameterValue(kParameterLFOAmpDepth, lfoAmp);
+                }
+
                 ImGui::Spacing();
                 ImGui::Separator();
                 ImGui::Spacing();
+
+                // Velocity Sensitivity
+                float velocity = fUI->fParameters[kParameterVelocitySensitivity];
+                if (ImGuiKnobs::Knob("Velocity", &velocity, 0.0f, 1.0f, 0.001f,
+                                    "", ImGuiKnobVariant_Tick, knobSize, ImGuiKnobFlags_NoInput, 10)) {
+                    fUI->fParameters[kParameterVelocitySensitivity] = velocity;
+                    fUI->setParameterValue(kParameterVelocitySensitivity, velocity);
+                }
 
                 // Portamento
                 float portamento = fUI->fParameters[kParameterPortamento];

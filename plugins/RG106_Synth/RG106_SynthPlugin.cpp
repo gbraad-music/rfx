@@ -18,6 +18,11 @@ struct Juno106Voice {
     SynthFilterLadder* filter;
     SynthEnvelope* envelope;
     bool active;
+    int note;
+    int velocity;
+    float current_freq;
+    float target_freq;
+    bool sliding;
 };
 
 class RG106_SynthPlugin : public Plugin
@@ -39,11 +44,16 @@ public:
         , fDecay(0.3f)
         , fSustain(0.7f)
         , fRelease(0.5f)
+        , fLFOWaveform(0.0f)
         , fLFORate(5.0f)
         , fLFODelay(0.0f)
+        , fLFOPitchDepth(0.0f)
+        , fLFOAmpDepth(0.0f)
         , fChorusMode(0.0f)
         , fChorusRate(0.8f)
         , fChorusDepth(0.5f)
+        , fVelocitySensitivity(0.5f)
+        , fPortamento(0.0f)
         , fVolume(0.4f)
     {
         // Create voice manager
@@ -60,6 +70,11 @@ public:
             fVoices[i].filter = synth_filter_ladder_create();
             fVoices[i].envelope = synth_envelope_create();
             fVoices[i].active = false;
+            fVoices[i].note = -1;
+            fVoices[i].velocity = 0;
+            fVoices[i].current_freq = 440.0f;
+            fVoices[i].target_freq = 440.0f;
+            fVoices[i].sliding = false;
 
             if (fVoices[i].osc) {
                 synth_oscillator_set_waveform(fVoices[i].osc, SYNTH_OSC_SAW);
@@ -223,6 +238,21 @@ protected:
             param.symbol = "lfo_delay";
             param.ranges.def = 0.0f;
             break;
+        case kParameterLFOWaveform:
+            param.name = "LFO Wave";
+            param.symbol = "lfo_wave";
+            param.ranges.def = 0.0f;
+            break;
+        case kParameterLFOPitchDepth:
+            param.name = "LFO Pitch";
+            param.symbol = "lfo_pitch";
+            param.ranges.def = 0.0f;
+            break;
+        case kParameterLFOAmpDepth:
+            param.name = "LFO Amp";
+            param.symbol = "lfo_amp";
+            param.ranges.def = 0.0f;
+            break;
         case kParameterChorusMode:
             param.name = "Chorus Mode";
             param.symbol = "chorus_mode";
@@ -239,6 +269,16 @@ protected:
             param.name = "Chorus Depth";
             param.symbol = "chorus_depth";
             param.ranges.def = 0.5f;
+            break;
+        case kParameterVelocitySensitivity:
+            param.name = "Velocity";
+            param.symbol = "velocity";
+            param.ranges.def = 0.5f;
+            break;
+        case kParameterPortamento:
+            param.name = "Portamento";
+            param.symbol = "portamento";
+            param.ranges.def = 0.0f;
             break;
         case kParameterVolume:
             param.name = "Volume";
@@ -265,11 +305,16 @@ protected:
         case kParameterDecay: return fDecay;
         case kParameterSustain: return fSustain;
         case kParameterRelease: return fRelease;
+        case kParameterLFOWaveform: return fLFOWaveform;
         case kParameterLFORate: return fLFORate;
         case kParameterLFODelay: return fLFODelay;
+        case kParameterLFOPitchDepth: return fLFOPitchDepth;
+        case kParameterLFOAmpDepth: return fLFOAmpDepth;
         case kParameterChorusMode: return fChorusMode;
         case kParameterChorusRate: return fChorusRate;
         case kParameterChorusDepth: return fChorusDepth;
+        case kParameterVelocitySensitivity: return fVelocitySensitivity;
+        case kParameterPortamento: return fPortamento;
         case kParameterVolume: return fVolume;
         default: return 0.0f;
         }
@@ -297,6 +342,16 @@ protected:
             if (fLFO) synth_lfo_set_frequency(fLFO, fLFORate);
             break;
         case kParameterLFODelay: fLFODelay = value; break;
+        case kParameterLFOWaveform:
+            fLFOWaveform = value;
+            if (fLFO) {
+                int waveform = (int)(value * 4.0f);  // 0-4 = sine, tri, saw, square, S&H
+                if (waveform > 4) waveform = 4;
+                synth_lfo_set_waveform(fLFO, (SynthLFOWaveform)waveform);
+            }
+            break;
+        case kParameterLFOPitchDepth: fLFOPitchDepth = value; break;
+        case kParameterLFOAmpDepth: fLFOAmpDepth = value; break;
         case kParameterChorusMode:
             fChorusMode = value;
             if (fChorus) {
@@ -315,6 +370,8 @@ protected:
             fChorusDepth = value;
             if (fChorus) synth_chorus_set_depth(fChorus, fChorusDepth);
             break;
+        case kParameterVelocitySensitivity: fVelocitySensitivity = value; break;
+        case kParameterPortamento: fPortamento = value; break;
         case kParameterVolume: fVolume = value; break;
         }
     }
@@ -382,12 +439,29 @@ private:
         Juno106Voice* voice = &fVoices[voice_idx];
         if (!voice->osc || !voice->envelope) return;
 
-        float freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
+        float new_freq = 440.0f * powf(2.0f, (note - 69) / 12.0f);
 
-        synth_oscillator_set_frequency(voice->osc, freq);
-        synth_oscillator_set_frequency(voice->sub_osc, freq * 0.5f);
+        // Portamento - check if this voice was already playing
+        bool shouldSlide = voice->active && fPortamento > 0.0f;
 
-        synth_envelope_trigger(voice->envelope);
+        voice->note = note;
+        voice->velocity = velocity;
+
+        if (shouldSlide) {
+            // Slide to new note
+            voice->target_freq = new_freq;
+            voice->sliding = true;
+        } else {
+            // Fresh note
+            voice->current_freq = new_freq;
+            voice->target_freq = new_freq;
+            voice->sliding = false;
+
+            synth_oscillator_set_frequency(voice->osc, new_freq);
+            synth_oscillator_set_frequency(voice->sub_osc, new_freq * 0.5f);
+
+            synth_envelope_trigger(voice->envelope);
+        }
 
         voice->active = true;
     }
@@ -432,6 +506,31 @@ private:
             if (!fVoices[i].active) continue;
 
             Juno106Voice* voice = &fVoices[i];
+
+            // Handle portamento
+            if (voice->sliding && fPortamento > 0.0f) {
+                float slide_time = 0.001f + fPortamento * 0.5f; // 1ms to 500ms
+                float slide_rate = (voice->target_freq - voice->current_freq) / (slide_time * sampleRate);
+
+                voice->current_freq += slide_rate;
+
+                if ((slide_rate > 0.0f && voice->current_freq >= voice->target_freq) ||
+                    (slide_rate < 0.0f && voice->current_freq <= voice->target_freq)) {
+                    voice->current_freq = voice->target_freq;
+                    voice->sliding = false;
+                }
+
+                synth_oscillator_set_frequency(voice->osc, voice->current_freq);
+                synth_oscillator_set_frequency(voice->sub_osc, voice->current_freq * 0.5f);
+            }
+
+            // LFO to pitch (vibrato)
+            if (fLFOPitchDepth > 0.0f) {
+                float pitch_mod = 1.0f + (lfo_value * fLFOPitchDepth * 0.05f); // ±5% max
+                float current_freq = voice->sliding ? voice->current_freq : (440.0f * powf(2.0f, (voice->note - 69) / 12.0f));
+                synth_oscillator_set_frequency(voice->osc, current_freq * pitch_mod);
+                synth_oscillator_set_frequency(voice->sub_osc, current_freq * 0.5f * pitch_mod);
+            }
 
             // Set pulse width
             synth_oscillator_set_pulse_width(voice->osc, pw);
@@ -482,6 +581,17 @@ private:
 
             // Apply envelope and VCA
             sample *= env_value * fVCALevel;
+
+            // LFO to amplitude (tremolo)
+            if (fLFOAmpDepth > 0.0f) {
+                sample *= 1.0f + lfo_value * fLFOAmpDepth * 0.5f;
+            }
+
+            // Velocity sensitivity
+            if (fVelocitySensitivity > 0.0f) {
+                float vel_scale = 1.0f - fVelocitySensitivity + (fVelocitySensitivity * (voice->velocity / 127.0f));
+                sample *= vel_scale;
+            }
 
             mixL += sample;
             mixR += sample;
@@ -536,11 +646,16 @@ private:
     float fDecay;
     float fSustain;
     float fRelease;
+    float fLFOWaveform;
     float fLFORate;
     float fLFODelay;
+    float fLFOPitchDepth;
+    float fLFOAmpDepth;
     float fChorusMode;
     float fChorusRate;
     float fChorusDepth;
+    float fVelocitySensitivity;
+    float fPortamento;
     float fVolume;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RG106_SynthPlugin)

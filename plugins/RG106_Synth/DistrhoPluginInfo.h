@@ -58,13 +58,20 @@ enum Parameters {
     kParameterRelease,
 
     // LFO
+    kParameterLFOWaveform,
     kParameterLFORate,
     kParameterLFODelay,
+    kParameterLFOPitchDepth,
+    kParameterLFOAmpDepth,
 
     // Chorus
     kParameterChorusMode,     // 0=off, 0.5=I, 1=II
     kParameterChorusRate,
     kParameterChorusDepth,
+
+    // Performance
+    kParameterVelocitySensitivity,
+    kParameterPortamento,
 
     // Master
     kParameterVolume,

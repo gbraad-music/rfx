@@ -262,6 +262,11 @@ protected:
             break;
 
         // Modulation
+        case kParameterLFOWaveform:
+            param.name = "LFO Wave";
+            param.symbol = "lfo_wave";
+            param.ranges.def = 0.0f;
+            break;
         case kParameterLFORate:
             param.name = "LFO Rate";
             param.symbol = "lfo_rate";
@@ -279,8 +284,18 @@ protected:
             param.symbol = "lfo_filter";
             param.ranges.def = 0.0f;
             break;
+        case kParameterLFOAmpDepth:
+            param.name = "LFO Amp";
+            param.symbol = "lfo_amp";
+            param.ranges.def = 0.0f;
+            break;
 
         // Performance
+        case kParameterVelocitySensitivity:
+            param.name = "Velocity";
+            param.symbol = "velocity";
+            param.ranges.def = 0.5f;
+            break;
         case kParameterPortamento:
             param.name = "Portamento";
             param.symbol = "portamento";
@@ -315,9 +330,12 @@ protected:
         case kParameterAmpDecay: return fAmpDecay;
         case kParameterAmpSustain: return fAmpSustain;
         case kParameterAmpRelease: return fAmpRelease;
+        case kParameterLFOWaveform: return fLFOWaveform;
         case kParameterLFORate: return fLFORate;
         case kParameterLFOPitchDepth: return fLFOPitchDepth;
         case kParameterLFOFilterDepth: return fLFOFilterDepth;
+        case kParameterLFOAmpDepth: return fLFOAmpDepth;
+        case kParameterVelocitySensitivity: return fVelocitySensitivity;
         case kParameterPortamento: return fPortamento;
         case kParameterVolume: return fVolume;
         default: return 0.0f;
@@ -345,12 +363,22 @@ protected:
         case kParameterAmpDecay: fAmpDecay = value; updateEnvelopes(); break;
         case kParameterAmpSustain: fAmpSustain = value; updateEnvelopes(); break;
         case kParameterAmpRelease: fAmpRelease = value; updateEnvelopes(); break;
+        case kParameterLFOWaveform:
+            fLFOWaveform = value;
+            if (fVoice.lfo) {
+                int waveform = (int)(value * 4.0f);  // 0-4 = sine, tri, saw, square, S&H
+                if (waveform > 4) waveform = 4;
+                synth_lfo_set_waveform(fVoice.lfo, (SynthLFOWaveform)waveform);
+            }
+            break;
         case kParameterLFORate:
             fLFORate = value;
             if (fVoice.lfo) synth_lfo_set_frequency(fVoice.lfo, fLFORate);
             break;
         case kParameterLFOPitchDepth: fLFOPitchDepth = value; break;
         case kParameterLFOFilterDepth: fLFOFilterDepth = value; break;
+        case kParameterLFOAmpDepth: fLFOAmpDepth = value; break;
+        case kParameterVelocitySensitivity: fVelocitySensitivity = value; break;
         case kParameterPortamento: fPortamento = value; break;
         case kParameterVolume: fVolume = value; break;
         }
@@ -563,6 +591,17 @@ private:
         // Apply amplitude envelope
         sample *= amp_env_value;
 
+        // LFO to amplitude (tremolo)
+        if (fLFOAmpDepth > 0.0f) {
+            sample *= 1.0f + lfo_value * fLFOAmpDepth * 0.5f;
+        }
+
+        // Velocity sensitivity
+        if (fVelocitySensitivity > 0.0f) {
+            float vel_scale = 1.0f - fVelocitySensitivity + (fVelocitySensitivity * (fVoice.velocity / 127.0f));
+            sample *= vel_scale;
+        }
+
         // Apply master volume
         sample *= fVolume;
 
@@ -599,10 +638,13 @@ private:
     float fAmpSustain;
     float fAmpRelease;
 
+    float fLFOWaveform;
     float fLFORate;
     float fLFOPitchDepth;
     float fLFOFilterDepth;
+    float fLFOAmpDepth;
 
+    float fVelocitySensitivity;
     float fPortamento;
     float fVolume;
 

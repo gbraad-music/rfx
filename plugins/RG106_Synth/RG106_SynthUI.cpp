@@ -29,11 +29,16 @@ public:
         fParameters[kParameterDecay] = 0.3f;
         fParameters[kParameterSustain] = 0.7f;
         fParameters[kParameterRelease] = 0.5f;
+        fParameters[kParameterLFOWaveform] = 0.0f;
         fParameters[kParameterLFORate] = 5.0f;
         fParameters[kParameterLFODelay] = 0.0f;
+        fParameters[kParameterLFOPitchDepth] = 0.0f;
+        fParameters[kParameterLFOAmpDepth] = 0.0f;
         fParameters[kParameterChorusMode] = 0.0f;
         fParameters[kParameterChorusRate] = 0.8f;
         fParameters[kParameterChorusDepth] = 0.5f;
+        fParameters[kParameterVelocitySensitivity] = 0.5f;
+        fParameters[kParameterPortamento] = 0.0f;
         fParameters[kParameterVolume] = 0.4f;
 
         fImGuiWidget = new RG106ImGuiWidget(this);
@@ -148,8 +153,11 @@ private:
                 ImGui::Separator();
                 ImGui::Spacing();
 
+                KNOB(kParameterLFOWaveform, "LFO Wave", 0.0f, 1.0f);
                 KNOB_RANGE(kParameterLFORate, "LFO Rate", 0.1f, 20.0f, "%.1f Hz");
                 KNOB(kParameterLFODelay, "LFO Delay", 0.0f, 1.0f);
+                KNOB(kParameterLFOPitchDepth, "LFO Pitch", 0.0f, 1.0f);
+                KNOB(kParameterLFOAmpDepth, "LFO Amp", 0.0f, 1.0f);
 
                 ImGui::NextColumn();
 
@@ -173,6 +181,8 @@ private:
                 ImGui::Spacing();
 
                 KNOB(kParameterVCALevel, "VCA", 0.0f, 1.0f);
+                KNOB(kParameterVelocitySensitivity, "Velocity", 0.0f, 1.0f);
+                KNOB(kParameterPortamento, "Portamento", 0.0f, 1.0f);
                 KNOB(kParameterVolume, "Volume", 0.0f, 1.0f);
 
                 ImGui::Columns(1);

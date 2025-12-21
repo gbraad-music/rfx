@@ -54,24 +54,24 @@ public:
     RG808_DrumPlugin()
         : Plugin(kParameterCount, 0, kParameterCount)  // parameters, programs, states
     {
-        // Initialize parameters with defaults (reduced for proper mix levels)
-        fKickLevel = 0.5f;
+        // Initialize parameters with defaults (balanced for mix levels)
+        fKickLevel = 0.8f;
         fKickTune = 0.5f;
         fKickDecay = 0.5f;
 
-        fSnareLevel = 0.5f;
+        fSnareLevel = 0.7f;
         fSnareTune = 0.5f;
         fSnareSnappy = 0.5f;
 
-        fHiHatLevel = 0.4f;
+        fHiHatLevel = 0.6f;
         fHiHatDecay = 0.3f;
 
-        fClapLevel = 0.5f;
+        fClapLevel = 0.7f;
 
-        fTomLevel = 0.5f;
+        fTomLevel = 0.7f;
         fTomTune = 0.5f;
 
-        fMasterLevel = 0.5f;  // Reduced from 0.8 to prevent clipping
+        fMasterLevel = 0.7f;
 
         // Initialize voice pool
         for (int i = 0; i < MAX_DRUM_VOICES; i++) {
@@ -115,7 +115,7 @@ protected:
         case kParameterKickLevel:
             param.name = "Kick Level";
             param.symbol = "kick_level";
-            param.ranges.def = 0.5f;  // Reduced for proper mix levels
+            param.ranges.def = 0.8f;
             break;
         case kParameterKickTune:
             param.name = "Kick Tune";
@@ -128,7 +128,7 @@ protected:
         case kParameterSnareLevel:
             param.name = "Snare Level";
             param.symbol = "snare_level";
-            param.ranges.def = 0.5f;  // Reduced for proper mix levels
+            param.ranges.def = 0.7f;
             break;
         case kParameterSnareTune:
             param.name = "Snare Tune";
@@ -141,7 +141,7 @@ protected:
         case kParameterHiHatLevel:
             param.name = "Hi-Hat Level";
             param.symbol = "hihat_level";
-            param.ranges.def = 0.4f;  // Reduced for proper mix levels
+            param.ranges.def = 0.6f;
             break;
         case kParameterHiHatDecay:
             param.name = "Hi-Hat Decay";
@@ -151,12 +151,12 @@ protected:
         case kParameterClapLevel:
             param.name = "Clap Level";
             param.symbol = "clap_level";
-            param.ranges.def = 0.5f;  // Reduced for proper mix levels
+            param.ranges.def = 0.7f;
             break;
         case kParameterTomLevel:
             param.name = "Tom Level";
             param.symbol = "tom_level";
-            param.ranges.def = 0.5f;  // Reduced for proper mix levels
+            param.ranges.def = 0.7f;
             break;
         case kParameterTomTune:
             param.name = "Tom Tune";
@@ -165,7 +165,7 @@ protected:
         case kParameterMasterLevel:
             param.name = "Master Level";
             param.symbol = "master_level";
-            param.ranges.def = 0.5f;  // Reduced from 0.8 to prevent clipping
+            param.ranges.def = 0.7f;
             break;
         }
     }
@@ -525,8 +525,8 @@ private:
                 synth_oscillator_set_frequency(voice->osc1, freq);
                 voice->pitch_elapsed += 1.0f / sampleRate;
             }
-            // Reduce kick level to prevent clipping (30% max output)
-            sample = synth_oscillator_process(voice->osc1, sampleRate) * envelope * fKickLevel * 0.3f;
+            // Reduce kick level to prevent clipping (50% max output)
+            sample = synth_oscillator_process(voice->osc1, sampleRate) * envelope * fKickLevel * 0.5f;
             break;
         }
 

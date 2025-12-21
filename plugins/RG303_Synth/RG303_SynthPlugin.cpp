@@ -417,8 +417,8 @@ protected:
                 float sample = synth_oscillator_process(fVoice.osc, sampleRate);
 
                 // Reduce oscillator level to prevent clipping (sawtooth is hot!)
-                // Heavy reduction for proper mix levels
-                sample *= 0.25f;
+                // Heavy reduction for proper mix levels (0.15 = 15% of original)
+                sample *= 0.15f;
 
                 // Apply amplitude envelope
                 float amp_env_value = synth_envelope_process(fVoice.amp_env, sampleRate);

@@ -1,9 +1,14 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
+// Display strings
+#define RG808_DISPLAY_NAME "RG808 - Regroove TR-808 Drum Machine"
+#define RG808_DESCRIPTION "Roland TR-808 Style Analog Drum Synthesizer"
+#define RG808_WINDOW_TITLE "RG808 Drum Machine"
+
 #define DISTRHO_PLUGIN_BRAND "Regroove"
-#define DISTRHO_PLUGIN_NAME  "RG808 Drum"
-#define DISTRHO_PLUGIN_URI   "https://github.com/gbraad/rfx/rg808"
+#define DISTRHO_PLUGIN_NAME  RG808_DISPLAY_NAME
+#define DISTRHO_PLUGIN_URI   "https://https://music.gbraad.nl/regrooved/rg808"
 
 #define DISTRHO_PLUGIN_HAS_UI        1
 #define DISTRHO_PLUGIN_IS_RT_SAFE    1
@@ -27,11 +32,6 @@
 #define DISTRHO_UI_FILE_BROWSER 0
 #define DISTRHO_UI_DEFAULT_WIDTH  500
 #define DISTRHO_UI_DEFAULT_HEIGHT 400
-
-// Display strings
-#define RG808_DISPLAY_NAME "RG808 Drum Machine"
-#define RG808_DESCRIPTION "Regroove 808 Drum Machine - GM MIDI Drum Mapping"
-#define RG808_WINDOW_TITLE "RG808 Drum Machine"
 
 // GM MIDI Drum Note Mapping (Standard)
 // Note: We'll use the most common 808 sounds

@@ -1,9 +1,14 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
+// Display strings
+#define RG303_DISPLAY_NAME "RG303 - Regroove TB-303 Style Synthesizer"
+#define RG303_DESCRIPTION "Roland TB-303 Style Bass Synthesizer"
+#define RG303_WINDOW_TITLE "RG303 Synthesizer"
+
 #define DISTRHO_PLUGIN_BRAND "Regroove"
-#define DISTRHO_PLUGIN_NAME  "RG303 Synth"
-#define DISTRHO_PLUGIN_URI   "https://github.com/gbraad/rfx/rg303"
+#define DISTRHO_PLUGIN_NAME  RG303_DISPLAY_NAME
+#define DISTRHO_PLUGIN_URI   "https://https://music.gbraad.nl/regrooved/rg303"
 
 #define DISTRHO_PLUGIN_HAS_UI        1
 #define DISTRHO_PLUGIN_IS_RT_SAFE    1
@@ -27,11 +32,6 @@
 #define DISTRHO_UI_FILE_BROWSER 0
 #define DISTRHO_UI_DEFAULT_WIDTH  400
 #define DISTRHO_UI_DEFAULT_HEIGHT 450
-
-// Display strings
-#define RG303_DISPLAY_NAME "RG303 - Regroove Monophonic Bass Synthesizer"
-#define RG303_DESCRIPTION "Regroove Monophonic Bass Synthesizer"
-#define RG303_WINDOW_TITLE "RG303 Synthesizer"
 
 enum Parameters {
     kParameterWaveform = 0,

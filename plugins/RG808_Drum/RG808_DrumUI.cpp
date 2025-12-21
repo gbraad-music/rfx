@@ -14,19 +14,19 @@ public:
     {
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true);
 
-        // Initialize parameters with defaults (matching DSP defaults - reduced for proper mix levels)
-        fParameters[kParameterKickLevel] = 0.5f;
+        // Initialize parameters with defaults (matching DSP defaults - balanced for mix levels)
+        fParameters[kParameterKickLevel] = 0.8f;
         fParameters[kParameterKickTune] = 0.5f;
         fParameters[kParameterKickDecay] = 0.5f;
-        fParameters[kParameterSnareLevel] = 0.5f;
+        fParameters[kParameterSnareLevel] = 0.7f;
         fParameters[kParameterSnareTune] = 0.5f;
         fParameters[kParameterSnareSnappy] = 0.5f;
-        fParameters[kParameterHiHatLevel] = 0.4f;
+        fParameters[kParameterHiHatLevel] = 0.6f;
         fParameters[kParameterHiHatDecay] = 0.3f;
-        fParameters[kParameterClapLevel] = 0.5f;
-        fParameters[kParameterTomLevel] = 0.5f;
+        fParameters[kParameterClapLevel] = 0.7f;
+        fParameters[kParameterTomLevel] = 0.7f;
         fParameters[kParameterTomTune] = 0.5f;
-        fParameters[kParameterMasterLevel] = 0.5f;
+        fParameters[kParameterMasterLevel] = 0.7f;
 
         fImGuiWidget = new RG808ImGuiWidget(this);
         fImGuiWidget->setSize(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT);

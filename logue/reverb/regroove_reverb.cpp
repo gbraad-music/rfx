@@ -40,19 +40,6 @@ void FX_PARAM(uint8_t index, int32_t value)
 {
     if (!fx) return;
 
-    const float valf = param_val_to_f32(value);
-
-    switch (index) {
-    case 0: // Size
-        fx_reverb_set_size(fx, valf);
-        break;
-    case 1: // Damping
-        fx_reverb_set_damping(fx, valf);
-        break;
-    case 2: // Mix
-        fx_reverb_set_mix(fx, valf);
-        break;
-    default:
-        break;
-    }
+    // Generic parameter interface - no switch needed!
+    fx_reverb_set_parameter_value(fx, index, param_val_to_f32(value));
 }

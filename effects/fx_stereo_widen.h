@@ -29,6 +29,22 @@ void fx_stereo_widen_process_f32(FXStereoWiden* fx, const float* inL, const floa
 void fx_stereo_widen_process_interleaved(FXStereoWiden* fx, float* interleavedLR,
                                          int frames, int sample_rate);
 
+// ============================================================================
+// Generic Parameter Interface (for wrapper use)
+// ============================================================================
+
+int fx_stereo_widen_get_parameter_count(void);
+float fx_stereo_widen_get_parameter_value(FXStereoWiden* fx, int index);
+void fx_stereo_widen_set_parameter_value(FXStereoWiden* fx, int index, float value);
+const char* fx_stereo_widen_get_parameter_name(int index);
+const char* fx_stereo_widen_get_parameter_label(int index);
+float fx_stereo_widen_get_parameter_default(int index);
+float fx_stereo_widen_get_parameter_min(int index);
+float fx_stereo_widen_get_parameter_max(int index);
+int fx_stereo_widen_get_parameter_group(int index);
+const char* fx_stereo_widen_get_group_name(int group);
+int fx_stereo_widen_parameter_is_integer(int index);
+
 #ifdef __cplusplus
 }
 #endif

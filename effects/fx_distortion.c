@@ -167,3 +167,68 @@ float fx_distortion_get_mix(FXDistortion* fx)
 {
     return fx ? fx->mix : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_DISTORTION_GROUP_MAIN = 0,
+    FX_DISTORTION_GROUP_COUNT
+} FXDistortionParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_DISTORTION_PARAM_DRIVE = 0,
+    FX_DISTORTION_PARAM_MIX,
+    FX_DISTORTION_PARAM_COUNT
+} FXDistortionParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo distortion_params[FX_DISTORTION_PARAM_COUNT] = {
+    {"Drive", "%", 0.5f, 0.0f, 1.0f, FX_DISTORTION_GROUP_MAIN, 0},
+    {"Mix", "%", 0.5f, 0.0f, 1.0f, FX_DISTORTION_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_DISTORTION_GROUP_COUNT] = {
+    "Distortion"
+};
+
+int fx_distortion_get_parameter_count(void)
+{
+    return FX_DISTORTION_PARAM_COUNT;
+}
+
+float fx_distortion_get_parameter_value(FXDistortion* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_DISTORTION_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_DISTORTION_PARAM_DRIVE:
+            return fx_distortion_get_drive(fx);
+        case FX_DISTORTION_PARAM_MIX:
+            return fx_distortion_get_mix(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_distortion_set_parameter_value(FXDistortion* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_DISTORTION_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_DISTORTION_PARAM_DRIVE:
+            fx_distortion_set_drive(fx, value);
+            break;
+        case FX_DISTORTION_PARAM_MIX:
+            fx_distortion_set_mix(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_distortion, distortion_params, FX_DISTORTION_PARAM_COUNT, group_names, FX_DISTORTION_GROUP_COUNT)

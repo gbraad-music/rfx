@@ -40,27 +40,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterPitch:
-            param.name = "Pitch";
-            param.symbol = "pitch";
-            param.ranges.def = 0.5f;  // 0 semitones
-            break;
-        case kParameterMix:
-            param.name = "Mix";
-            param.symbol = "mix";
-            param.ranges.def = 1.0f;  // 100% wet
-            break;
-        case kParameterFormant:
-            param.name = "Formant";
-            param.symbol = "formant";
-            param.ranges.def = 0.5f;  // Neutral
-            break;
-        }
+        param.ranges.min = fx_pitchshift_get_parameter_min(index);
+        param.ranges.max = fx_pitchshift_get_parameter_max(index);
+        param.ranges.def = fx_pitchshift_get_parameter_default(index);
+        param.name = fx_pitchshift_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -82,13 +66,9 @@ protected:
         case kParameterFormant: fFormant = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface
         if (fEffect) {
-            switch (index) {
-            case kParameterPitch: fx_pitchshift_set_pitch(fEffect, value); break;
-            case kParameterMix: fx_pitchshift_set_mix(fEffect, value); break;
-            case kParameterFormant: fx_pitchshift_set_formant(fEffect, value); break;
-            }
+            fx_pitchshift_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -153,10 +133,9 @@ protected:
     {
         if (fEffect) {
             fx_pitchshift_reset(fEffect);
-            // Restore parameters after reset
-            fx_pitchshift_set_pitch(fEffect, fPitch);
-            fx_pitchshift_set_mix(fEffect, fMix);
-            fx_pitchshift_set_formant(fEffect, fFormant);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_pitchshift_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

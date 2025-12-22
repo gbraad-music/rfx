@@ -141,3 +141,45 @@ int fx_model1_trim_get_enabled(FXModel1Trim* fx) {
 float fx_model1_trim_get_peak_level(FXModel1Trim* fx) {
     return fx ? fx->peak_level : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_MODEL1_TRIM_GROUP_MAIN = 0,
+    FX_MODEL1_TRIM_GROUP_COUNT
+} FXModel1TrimParamGroup;
+
+typedef enum {
+    FX_MODEL1_TRIM_PARAM_DRIVE = 0,
+    FX_MODEL1_TRIM_PARAM_COUNT
+} FXModel1TrimParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo model1_trim_params[FX_MODEL1_TRIM_PARAM_COUNT] = {
+    {"Drive", "%", 0.7f, 0.0f, 1.0f, FX_MODEL1_TRIM_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_MODEL1_TRIM_GROUP_COUNT] = {"Trim"};
+
+int fx_model1_trim_get_parameter_count(void) { return FX_MODEL1_TRIM_PARAM_COUNT; }
+
+float fx_model1_trim_get_parameter_value(FXModel1Trim* fx, int index) {
+    if (!fx || index < 0 || index >= FX_MODEL1_TRIM_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_MODEL1_TRIM_PARAM_DRIVE: return fx_model1_trim_get_drive(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_model1_trim_set_parameter_value(FXModel1Trim* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_MODEL1_TRIM_PARAM_COUNT) return;
+    switch (index) {
+        case FX_MODEL1_TRIM_PARAM_DRIVE: fx_model1_trim_set_drive(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_model1_trim, model1_trim_params, FX_MODEL1_TRIM_PARAM_COUNT, group_names, FX_MODEL1_TRIM_GROUP_COUNT)

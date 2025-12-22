@@ -40,19 +40,6 @@ void FX_PARAM(uint8_t index, int32_t value)
 {
     if (!fx) return;
 
-    const float valf = param_val_to_f32(value);
-
-    switch (index) {
-    case 0: // Rate
-        fx_phaser_set_rate(fx, valf);
-        break;
-    case 1: // Depth
-        fx_phaser_set_depth(fx, valf);
-        break;
-    case 2: // Feedback
-        fx_phaser_set_feedback(fx, valf);
-        break;
-    default:
-        break;
-    }
+    // Generic parameter interface - no switch needed!
+    fx_phaser_set_parameter_value(fx, index, param_val_to_f32(value));
 }

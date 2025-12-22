@@ -200,3 +200,49 @@ float fx_model1_sculpt_get_frequency(FXModel1Sculpt* fx) {
 float fx_model1_sculpt_get_gain(FXModel1Sculpt* fx) {
     return fx ? fx->gain : 0.5f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_MODEL1_SCULPT_GROUP_MAIN = 0,
+    FX_MODEL1_SCULPT_GROUP_COUNT
+} FXModel1SculptParamGroup;
+
+typedef enum {
+    FX_MODEL1_SCULPT_PARAM_FREQUENCY = 0,
+    FX_MODEL1_SCULPT_PARAM_GAIN,
+    FX_MODEL1_SCULPT_PARAM_COUNT
+} FXModel1SculptParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo model1_sculpt_params[FX_MODEL1_SCULPT_PARAM_COUNT] = {
+    {"Frequency", "Hz", 0.5f, 0.0f, 1.0f, FX_MODEL1_SCULPT_GROUP_MAIN, 0},
+    {"Gain", "dB", 0.5f, 0.0f, 1.0f, FX_MODEL1_SCULPT_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_MODEL1_SCULPT_GROUP_COUNT] = {"Sculpt"};
+
+int fx_model1_sculpt_get_parameter_count(void) { return FX_MODEL1_SCULPT_PARAM_COUNT; }
+
+float fx_model1_sculpt_get_parameter_value(FXModel1Sculpt* fx, int index) {
+    if (!fx || index < 0 || index >= FX_MODEL1_SCULPT_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_MODEL1_SCULPT_PARAM_FREQUENCY: return fx_model1_sculpt_get_frequency(fx);
+        case FX_MODEL1_SCULPT_PARAM_GAIN: return fx_model1_sculpt_get_gain(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_model1_sculpt_set_parameter_value(FXModel1Sculpt* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_MODEL1_SCULPT_PARAM_COUNT) return;
+    switch (index) {
+        case FX_MODEL1_SCULPT_PARAM_FREQUENCY: fx_model1_sculpt_set_frequency(fx, value); break;
+        case FX_MODEL1_SCULPT_PARAM_GAIN: fx_model1_sculpt_set_gain(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_model1_sculpt, model1_sculpt_params, FX_MODEL1_SCULPT_PARAM_COUNT, group_names, FX_MODEL1_SCULPT_GROUP_COUNT)

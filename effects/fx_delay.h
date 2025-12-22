@@ -35,6 +35,22 @@ float fx_delay_get_time(FXDelay* fx);
 float fx_delay_get_feedback(FXDelay* fx);
 float fx_delay_get_mix(FXDelay* fx);
 
+// ============================================================================
+// Generic Parameter Interface (for wrapper use)
+// ============================================================================
+
+int fx_delay_get_parameter_count(void);
+float fx_delay_get_parameter_value(FXDelay* fx, int index);
+void fx_delay_set_parameter_value(FXDelay* fx, int index, float value);
+const char* fx_delay_get_parameter_name(int index);
+const char* fx_delay_get_parameter_label(int index);
+float fx_delay_get_parameter_default(int index);
+float fx_delay_get_parameter_min(int index);
+float fx_delay_get_parameter_max(int index);
+int fx_delay_get_parameter_group(int index);
+const char* fx_delay_get_group_name(int group);
+int fx_delay_parameter_is_integer(int index);
+
 #ifdef __cplusplus
 }
 #endif

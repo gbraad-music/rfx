@@ -38,22 +38,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterFreq:
-            param.name = "Frequency";
-            param.symbol = "freq";
-            param.ranges.def = 0.5f;  // 0 Hz
-            break;
-        case kParameterMix:
-            param.name = "Mix";
-            param.symbol = "mix";
-            param.ranges.def = 1.0f;  // 100% wet
-            break;
-        }
+        param.ranges.min = fx_freqshift_get_parameter_min(index);
+        param.ranges.max = fx_freqshift_get_parameter_max(index);
+        param.ranges.def = fx_freqshift_get_parameter_default(index);
+        param.name = fx_freqshift_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -73,12 +62,9 @@ protected:
         case kParameterMix: fMix = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface
         if (fEffect) {
-            switch (index) {
-            case kParameterFreq: fx_freqshift_set_freq(fEffect, value); break;
-            case kParameterMix: fx_freqshift_set_mix(fEffect, value); break;
-            }
+            fx_freqshift_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -131,9 +117,9 @@ protected:
     {
         if (fEffect) {
             fx_freqshift_reset(fEffect);
-            // Restore parameters after reset
-            fx_freqshift_set_freq(fEffect, fFreq);
-            fx_freqshift_set_mix(fEffect, fMix);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_freqshift_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

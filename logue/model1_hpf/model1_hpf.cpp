@@ -38,15 +38,9 @@ void FX_PARAM(uint8_t index, int32_t value)
 {
     if (!fx) return;
 
-    const float valf = param_val_to_f32(value);
-
-    switch (index) {
-    case 0: // Cutoff (0.0 = FLAT/20Hz, 1.0 = 1kHz)
-        fx_model1_hpf_set_cutoff(fx, valf);
-        break;
-    default:
-        break;
-    }
+    // Generic parameter interface - no switch needed!
+    fx_model1_hpf_set_parameter_value(fx, index, param_val_to_f32(value));
+}
 }
 
 void FX_RESUME(void)
@@ -56,4 +50,3 @@ void FX_RESUME(void)
 
 void FX_SUSPEND(void)
 {
-}

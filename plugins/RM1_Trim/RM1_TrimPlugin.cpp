@@ -68,25 +68,12 @@ protected:
 
     void initParameter(uint32_t index, Parameter& parameter) override
     {
-        switch (index)
-        {
-        case kParameterDrive:
-            parameter.hints = kParameterIsAutomatable;
-            parameter.name = "Drive";
-            parameter.symbol = "drive";
-            parameter.ranges.def = 0.7f;  // Unity gain at 70%
-            parameter.ranges.min = 0.0f;
-            parameter.ranges.max = 1.0f;
-            break;
-        case kParameterPeakLevel:
-            parameter.hints = kParameterIsOutput;
-            parameter.name = "Peak Level";
-            parameter.symbol = "peak_level";
-            parameter.ranges.def = 0.0f;
-            parameter.ranges.min = 0.0f;
-            parameter.ranges.max = 1.0f;
-            break;
-        }
+        parameter.hints = kParameterIsAutomable;
+        parameter.ranges.min = fx_model1_trim_get_parameter_min(index);
+        parameter.ranges.max = fx_model1_trim_get_parameter_max(index);
+        parameter.ranges.def = fx_model1_trim_get_parameter_default(index);
+        parameter.name = fx_model1_trim_get_parameter_name(index);
+        parameter.symbol = parameter.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -103,12 +90,7 @@ protected:
 
     void setParameterValue(uint32_t index, float value) override
     {
-        switch (index)
-        {
-        case kParameterDrive:
-            fx_model1_trim_set_drive(fx, value);
-            break;
-        }
+        fx_model1_trim_set_parameter_value(fx, index, value);
     }
 
     void initState(uint32_t index, String& stateKey, String& defaultStateValue) override

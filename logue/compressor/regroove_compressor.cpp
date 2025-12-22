@@ -42,19 +42,6 @@ void FX_PARAM(uint8_t index, int32_t value)
 {
     if (!fx) return;
 
-    const float valf = param_val_to_f32(value);
-
-    switch (index) {
-    case 0: // Threshold
-        fx_compressor_set_threshold(fx, valf);
-        break;
-    case 1: // Ratio
-        fx_compressor_set_ratio(fx, valf);
-        break;
-    case 2: // Makeup gain
-        fx_compressor_set_makeup(fx, valf);
-        break;
-    default:
-        break;
-    }
+    // Generic parameter interface - no switch needed!
+    fx_compressor_set_parameter_value(fx, index, param_val_to_f32(value));
 }

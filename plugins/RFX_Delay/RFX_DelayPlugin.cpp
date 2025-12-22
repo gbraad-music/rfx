@@ -40,26 +40,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterTime:
-            param.name = "Time";
-            param.symbol = "time";
-            break;
-        case kParameterFeedback:
-            param.name = "Feedback";
-            param.symbol = "feedback";
-            param.ranges.def = 0.4f;
-            break;
-        case kParameterMix:
-            param.name = "Mix";
-            param.symbol = "mix";
-            param.ranges.def = 0.3f;
-            break;
-        }
+        param.ranges.min = fx_delay_get_parameter_min(index);
+        param.ranges.max = fx_delay_get_parameter_max(index);
+        param.ranges.def = fx_delay_get_parameter_default(index);
+        param.name = fx_delay_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -81,13 +66,9 @@ protected:
         case kParameterMix: fMix = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface
         if (fEffect) {
-            switch (index) {
-            case kParameterTime: fx_delay_set_time(fEffect, value); break;
-            case kParameterFeedback: fx_delay_set_feedback(fEffect, value); break;
-            case kParameterMix: fx_delay_set_mix(fEffect, value); break;
-            }
+            fx_delay_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -152,10 +133,9 @@ protected:
     {
         if (fEffect) {
             fx_delay_reset(fEffect);
-            // Restore parameters after reset
-            fx_delay_set_time(fEffect, fTime);
-            fx_delay_set_feedback(fEffect, fFeedback);
-            fx_delay_set_mix(fEffect, fMix);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_delay_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

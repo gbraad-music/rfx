@@ -40,19 +40,6 @@ void FX_PARAM(uint8_t index, int32_t value)
 {
     if (!fx) return;
 
-    const float valf = param_val_to_f32(value);
-
-    switch (index) {
-    case 0: // Low (0.0 = kill, 0.5 = neutral, 1.0 = boost)
-        fx_eq_set_low(fx, valf);
-        break;
-    case 1: // Mid
-        fx_eq_set_mid(fx, valf);
-        break;
-    case 2: // High
-        fx_eq_set_high(fx, valf);
-        break;
-    default:
-        break;
-    }
+    // Generic parameter interface - no switch needed!
+    fx_eq_set_parameter_value(fx, index, param_val_to_f32(value));
 }

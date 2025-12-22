@@ -38,20 +38,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterDrive:
-            param.name = "Drive";
-            param.symbol = "drive";
-            break;
-        case kParameterMix:
-            param.name = "Mix";
-            param.symbol = "mix";
-            break;
-        }
+        param.ranges.min = fx_distortion_get_parameter_min(index);
+        param.ranges.max = fx_distortion_get_parameter_max(index);
+        param.ranges.def = fx_distortion_get_parameter_default(index);
+        param.name = fx_distortion_get_parameter_name(index);
+        param.symbol = param.name;  // Use name as symbol
     }
 
     float getParameterValue(uint32_t index) const override
@@ -71,12 +62,9 @@ protected:
         case kParameterMix: fMix = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface - NO SWITCH NEEDED!
         if (fEffect) {
-            switch (index) {
-            case kParameterDrive: fx_distortion_set_drive(fEffect, value); break;
-            case kParameterMix: fx_distortion_set_mix(fEffect, value); break;
-            }
+            fx_distortion_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -129,9 +117,10 @@ protected:
     {
         if (fEffect) {
             fx_distortion_reset(fEffect);
-            // Restore parameters after reset
-            fx_distortion_set_drive(fEffect, fDrive);
-            fx_distortion_set_mix(fEffect, fMix);
+            // Restore ALL parameters after reset using generic interface - NO HARDCODING!
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_distortion_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

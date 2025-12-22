@@ -128,3 +128,68 @@ float fx_filter_get_resonance(FXFilter* fx)
 {
     return fx ? fx->resonance : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_FILTER_GROUP_MAIN = 0,
+    FX_FILTER_GROUP_COUNT
+} FXFilterParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_FILTER_PARAM_CUTOFF = 0,
+    FX_FILTER_PARAM_RESONANCE,
+    FX_FILTER_PARAM_COUNT
+} FXFilterParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo filter_params[FX_FILTER_PARAM_COUNT] = {
+    {"Cutoff", "Hz", 0.8f, 0.0f, 1.0f, FX_FILTER_GROUP_MAIN, 0},
+    {"Resonance", "%", 0.3f, 0.0f, 1.0f, FX_FILTER_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_FILTER_GROUP_COUNT] = {
+    "Filter"
+};
+
+int fx_filter_get_parameter_count(void)
+{
+    return FX_FILTER_PARAM_COUNT;
+}
+
+float fx_filter_get_parameter_value(FXFilter* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_FILTER_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_FILTER_PARAM_CUTOFF:
+            return fx_filter_get_cutoff(fx);
+        case FX_FILTER_PARAM_RESONANCE:
+            return fx_filter_get_resonance(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_filter_set_parameter_value(FXFilter* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_FILTER_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_FILTER_PARAM_CUTOFF:
+            fx_filter_set_cutoff(fx, value);
+            break;
+        case FX_FILTER_PARAM_RESONANCE:
+            fx_filter_set_resonance(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_filter, filter_params, FX_FILTER_PARAM_COUNT, group_names, FX_FILTER_GROUP_COUNT)

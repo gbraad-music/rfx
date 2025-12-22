@@ -39,14 +39,12 @@ protected:
 
     void initParameter(uint32_t index, Parameter& parameter) override
     {
-        if (index == kParameterCutoff) {
-            parameter.hints = kParameterIsAutomable;
-            parameter.name = "Cutoff";
-            parameter.symbol = "cutoff";
-            parameter.ranges.def = 1.0f; // Default to flat
-            parameter.ranges.min = 0.0f;
-            parameter.ranges.max = 1.0f;
-        }
+        parameter.hints = kParameterIsAutomable;
+        parameter.ranges.min = fx_model1_lpf_get_parameter_min(index);
+        parameter.ranges.max = fx_model1_lpf_get_parameter_max(index);
+        parameter.ranges.def = fx_model1_lpf_get_parameter_default(index);
+        parameter.name = fx_model1_lpf_get_parameter_name(index);
+        parameter.symbol = parameter.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -59,9 +57,7 @@ protected:
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (index == kParameterCutoff) {
-            fx_model1_lpf_set_cutoff(fx, value);
-        }
+        fx_model1_lpf_set_parameter_value(fx, index, value);
     }
 
     void initState(uint32_t index, String& stateKey, String& defaultStateValue) override

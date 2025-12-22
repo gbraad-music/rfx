@@ -39,18 +39,9 @@ void FX_PARAM(uint8_t index, int32_t value)
 {
     if (!fx) return;
 
-    const float valf = param_val_to_f32(value);
-
-    switch (index) {
-    case 0: // Frequency (0.0 = 70Hz, 1.0 = 7kHz)
-        fx_model1_sculpt_set_frequency(fx, valf);
-        break;
-    case 1: // Gain (0.0 = -20dB, 0.5 = 0dB, 1.0 = +8dB)
-        fx_model1_sculpt_set_gain(fx, valf);
-        break;
-    default:
-        break;
-    }
+    // Generic parameter interface - no switch needed!
+    fx_model1_sculpt_set_parameter_value(fx, index, param_val_to_f32(value));
+}
 }
 
 void FX_RESUME(void)
@@ -60,4 +51,3 @@ void FX_RESUME(void)
 
 void FX_SUSPEND(void)
 {
-}

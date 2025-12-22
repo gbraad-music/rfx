@@ -33,6 +33,65 @@ int fx_filter_get_enabled(FXFilter* fx);
 float fx_filter_get_cutoff(FXFilter* fx);
 float fx_filter_get_resonance(FXFilter* fx);
 
+// ============================================================================
+// Generic Parameter Interface (for wrapper use)
+// ============================================================================
+
+/**
+ * Get total number of parameters
+ */
+int fx_filter_get_parameter_count(void);
+
+/**
+ * Get parameter value by index (normalized 0.0-1.0)
+ */
+float fx_filter_get_parameter_value(FXFilter* fx, int index);
+
+/**
+ * Set parameter value by index (normalized 0.0-1.0)
+ */
+void fx_filter_set_parameter_value(FXFilter* fx, int index, float value);
+
+/**
+ * Get parameter name
+ */
+const char* fx_filter_get_parameter_name(int index);
+
+/**
+ * Get parameter label/unit
+ */
+const char* fx_filter_get_parameter_label(int index);
+
+/**
+ * Get parameter default value (normalized 0.0-1.0)
+ */
+float fx_filter_get_parameter_default(int index);
+
+/**
+ * Get parameter minimum value (actual units)
+ */
+float fx_filter_get_parameter_min(int index);
+
+/**
+ * Get parameter maximum value (actual units)
+ */
+float fx_filter_get_parameter_max(int index);
+
+/**
+ * Get parameter group/category
+ */
+int fx_filter_get_parameter_group(int index);
+
+/**
+ * Get group name
+ */
+const char* fx_filter_get_group_name(int group);
+
+/**
+ * Check if parameter is integer
+ */
+int fx_filter_parameter_is_integer(int index);
+
 #ifdef __cplusplus
 }
 #endif

@@ -39,26 +39,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-        switch (index) {
-        case kParameterSize:
-            param.name = "Size";
-            param.symbol = "size";
-            param.ranges.def = 0.5f;
-            break;
-        case kParameterDamping:
-            param.name = "Damping";
-            param.symbol = "damping";
-            param.ranges.def = 0.5f;
-            break;
-        case kParameterMix:
-            param.name = "Mix";
-            param.symbol = "mix";
-            param.ranges.def = 0.3f;
-            break;
-        }
+        param.ranges.min = fx_reverb_get_parameter_min(index);
+        param.ranges.max = fx_reverb_get_parameter_max(index);
+        param.ranges.def = fx_reverb_get_parameter_default(index);
+        param.name = fx_reverb_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -143,9 +128,9 @@ protected:
     {
         if (fEffect) {
             fx_reverb_reset(fEffect);
-            fx_reverb_set_size(fEffect, fSize);
-            fx_reverb_set_damping(fEffect, fDamping);
-            fx_reverb_set_mix(fEffect, fMix);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_reverb_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

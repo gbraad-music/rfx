@@ -158,3 +158,75 @@ float fx_delay_get_mix(FXDelay* fx)
 {
     return fx ? fx->mix : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_DELAY_GROUP_MAIN = 0,
+    FX_DELAY_GROUP_COUNT
+} FXDelayParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_DELAY_PARAM_TIME = 0,
+    FX_DELAY_PARAM_FEEDBACK,
+    FX_DELAY_PARAM_MIX,
+    FX_DELAY_PARAM_COUNT
+} FXDelayParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo delay_params[FX_DELAY_PARAM_COUNT] = {
+    {"Time", "ms", 0.3f, 0.0f, 1.0f, FX_DELAY_GROUP_MAIN, 0},
+    {"Feedback", "%", 0.4f, 0.0f, 1.0f, FX_DELAY_GROUP_MAIN, 0},
+    {"Mix", "%", 0.3f, 0.0f, 1.0f, FX_DELAY_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_DELAY_GROUP_COUNT] = {
+    "Delay"
+};
+
+int fx_delay_get_parameter_count(void)
+{
+    return FX_DELAY_PARAM_COUNT;
+}
+
+float fx_delay_get_parameter_value(FXDelay* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_DELAY_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_DELAY_PARAM_TIME:
+            return fx_delay_get_time(fx);
+        case FX_DELAY_PARAM_FEEDBACK:
+            return fx_delay_get_feedback(fx);
+        case FX_DELAY_PARAM_MIX:
+            return fx_delay_get_mix(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_delay_set_parameter_value(FXDelay* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_DELAY_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_DELAY_PARAM_TIME:
+            fx_delay_set_time(fx, value);
+            break;
+        case FX_DELAY_PARAM_FEEDBACK:
+            fx_delay_set_feedback(fx, value);
+            break;
+        case FX_DELAY_PARAM_MIX:
+            fx_delay_set_mix(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_delay, delay_params, FX_DELAY_PARAM_COUNT, group_names, FX_DELAY_GROUP_COUNT)

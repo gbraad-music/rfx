@@ -43,6 +43,71 @@ float fx_stereo_widen_get_width(FXStereoWiden* fx)
 float fx_stereo_widen_get_mix(FXStereoWiden* fx)
 { return fx ? fx->mix : 0.5f; }
 
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_STEREO_WIDEN_GROUP_MAIN = 0,
+    FX_STEREO_WIDEN_GROUP_COUNT
+} FXStereoWidenParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_STEREO_WIDEN_PARAM_WIDTH = 0,
+    FX_STEREO_WIDEN_PARAM_MIX,
+    FX_STEREO_WIDEN_PARAM_COUNT
+} FXStereoWidenParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo stereo_widen_params[FX_STEREO_WIDEN_PARAM_COUNT] = {
+    {"Width", "%", 0.5f, 0.0f, 1.0f, FX_STEREO_WIDEN_GROUP_MAIN, 0},
+    {"Mix", "%", 0.5f, 0.0f, 1.0f, FX_STEREO_WIDEN_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_STEREO_WIDEN_GROUP_COUNT] = {
+    "Stereo Widener"
+};
+
+int fx_stereo_widen_get_parameter_count(void)
+{
+    return FX_STEREO_WIDEN_PARAM_COUNT;
+}
+
+float fx_stereo_widen_get_parameter_value(FXStereoWiden* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_STEREO_WIDEN_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_STEREO_WIDEN_PARAM_WIDTH:
+            return fx_stereo_widen_get_width(fx);
+        case FX_STEREO_WIDEN_PARAM_MIX:
+            return fx_stereo_widen_get_mix(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_stereo_widen_set_parameter_value(FXStereoWiden* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_STEREO_WIDEN_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_STEREO_WIDEN_PARAM_WIDTH:
+            fx_stereo_widen_set_width(fx, value);
+            break;
+        case FX_STEREO_WIDEN_PARAM_MIX:
+            fx_stereo_widen_set_mix(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_stereo_widen, stereo_widen_params, FX_STEREO_WIDEN_PARAM_COUNT, group_names, FX_STEREO_WIDEN_GROUP_COUNT)
+
 static inline void ms_encode(float l, float r, float* m, float* s)
 { *m = 0.5f*(l + r); *s = 0.5f*(l - r); }
 

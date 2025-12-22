@@ -210,3 +210,57 @@ float fx_limiter_get_lookahead(FXLimiter* fx) {
 float fx_limiter_get_gain_reduction(FXLimiter* fx) {
     return fx ? fx->gainReduction : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_LIMITER_GROUP_MAIN = 0,
+    FX_LIMITER_GROUP_COUNT
+} FXLimiterParamGroup;
+
+typedef enum {
+    FX_LIMITER_PARAM_THRESHOLD = 0,
+    FX_LIMITER_PARAM_RELEASE,
+    FX_LIMITER_PARAM_CEILING,
+    FX_LIMITER_PARAM_LOOKAHEAD,
+    FX_LIMITER_PARAM_COUNT
+} FXLimiterParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo limiter_params[FX_LIMITER_PARAM_COUNT] = {
+    {"Threshold", "dB", 0.5f, 0.0f, 1.0f, FX_LIMITER_GROUP_MAIN, 0},
+    {"Release", "ms", 0.5f, 0.0f, 1.0f, FX_LIMITER_GROUP_MAIN, 0},
+    {"Ceiling", "dB", 0.5f, 0.0f, 1.0f, FX_LIMITER_GROUP_MAIN, 0},
+    {"Lookahead", "ms", 0.3f, 0.0f, 1.0f, FX_LIMITER_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_LIMITER_GROUP_COUNT] = {"Limiter"};
+
+int fx_limiter_get_parameter_count(void) { return FX_LIMITER_PARAM_COUNT; }
+
+float fx_limiter_get_parameter_value(FXLimiter* fx, int index) {
+    if (!fx || index < 0 || index >= FX_LIMITER_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_LIMITER_PARAM_THRESHOLD: return fx_limiter_get_threshold(fx);
+        case FX_LIMITER_PARAM_RELEASE: return fx_limiter_get_release(fx);
+        case FX_LIMITER_PARAM_CEILING: return fx_limiter_get_ceiling(fx);
+        case FX_LIMITER_PARAM_LOOKAHEAD: return fx_limiter_get_lookahead(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_limiter_set_parameter_value(FXLimiter* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_LIMITER_PARAM_COUNT) return;
+    switch (index) {
+        case FX_LIMITER_PARAM_THRESHOLD: fx_limiter_set_threshold(fx, value); break;
+        case FX_LIMITER_PARAM_RELEASE: fx_limiter_set_release(fx, value); break;
+        case FX_LIMITER_PARAM_CEILING: fx_limiter_set_ceiling(fx, value); break;
+        case FX_LIMITER_PARAM_LOOKAHEAD: fx_limiter_set_lookahead(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_limiter, limiter_params, FX_LIMITER_PARAM_COUNT, group_names, FX_LIMITER_GROUP_COUNT)

@@ -35,6 +35,22 @@ float fx_reverb_get_size(FXReverb* fx);
 float fx_reverb_get_damping(FXReverb* fx);
 float fx_reverb_get_mix(FXReverb* fx);
 
+// ============================================================================
+// Generic Parameter Interface (for wrapper use)
+// ============================================================================
+
+int fx_reverb_get_parameter_count(void);
+float fx_reverb_get_parameter_value(FXReverb* fx, int index);
+void fx_reverb_set_parameter_value(FXReverb* fx, int index, float value);
+const char* fx_reverb_get_parameter_name(int index);
+const char* fx_reverb_get_parameter_label(int index);
+float fx_reverb_get_parameter_default(int index);
+float fx_reverb_get_parameter_min(int index);
+float fx_reverb_get_parameter_max(int index);
+int fx_reverb_get_parameter_group(int index);
+const char* fx_reverb_get_group_name(int group);
+int fx_reverb_parameter_is_integer(int index);
+
 #ifdef __cplusplus
 }
 #endif

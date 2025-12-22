@@ -204,3 +204,53 @@ float fx_phaser_get_feedback(FXPhaser* fx)
 {
     return fx ? fx->feedback : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_PHASER_GROUP_MAIN = 0,
+    FX_PHASER_GROUP_COUNT
+} FXPhaserParamGroup;
+
+typedef enum {
+    FX_PHASER_PARAM_RATE = 0,
+    FX_PHASER_PARAM_DEPTH,
+    FX_PHASER_PARAM_FEEDBACK,
+    FX_PHASER_PARAM_COUNT
+} FXPhaserParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo phaser_params[FX_PHASER_PARAM_COUNT] = {
+    {"Rate", "Hz", 0.5f, 0.0f, 1.0f, FX_PHASER_GROUP_MAIN, 0},
+    {"Depth", "%", 0.5f, 0.0f, 1.0f, FX_PHASER_GROUP_MAIN, 0},
+    {"Feedback", "%", 0.5f, 0.0f, 1.0f, FX_PHASER_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_PHASER_GROUP_COUNT] = {"Phaser"};
+
+int fx_phaser_get_parameter_count(void) { return FX_PHASER_PARAM_COUNT; }
+
+float fx_phaser_get_parameter_value(FXPhaser* fx, int index) {
+    if (!fx || index < 0 || index >= FX_PHASER_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_PHASER_PARAM_RATE: return fx_phaser_get_rate(fx);
+        case FX_PHASER_PARAM_DEPTH: return fx_phaser_get_depth(fx);
+        case FX_PHASER_PARAM_FEEDBACK: return fx_phaser_get_feedback(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_phaser_set_parameter_value(FXPhaser* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_PHASER_PARAM_COUNT) return;
+    switch (index) {
+        case FX_PHASER_PARAM_RATE: fx_phaser_set_rate(fx, value); break;
+        case FX_PHASER_PARAM_DEPTH: fx_phaser_set_depth(fx, value); break;
+        case FX_PHASER_PARAM_FEEDBACK: fx_phaser_set_feedback(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_phaser, phaser_params, FX_PHASER_PARAM_COUNT, group_names, FX_PHASER_GROUP_COUNT)

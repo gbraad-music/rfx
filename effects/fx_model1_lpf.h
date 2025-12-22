@@ -38,6 +38,19 @@ void fx_model1_lpf_set_cutoff(FXModel1LPF* fx, float cutoff);  // 0.0-1.0 (0.0=5
 int fx_model1_lpf_get_enabled(FXModel1LPF* fx);
 float fx_model1_lpf_get_cutoff(FXModel1LPF* fx);
 
+// Generic Parameter Interface
+int fx_model1_lpf_get_parameter_count(void);
+float fx_model1_lpf_get_parameter_value(FXModel1LPF* fx, int index);
+void fx_model1_lpf_set_parameter_value(FXModel1LPF* fx, int index, float value);
+const char* fx_model1_lpf_get_parameter_name(int index);
+const char* fx_model1_lpf_get_parameter_label(int index);
+float fx_model1_lpf_get_parameter_default(int index);
+float fx_model1_lpf_get_parameter_min(int index);
+float fx_model1_lpf_get_parameter_max(int index);
+int fx_model1_lpf_get_parameter_group(int index);
+const char* fx_model1_lpf_get_group_name(int group);
+int fx_model1_lpf_parameter_is_integer(int index);
+
 #ifdef __cplusplus
 }
 #endif

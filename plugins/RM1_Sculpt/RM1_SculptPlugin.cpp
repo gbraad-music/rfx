@@ -40,39 +40,21 @@ protected:
     void initParameter(uint32_t index, Parameter& parameter) override
     {
         parameter.hints = kParameterIsAutomable;
-        switch (index) {
-            case kParameterFrequency:
-                parameter.name = "Frequency";
-                parameter.symbol = "freq";
-                parameter.ranges.def = 0.5f;
-                parameter.ranges.min = 0.0f;
-                parameter.ranges.max = 1.0f;
-                break;
-            case kParameterGain:
-                parameter.name = "Gain";
-                parameter.symbol = "gain";
-                parameter.ranges.def = 0.5f;
-                parameter.ranges.min = 0.0f;
-                parameter.ranges.max = 1.0f;
-                break;
-        }
+        parameter.ranges.min = fx_model1_sculpt_get_parameter_min(index);
+        parameter.ranges.max = fx_model1_sculpt_get_parameter_max(index);
+        parameter.ranges.def = fx_model1_sculpt_get_parameter_default(index);
+        parameter.name = fx_model1_sculpt_get_parameter_name(index);
+        parameter.symbol = parameter.name;
     }
 
     float getParameterValue(uint32_t index) const override
     {
-        switch (index) {
-            case kParameterFrequency: return fx_model1_sculpt_get_frequency(fx);
-            case kParameterGain: return fx_model1_sculpt_get_gain(fx);
-        }
-        return 0.0f;
+        return fx_model1_sculpt_get_parameter_value((FXModel1Sculpt*)fx, index);
     }
 
     void setParameterValue(uint32_t index, float value) override
     {
-        switch (index) {
-            case kParameterFrequency: fx_model1_sculpt_set_frequency(fx, value); break;
-            case kParameterGain: fx_model1_sculpt_set_gain(fx, value); break;
-        }
+        fx_model1_sculpt_set_parameter_value(fx, index, value);
     }
 
     void initState(uint32_t index, String& stateKey, String& defaultStateValue) override

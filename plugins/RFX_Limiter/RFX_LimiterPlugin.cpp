@@ -42,32 +42,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterThreshold:
-            param.name = "Threshold";
-            param.symbol = "threshold";
-            param.ranges.def = 0.75f;
-            break;
-        case kParameterRelease:
-            param.name = "Release";
-            param.symbol = "release";
-            param.ranges.def = 0.2f;
-            break;
-        case kParameterCeiling:
-            param.name = "Ceiling";
-            param.symbol = "ceiling";
-            param.ranges.def = 1.0f;
-            break;
-        case kParameterLookahead:
-            param.name = "Lookahead";
-            param.symbol = "lookahead";
-            param.ranges.def = 0.3f;
-            break;
-        }
+        param.ranges.min = fx_limiter_get_parameter_min(index);
+        param.ranges.max = fx_limiter_get_parameter_max(index);
+        param.ranges.def = fx_limiter_get_parameter_default(index);
+        param.name = fx_limiter_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -91,14 +70,9 @@ protected:
         case kParameterLookahead: fLookahead = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface
         if (fEffect) {
-            switch (index) {
-            case kParameterThreshold: fx_limiter_set_threshold(fEffect, value); break;
-            case kParameterRelease: fx_limiter_set_release(fEffect, value); break;
-            case kParameterCeiling: fx_limiter_set_ceiling(fEffect, value); break;
-            case kParameterLookahead: fx_limiter_set_lookahead(fEffect, value); break;
-            }
+            fx_limiter_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -175,11 +149,9 @@ protected:
     {
         if (fEffect) {
             fx_limiter_reset(fEffect);
-            // Restore parameters after reset
-            fx_limiter_set_threshold(fEffect, fThreshold);
-            fx_limiter_set_release(fEffect, fRelease);
-            fx_limiter_set_ceiling(fEffect, fCeiling);
-            fx_limiter_set_lookahead(fEffect, fLookahead);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_limiter_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

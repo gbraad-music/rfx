@@ -159,3 +159,49 @@ float fx_freqshift_get_freq(FXFreqShift* fx) {
 float fx_freqshift_get_mix(FXFreqShift* fx) {
     return fx ? fx->mix : 1.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_FREQSHIFT_GROUP_MAIN = 0,
+    FX_FREQSHIFT_GROUP_COUNT
+} FXFreqShiftParamGroup;
+
+typedef enum {
+    FX_FREQSHIFT_PARAM_FREQ = 0,
+    FX_FREQSHIFT_PARAM_MIX,
+    FX_FREQSHIFT_PARAM_COUNT
+} FXFreqShiftParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo freqshift_params[FX_FREQSHIFT_PARAM_COUNT] = {
+    {"Frequency", "Hz", 0.5f, 0.0f, 1.0f, FX_FREQSHIFT_GROUP_MAIN, 0},
+    {"Mix", "%", 1.0f, 0.0f, 1.0f, FX_FREQSHIFT_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_FREQSHIFT_GROUP_COUNT] = {"FreqShift"};
+
+int fx_freqshift_get_parameter_count(void) { return FX_FREQSHIFT_PARAM_COUNT; }
+
+float fx_freqshift_get_parameter_value(FXFreqShift* fx, int index) {
+    if (!fx || index < 0 || index >= FX_FREQSHIFT_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_FREQSHIFT_PARAM_FREQ: return fx_freqshift_get_freq(fx);
+        case FX_FREQSHIFT_PARAM_MIX: return fx_freqshift_get_mix(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_freqshift_set_parameter_value(FXFreqShift* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_FREQSHIFT_PARAM_COUNT) return;
+    switch (index) {
+        case FX_FREQSHIFT_PARAM_FREQ: fx_freqshift_set_freq(fx, value); break;
+        case FX_FREQSHIFT_PARAM_MIX: fx_freqshift_set_mix(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_freqshift, freqshift_params, FX_FREQSHIFT_PARAM_COUNT, group_names, FX_FREQSHIFT_GROUP_COUNT)

@@ -39,26 +39,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-        switch (index) {
-        case kParameterRate:
-            param.name = "Rate";
-            param.symbol = "rate";
-            param.ranges.def = 0.5f;
-            break;
-        case kParameterDepth:
-            param.name = "Depth";
-            param.symbol = "depth";
-            param.ranges.def = 0.5f;
-            break;
-        case kParameterFeedback:
-            param.name = "Feedback";
-            param.symbol = "feedback";
-            param.ranges.def = 0.5f;
-            break;
-        }
+        param.ranges.min = fx_phaser_get_parameter_min(index);
+        param.ranges.max = fx_phaser_get_parameter_max(index);
+        param.ranges.def = fx_phaser_get_parameter_default(index);
+        param.name = fx_phaser_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -143,9 +128,9 @@ protected:
     {
         if (fEffect) {
             fx_phaser_reset(fEffect);
-            fx_phaser_set_rate(fEffect, fRate);
-            fx_phaser_set_depth(fEffect, fDepth);
-            fx_phaser_set_feedback(fEffect, fFeedback);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_phaser_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

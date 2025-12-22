@@ -39,24 +39,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterLow:
-            param.name = "Low";
-            param.symbol = "low";
-            break;
-        case kParameterMid:
-            param.name = "Mid";
-            param.symbol = "mid";
-            break;
-        case kParameterHigh:
-            param.name = "High";
-            param.symbol = "high";
-            break;
-        }
+        param.ranges.min = fx_eq_get_parameter_min(index);
+        param.ranges.max = fx_eq_get_parameter_max(index);
+        param.ranges.def = fx_eq_get_parameter_default(index);
+        param.name = fx_eq_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -78,11 +65,7 @@ protected:
         }
 
         if (fEffect) {
-            switch (index) {
-            case kParameterLow: fx_eq_set_low(fEffect, value); break;
-            case kParameterMid: fx_eq_set_mid(fEffect, value); break;
-            case kParameterHigh: fx_eq_set_high(fEffect, value); break;
-            }
+            fx_eq_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -147,9 +130,9 @@ protected:
     {
         if (fEffect) {
             fx_eq_reset(fEffect);
-            fx_eq_set_low(fEffect, fLow);
-            fx_eq_set_mid(fEffect, fMid);
-            fx_eq_set_high(fEffect, fHigh);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_eq_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

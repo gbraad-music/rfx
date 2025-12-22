@@ -278,3 +278,53 @@ float fx_pitchshift_get_mix(FXPitchShift* fx) {
 float fx_pitchshift_get_formant(FXPitchShift* fx) {
     return fx ? fx->formant : 0.5f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_PITCHSHIFT_GROUP_MAIN = 0,
+    FX_PITCHSHIFT_GROUP_COUNT
+} FXPitchShiftParamGroup;
+
+typedef enum {
+    FX_PITCHSHIFT_PARAM_PITCH = 0,
+    FX_PITCHSHIFT_PARAM_MIX,
+    FX_PITCHSHIFT_PARAM_FORMANT,
+    FX_PITCHSHIFT_PARAM_COUNT
+} FXPitchShiftParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo pitchshift_params[FX_PITCHSHIFT_PARAM_COUNT] = {
+    {"Pitch", "st", 0.5f, 0.0f, 1.0f, FX_PITCHSHIFT_GROUP_MAIN, 0},
+    {"Mix", "%", 1.0f, 0.0f, 1.0f, FX_PITCHSHIFT_GROUP_MAIN, 0},
+    {"Formant", "%", 0.5f, 0.0f, 1.0f, FX_PITCHSHIFT_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_PITCHSHIFT_GROUP_COUNT] = {"PitchShift"};
+
+int fx_pitchshift_get_parameter_count(void) { return FX_PITCHSHIFT_PARAM_COUNT; }
+
+float fx_pitchshift_get_parameter_value(FXPitchShift* fx, int index) {
+    if (!fx || index < 0 || index >= FX_PITCHSHIFT_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_PITCHSHIFT_PARAM_PITCH: return fx_pitchshift_get_pitch(fx);
+        case FX_PITCHSHIFT_PARAM_MIX: return fx_pitchshift_get_mix(fx);
+        case FX_PITCHSHIFT_PARAM_FORMANT: return fx_pitchshift_get_formant(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_pitchshift_set_parameter_value(FXPitchShift* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_PITCHSHIFT_PARAM_COUNT) return;
+    switch (index) {
+        case FX_PITCHSHIFT_PARAM_PITCH: fx_pitchshift_set_pitch(fx, value); break;
+        case FX_PITCHSHIFT_PARAM_MIX: fx_pitchshift_set_mix(fx, value); break;
+        case FX_PITCHSHIFT_PARAM_FORMANT: fx_pitchshift_set_formant(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_pitchshift, pitchshift_params, FX_PITCHSHIFT_PARAM_COUNT, group_names, FX_PITCHSHIFT_GROUP_COUNT)

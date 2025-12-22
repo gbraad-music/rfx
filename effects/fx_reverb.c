@@ -270,3 +270,74 @@ float fx_reverb_get_mix(FXReverb* fx)
 {
     return fx ? fx->mix : 0.0f;
 }
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_REVERB_GROUP_MAIN = 0,
+    FX_REVERB_GROUP_COUNT
+} FXReverbParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_REVERB_PARAM_SIZE = 0,
+    FX_REVERB_PARAM_DAMPING,
+    FX_REVERB_PARAM_MIX,
+    FX_REVERB_PARAM_COUNT
+} FXReverbParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo reverb_params[FX_REVERB_PARAM_COUNT] = {
+    {"Size", "%", 0.5f, 0.0f, 1.0f, FX_REVERB_GROUP_MAIN, 0},
+    {"Damping", "%", 0.5f, 0.0f, 1.0f, FX_REVERB_GROUP_MAIN, 0},
+    {"Mix", "%", 0.3f, 0.0f, 1.0f, FX_REVERB_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_REVERB_GROUP_COUNT] = {
+    "Reverb"
+};
+
+int fx_reverb_get_parameter_count(void)
+{
+    return FX_REVERB_PARAM_COUNT;
+}
+
+float fx_reverb_get_parameter_value(FXReverb* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_REVERB_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_REVERB_PARAM_SIZE:
+            return fx_reverb_get_size(fx);
+        case FX_REVERB_PARAM_DAMPING:
+            return fx_reverb_get_damping(fx);
+        case FX_REVERB_PARAM_MIX:
+            return fx_reverb_get_mix(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_reverb_set_parameter_value(FXReverb* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_REVERB_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_REVERB_PARAM_SIZE:
+            fx_reverb_set_size(fx, value);
+            break;
+        case FX_REVERB_PARAM_DAMPING:
+            fx_reverb_set_damping(fx, value);
+            break;
+        case FX_REVERB_PARAM_MIX:
+            fx_reverb_set_mix(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_reverb, reverb_params, FX_REVERB_PARAM_COUNT, group_names, FX_REVERB_GROUP_COUNT)

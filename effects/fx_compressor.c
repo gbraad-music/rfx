@@ -202,3 +202,89 @@ float fx_compressor_get_makeup(FXCompressor* fx)
 {
     return fx ? fx->makeup : 0.5f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_COMPRESSOR_GROUP_MAIN = 0,
+    FX_COMPRESSOR_GROUP_COUNT
+} FXCompressorParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_COMPRESSOR_PARAM_THRESHOLD = 0,
+    FX_COMPRESSOR_PARAM_RATIO,
+    FX_COMPRESSOR_PARAM_ATTACK,
+    FX_COMPRESSOR_PARAM_RELEASE,
+    FX_COMPRESSOR_PARAM_MAKEUP,
+    FX_COMPRESSOR_PARAM_COUNT
+} FXCompressorParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo compressor_params[FX_COMPRESSOR_PARAM_COUNT] = {
+    {"Threshold", "dB", 0.5f, 0.0f, 1.0f, FX_COMPRESSOR_GROUP_MAIN, 0},
+    {"Ratio", ":1", 0.5f, 0.0f, 1.0f, FX_COMPRESSOR_GROUP_MAIN, 0},
+    {"Attack", "ms", 0.5f, 0.0f, 1.0f, FX_COMPRESSOR_GROUP_MAIN, 0},
+    {"Release", "ms", 0.5f, 0.0f, 1.0f, FX_COMPRESSOR_GROUP_MAIN, 0},
+    {"Makeup", "dB", 0.5f, 0.0f, 1.0f, FX_COMPRESSOR_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_COMPRESSOR_GROUP_COUNT] = {
+    "Compressor"
+};
+
+int fx_compressor_get_parameter_count(void)
+{
+    return FX_COMPRESSOR_PARAM_COUNT;
+}
+
+float fx_compressor_get_parameter_value(FXCompressor* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_COMPRESSOR_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_COMPRESSOR_PARAM_THRESHOLD:
+            return fx_compressor_get_threshold(fx);
+        case FX_COMPRESSOR_PARAM_RATIO:
+            return fx_compressor_get_ratio(fx);
+        case FX_COMPRESSOR_PARAM_ATTACK:
+            return fx_compressor_get_attack(fx);
+        case FX_COMPRESSOR_PARAM_RELEASE:
+            return fx_compressor_get_release(fx);
+        case FX_COMPRESSOR_PARAM_MAKEUP:
+            return fx_compressor_get_makeup(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_compressor_set_parameter_value(FXCompressor* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_COMPRESSOR_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_COMPRESSOR_PARAM_THRESHOLD:
+            fx_compressor_set_threshold(fx, value);
+            break;
+        case FX_COMPRESSOR_PARAM_RATIO:
+            fx_compressor_set_ratio(fx, value);
+            break;
+        case FX_COMPRESSOR_PARAM_ATTACK:
+            fx_compressor_set_attack(fx, value);
+            break;
+        case FX_COMPRESSOR_PARAM_RELEASE:
+            fx_compressor_set_release(fx, value);
+            break;
+        case FX_COMPRESSOR_PARAM_MAKEUP:
+            fx_compressor_set_makeup(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_compressor, compressor_params, FX_COMPRESSOR_PARAM_COUNT, group_names, FX_COMPRESSOR_GROUP_COUNT)

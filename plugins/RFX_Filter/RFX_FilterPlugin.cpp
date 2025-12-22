@@ -38,22 +38,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterCutoff:
-            param.name = "Cutoff";
-            param.symbol = "cutoff";
-            param.ranges.def = 0.8f;
-            break;
-        case kParameterResonance:
-            param.name = "Resonance";
-            param.symbol = "resonance";
-            param.ranges.def = 0.3f;
-            break;
-        }
+        param.ranges.min = fx_filter_get_parameter_min(index);
+        param.ranges.max = fx_filter_get_parameter_max(index);
+        param.ranges.def = fx_filter_get_parameter_default(index);
+        param.name = fx_filter_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -73,12 +62,9 @@ protected:
         case kParameterResonance: fResonance = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface - NO SWITCH NEEDED!
         if (fEffect) {
-            switch (index) {
-            case kParameterCutoff: fx_filter_set_cutoff(fEffect, value); break;
-            case kParameterResonance: fx_filter_set_resonance(fEffect, value); break;
-            }
+            fx_filter_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -131,9 +117,10 @@ protected:
     {
         if (fEffect) {
             fx_filter_reset(fEffect);
-            // Restore parameters after reset
-            fx_filter_set_cutoff(fEffect, fCutoff);
-            fx_filter_set_resonance(fEffect, fResonance);
+            // Restore ALL parameters after reset using generic interface - NO HARDCODING!
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_filter_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

@@ -37,21 +37,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 2.0f;
-        param.ranges.def = 0.5f;
-        switch (index) {
-        case kParameterWidth:
-            param.name = "Width";
-            param.symbol = "width";
-            param.ranges.def = 1.5f;
-            break;
-        case kParameterMix:
-            param.name = "Mix";
-            param.symbol = "mix";
-            param.ranges.def = 1.0f;
-            break;
-        }
+        param.ranges.min = fx_stereo_widen_get_parameter_min(index);
+        param.ranges.max = fx_stereo_widen_get_parameter_max(index);
+        param.ranges.def = fx_stereo_widen_get_parameter_default(index);
+        param.name = fx_stereo_widen_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -122,8 +112,9 @@ protected:
     {
         if (fEffect) {
             fx_stereo_widen_reset(fEffect);
-            fx_stereo_widen_set_width(fEffect, fWidth);
-            fx_stereo_widen_set_mix(fEffect, fMix);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_stereo_widen_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

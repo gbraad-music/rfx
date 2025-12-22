@@ -174,3 +174,45 @@ int fx_model1_hpf_get_enabled(FXModel1HPF* fx) {
 float fx_model1_hpf_get_cutoff(FXModel1HPF* fx) {
     return fx ? fx->cutoff : 0.0f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+typedef enum {
+    FX_MODEL1_HPF_GROUP_MAIN = 0,
+    FX_MODEL1_HPF_GROUP_COUNT
+} FXModel1HPFParamGroup;
+
+typedef enum {
+    FX_MODEL1_HPF_PARAM_CUTOFF = 0,
+    FX_MODEL1_HPF_PARAM_COUNT
+} FXModel1HPFParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo model1_hpf_params[FX_MODEL1_HPF_PARAM_COUNT] = {
+    {"Cutoff", "Hz", 0.0f, 0.0f, 1.0f, FX_MODEL1_HPF_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_MODEL1_HPF_GROUP_COUNT] = {"HPF"};
+
+int fx_model1_hpf_get_parameter_count(void) { return FX_MODEL1_HPF_PARAM_COUNT; }
+
+float fx_model1_hpf_get_parameter_value(FXModel1HPF* fx, int index) {
+    if (!fx || index < 0 || index >= FX_MODEL1_HPF_PARAM_COUNT) return 0.0f;
+    switch (index) {
+        case FX_MODEL1_HPF_PARAM_CUTOFF: return fx_model1_hpf_get_cutoff(fx);
+        default: return 0.0f;
+    }
+}
+
+void fx_model1_hpf_set_parameter_value(FXModel1HPF* fx, int index, float value) {
+    if (!fx || index < 0 || index >= FX_MODEL1_HPF_PARAM_COUNT) return;
+    switch (index) {
+        case FX_MODEL1_HPF_PARAM_CUTOFF: fx_model1_hpf_set_cutoff(fx, value); break;
+    }
+}
+
+DEFINE_PARAM_METADATA_ACCESSORS(fx_model1_hpf, model1_hpf_params, FX_MODEL1_HPF_PARAM_COUNT, group_names, FX_MODEL1_HPF_GROUP_COUNT)

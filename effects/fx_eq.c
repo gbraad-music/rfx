@@ -175,3 +175,75 @@ float fx_eq_get_high(FXEqualizer* fx)
 {
     return fx ? fx->high : 0.5f;
 }
+
+// ============================================================================
+// Generic Parameter Interface
+// ============================================================================
+
+#include "../param_interface.h"
+
+// Parameter groups
+typedef enum {
+    FX_EQ_GROUP_MAIN = 0,
+    FX_EQ_GROUP_COUNT
+} FXEQParamGroup;
+
+// Parameter indices
+typedef enum {
+    FX_EQ_PARAM_LOW = 0,
+    FX_EQ_PARAM_MID,
+    FX_EQ_PARAM_HIGH,
+    FX_EQ_PARAM_COUNT
+} FXEQParamIndex;
+
+// Parameter metadata (ALL VALUES NORMALIZED 0.0-1.0)
+static const ParameterInfo eq_params[FX_EQ_PARAM_COUNT] = {
+    {"Low", "dB", 0.5f, 0.0f, 1.0f, FX_EQ_GROUP_MAIN, 0},
+    {"Mid", "dB", 0.5f, 0.0f, 1.0f, FX_EQ_GROUP_MAIN, 0},
+    {"High", "dB", 0.5f, 0.0f, 1.0f, FX_EQ_GROUP_MAIN, 0}
+};
+
+static const char* group_names[FX_EQ_GROUP_COUNT] = {
+    "EQ"
+};
+
+int fx_eq_get_parameter_count(void)
+{
+    return FX_EQ_PARAM_COUNT;
+}
+
+float fx_eq_get_parameter_value(FXEqualizer* fx, int index)
+{
+    if (!fx || index < 0 || index >= FX_EQ_PARAM_COUNT) return 0.0f;
+
+    switch (index) {
+        case FX_EQ_PARAM_LOW:
+            return fx_eq_get_low(fx);
+        case FX_EQ_PARAM_MID:
+            return fx_eq_get_mid(fx);
+        case FX_EQ_PARAM_HIGH:
+            return fx_eq_get_high(fx);
+        default:
+            return 0.0f;
+    }
+}
+
+void fx_eq_set_parameter_value(FXEqualizer* fx, int index, float value)
+{
+    if (!fx || index < 0 || index >= FX_EQ_PARAM_COUNT) return;
+
+    switch (index) {
+        case FX_EQ_PARAM_LOW:
+            fx_eq_set_low(fx, value);
+            break;
+        case FX_EQ_PARAM_MID:
+            fx_eq_set_mid(fx, value);
+            break;
+        case FX_EQ_PARAM_HIGH:
+            fx_eq_set_high(fx, value);
+            break;
+    }
+}
+
+// Generate all metadata accessor functions using shared macro
+DEFINE_PARAM_METADATA_ACCESSORS(fx_eq, eq_params, FX_EQ_PARAM_COUNT, group_names, FX_EQ_GROUP_COUNT)

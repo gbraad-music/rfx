@@ -33,6 +33,19 @@ void fx_model1_trim_set_drive(FXModel1Trim* fx, float drive);
 float fx_model1_trim_get_drive(FXModel1Trim* fx);
 float fx_model1_trim_get_peak_level(FXModel1Trim* fx);  // Returns peak output level (0.0+)
 
+// Generic Parameter Interface
+int fx_model1_trim_get_parameter_count(void);
+float fx_model1_trim_get_parameter_value(FXModel1Trim* fx, int index);
+void fx_model1_trim_set_parameter_value(FXModel1Trim* fx, int index, float value);
+const char* fx_model1_trim_get_parameter_name(int index);
+const char* fx_model1_trim_get_parameter_label(int index);
+float fx_model1_trim_get_parameter_default(int index);
+float fx_model1_trim_get_parameter_min(int index);
+float fx_model1_trim_get_parameter_max(int index);
+int fx_model1_trim_get_parameter_group(int index);
+const char* fx_model1_trim_get_group_name(int group);
+int fx_model1_trim_parameter_is_integer(int index);
+
 #ifdef __cplusplus
 }
 #endif

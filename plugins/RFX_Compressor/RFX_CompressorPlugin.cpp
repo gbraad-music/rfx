@@ -44,36 +44,11 @@ protected:
     void initParameter(uint32_t index, Parameter& param) override
     {
         param.hints = kParameterIsAutomatable;
-        param.ranges.min = 0.0f;
-        param.ranges.max = 1.0f;
-        param.ranges.def = 0.5f;
-
-        switch (index) {
-        case kParameterThreshold:
-            param.name = "Threshold";
-            param.symbol = "threshold";
-            param.ranges.def = 0.4f;
-            break;
-        case kParameterRatio:
-            param.name = "Ratio";
-            param.symbol = "ratio";
-            param.ranges.def = 0.4f;
-            break;
-        case kParameterAttack:
-            param.name = "Attack";
-            param.symbol = "attack";
-            param.ranges.def = 0.05f;
-            break;
-        case kParameterRelease:
-            param.name = "Release";
-            param.symbol = "release";
-            break;
-        case kParameterMakeup:
-            param.name = "Makeup";
-            param.symbol = "makeup";
-            param.ranges.def = 0.65f;
-            break;
-        }
+        param.ranges.min = fx_compressor_get_parameter_min(index);
+        param.ranges.max = fx_compressor_get_parameter_max(index);
+        param.ranges.def = fx_compressor_get_parameter_default(index);
+        param.name = fx_compressor_get_parameter_name(index);
+        param.symbol = param.name;
     }
 
     float getParameterValue(uint32_t index) const override
@@ -99,15 +74,9 @@ protected:
         case kParameterMakeup: fMakeup = value; break;
         }
 
-        // Apply to DSP engine if it exists
+        // Apply to DSP engine using generic interface
         if (fEffect) {
-            switch (index) {
-            case kParameterThreshold: fx_compressor_set_threshold(fEffect, value); break;
-            case kParameterRatio: fx_compressor_set_ratio(fEffect, value); break;
-            case kParameterAttack: fx_compressor_set_attack(fEffect, value); break;
-            case kParameterRelease: fx_compressor_set_release(fEffect, value); break;
-            case kParameterMakeup: fx_compressor_set_makeup(fEffect, value); break;
-            }
+            fx_compressor_set_parameter_value(fEffect, index, value);
         }
     }
 
@@ -196,12 +165,9 @@ protected:
     {
         if (fEffect) {
             fx_compressor_reset(fEffect);
-            // Restore parameters after reset
-            fx_compressor_set_threshold(fEffect, fThreshold);
-            fx_compressor_set_ratio(fEffect, fRatio);
-            fx_compressor_set_attack(fEffect, fAttack);
-            fx_compressor_set_release(fEffect, fRelease);
-            fx_compressor_set_makeup(fEffect, fMakeup);
+            for (uint32_t i = 0; i < kParameterCount; ++i) {
+                fx_compressor_set_parameter_value(fEffect, i, getParameterValue(i));
+            }
         }
     }
 

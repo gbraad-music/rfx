@@ -123,7 +123,7 @@ void synth_karplus_trigger(SynthKarplus* ks, float frequency, float velocity, in
         if (ks->pick_position > 0.01f && ks->pick_position < 0.99f) {
             float phase = (float)i / ks->buffer_size;
             // Simple position filtering
-            pos_factor = sinf(M_PI * phase / ks->pick_position);
+            pos_factor = sinf(M_PI * phase * ks->pick_position);
             if (pos_factor < 0.0f) pos_factor = 0.0f;
         }
 

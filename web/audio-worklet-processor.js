@@ -20,7 +20,7 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
     }
 
     handleMessage(event) {
-        const { type, data } = event.data;
+        const { type, data, state } = event.data;
 
         if (type === 'wasmBytes') {
             this.initWasm(data);  // Just the bytes, not JS code
@@ -28,6 +28,11 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             this.toggleEffect(data.name, data.enabled);
         } else if (type === 'setParam') {
             this.setParameter(data.effect, data.param, data.value);
+        } else if (type === 'getState') {
+            const currentState = this.getEffectState();
+            this.port.postMessage({ type: 'state', state: currentState });
+        } else if (type === 'setState') {
+            this.setEffectState(state);
         }
     }
 
@@ -90,7 +95,6 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             { name: 'phaser', prefix: '_fx_phaser', defaultEnabled: false },
             { name: 'stereo_widen', prefix: '_fx_stereo_widen', defaultEnabled: false },
             { name: 'ring_mod', prefix: '_fx_ring_mod', defaultEnabled: false },
-            { name: 'vocoder', prefix: '_fx_vocoder', defaultEnabled: false },
             { name: 'pitchshift', prefix: '_fx_pitchshift', defaultEnabled: false }
         ];
 
@@ -153,6 +157,90 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         }
     }
 
+    getEffectState() {
+        const state = { effects: {} };
+
+        // Parameter map for each effect
+        const effectParams = {
+            'model1_trim': ['drive'],
+            'model1_hpf': ['cutoff'],
+            'model1_lpf': ['cutoff'],
+            'model1_sculpt': ['frequency', 'gain'],
+            'distortion': ['drive', 'mix'],
+            'limiter': ['threshold', 'release', 'ceiling', 'lookahead'],
+            'filter': ['cutoff', 'resonance'],
+            'eq': ['low', 'mid', 'high'],
+            'compressor': ['threshold', 'ratio', 'attack', 'release', 'makeup'],
+            'delay': ['time', 'feedback', 'mix'],
+            'reverb': ['size', 'damping', 'mix'],
+            'phaser': ['rate', 'depth', 'feedback'],
+            'stereo_widen': ['width', 'mix'],
+            'ring_mod': ['frequency', 'mix'],
+            'pitchshift': ['pitch', 'mix']
+        };
+
+        for (const [name, effect] of this.effects) {
+            const params = {};
+
+            // Get enabled state
+            const getEnabledFn = this.wasmModule[effect.prefix + '_get_enabled'];
+            if (getEnabledFn) {
+                params.enabled = getEnabledFn(effect.ptr);
+            }
+
+            // Get all parameters for this effect
+            const paramNames = effectParams[name] || [];
+            for (const paramName of paramNames) {
+                const getFn = this.wasmModule[effect.prefix + '_get_' + paramName];
+                if (getFn) {
+                    params[paramName] = getFn(effect.ptr);
+                }
+            }
+
+            state.effects[name] = params;
+        }
+
+        return state;
+    }
+
+    setEffectState(state) {
+        if (!state || !state.effects) {
+            console.log('[Worklet] setState: no state');
+            return;
+        }
+
+        console.log('[Worklet] Setting state for', Object.keys(state.effects).length, 'effects');
+
+        for (const [name, params] of Object.entries(state.effects)) {
+            const effect = this.effects.get(name);
+            if (!effect) {
+                console.log('[Worklet] Effect not found:', name);
+                continue;
+            }
+
+            // Set enabled state
+            if (params.enabled !== undefined) {
+                const setEnabledFn = this.wasmModule[effect.prefix + '_set_enabled'];
+                if (setEnabledFn) {
+                    setEnabledFn(effect.ptr, params.enabled);
+                    effect.enabled = params.enabled !== 0;  // CRITICAL: Update JS property too!
+                    console.log('[Worklet]', name, 'enabled:', params.enabled);
+                }
+            }
+
+            // Set other parameters
+            for (const [paramName, value] of Object.entries(params)) {
+                if (paramName !== 'enabled') {
+                    this.setParameter(name, paramName, value);
+                    console.log('[Worklet]', name, paramName, '=', value);
+                }
+            }
+        }
+
+        console.log('[Worklet] ✅ State applied');
+        this.port.postMessage({ type: 'stateApplied' });
+    }
+
     process(inputs, outputs, parameters) {
         if (!this.wasmModule || !this.audioBufferPtr) {
             return true;
@@ -184,6 +272,7 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         }
 
         // Process through enabled effects
+        const sr = globalThis.sampleRate || 48000; // AudioWorkletGlobalScope.sampleRate
         for (const [name, effect] of this.effects) {
             if (effect.enabled) {
                 // Determine process function based on effect type
@@ -194,7 +283,7 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
                 const processFn = this.wasmModule[effect.prefix + processSuffix];
 
                 if (processFn) {
-                    processFn(effect.ptr, this.audioBufferPtr, frames, sampleRate);
+                    processFn(effect.ptr, this.audioBufferPtr, frames, sr);
                 }
             }
         }

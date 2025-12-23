@@ -239,12 +239,17 @@ class AudioEffectsProcessor {
 
         console.log(`✅ Ready to stream: ${file.name}`);
         this.isStreaming = true;
+        this.loadedFile = file;  // Store for offline rendering
 
         // Show file name, hide mic selector
         document.getElementById('audioSourceInfo').style.display = 'block';
         document.getElementById('micDeviceList').style.display = 'none';
         document.getElementById('currentFileName').style.display = 'block';
         document.getElementById('fileNameText').textContent = file.name;
+
+        // Show RENDER button, hide TEST SIGNAL selector
+        document.getElementById('renderBtn').style.display = 'inline-block';
+        document.getElementById('testSignal').style.display = 'none';
 
         // Update page title
         document.title = `RFX: ${file.name}`;
@@ -263,6 +268,11 @@ class AudioEffectsProcessor {
             this.audioElement = null;
         }
         this.isStreaming = false;
+        this.loadedFile = null;
+
+        // Hide RENDER button, show TEST SIGNAL selector
+        document.getElementById('renderBtn').style.display = 'none';
+        document.getElementById('testSignal').style.display = 'inline-block';
 
         // Hide file name, show mic selector (if available)
         const micDeviceList = document.getElementById('micDeviceList');
@@ -602,6 +612,186 @@ class AudioEffectsProcessor {
         this.analyser.getByteTimeDomainData(dataArray);
         return dataArray;
     }
+
+    async renderToWav() {
+        if (!this.loadedFile) {
+            console.error('❌ No file loaded to render!');
+            return;
+        }
+
+        try {
+            console.log('🎬 Starting offline render...');
+
+            // Decode the audio file
+            const arrayBuffer = await this.loadedFile.arrayBuffer();
+            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+
+            const sampleRate = audioBuffer.sampleRate;
+            const duration = audioBuffer.duration;
+            const channels = audioBuffer.numberOfChannels;
+
+            console.log(`📊 Input: ${duration.toFixed(2)}s, ${sampleRate}Hz, ${channels}ch`);
+
+            // Create offline context
+            const offlineContext = new OfflineAudioContext(channels, audioBuffer.length, sampleRate);
+
+            // Load WASM into offline context
+            console.log('📡 Loading worklet into offline context...');
+            try {
+                // Fetch the worklet code and create a blob URL for offline context
+                const workletResponse = await fetch('audio-worklet-processor.js');
+                const workletCode = await workletResponse.text();
+                const workletBlob = new Blob([workletCode], { type: 'application/javascript' });
+                const workletURL = URL.createObjectURL(workletBlob);
+
+                await offlineContext.audioWorklet.addModule(workletURL);
+                URL.revokeObjectURL(workletURL);
+            } catch (err) {
+                console.error('❌ Failed to load worklet module:', err);
+                throw new Error('Failed to load audio worklet: ' + err.message);
+            }
+
+            // Create worklet node
+            const offlineWorklet = new AudioWorkletNode(offlineContext, 'wasm-effects-processor');
+
+            // Send WASM to offline worklet
+            const [jsResponse, wasmResponse] = await Promise.all([
+                fetch('regroove-effects.js'),
+                fetch('regroove-effects.wasm')
+            ]);
+            const jsCode = await jsResponse.text();
+            const wasmBytes = await wasmResponse.arrayBuffer();
+
+            await new Promise((resolve) => {
+                offlineWorklet.port.onmessage = (e) => {
+                    if (e.data.type === 'needWasm') {
+                        offlineWorklet.port.postMessage({
+                            type: 'wasmBytes',
+                            data: {
+                                jsCode: jsCode,
+                                wasmBytes: wasmBytes
+                            }
+                        }, [wasmBytes]);
+                    } else if (e.data.type === 'ready') {
+                        resolve();
+                    }
+                };
+            });
+
+            // Copy all effect parameters from live worklet to offline worklet
+            const state = await new Promise((resolve) => {
+                const handler = (e) => {
+                    if (e.data.type === 'state') {
+                        this.workletNode.port.removeEventListener('message', handler);
+                        console.log('📊 Got state:', e.data.state);
+                        resolve(e.data.state);
+                    }
+                };
+                this.workletNode.port.addEventListener('message', handler);
+                this.workletNode.port.postMessage({ type: 'getState' });
+            });
+
+            console.log('📤 Sending state to offline worklet...');
+
+            // Wait for confirmation that state was applied
+            await new Promise((resolve) => {
+                const handler = (e) => {
+                    if (e.data.type === 'stateApplied') {
+                        offlineWorklet.port.removeEventListener('message', handler);
+                        console.log('✅ Offline worklet state applied');
+                        resolve();
+                    }
+                };
+                offlineWorklet.port.addEventListener('message', handler);
+                offlineWorklet.port.postMessage({ type: 'setState', state });
+            });
+
+            // Create source and connect
+            const source = offlineContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(offlineWorklet);
+            offlineWorklet.connect(offlineContext.destination);
+
+            // Render
+            source.start();
+            const renderedBuffer = await offlineContext.startRendering();
+
+            console.log('✅ Rendering complete!');
+
+            // Convert to WAV
+            const wavBlob = this.audioBufferToWav(renderedBuffer);
+
+            // Download
+            const fileName = this.loadedFile.name.replace(/\.[^.]+$/, '_processed.wav');
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+
+            console.log(`💾 Downloaded: ${fileName}`);
+
+        } catch (error) {
+            console.error('❌ Render error:', error);
+        }
+    }
+
+    audioBufferToWav(buffer) {
+        const numChannels = buffer.numberOfChannels;
+        const sampleRate = buffer.sampleRate;
+        const format = 1; // PCM
+        const bitDepth = 16;
+
+        const bytesPerSample = bitDepth / 8;
+        const blockAlign = numChannels * bytesPerSample;
+
+        const data = [];
+        for (let i = 0; i < buffer.length; i++) {
+            for (let channel = 0; channel < numChannels; channel++) {
+                let sample = buffer.getChannelData(channel)[i];
+                // Clamp
+                sample = Math.max(-1, Math.min(1, sample));
+                // Convert to 16-bit PCM
+                sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                data.push(sample);
+            }
+        }
+
+        const dataLength = data.length * bytesPerSample;
+        const buffer_array = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer_array);
+
+        // Write WAV header
+        const writeString = (offset, string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
+
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + dataLength, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true); // fmt chunk size
+        view.setUint16(20, format, true);
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * blockAlign, true); // byte rate
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(36, 'data');
+        view.setUint32(40, dataLength, true);
+
+        // Write audio data
+        let offset = 44;
+        for (let i = 0; i < data.length; i++) {
+            view.setInt16(offset, data[i], true);
+            offset += 2;
+        }
+
+        return new Blob([buffer_array], { type: 'audio/wav' });
+    }
 }
 
 // UI Controller
@@ -637,7 +827,6 @@ const effectDefinitions = [
     { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] },
     { name: 'stereo_widen', title: 'Stereo Widening', params: ['width', 'mix'] },
     { name: 'ring_mod', title: 'Ring Modulator', params: ['frequency', 'mix'] },
-    { name: 'vocoder', title: 'Vocoder', params: ['carrier_freq', 'carrier_wave', 'formant_shift', 'release', 'mix'] },
     { name: 'pitchshift', title: 'Pitch Shift', params: ['pitch', 'mix'] }
 ];
 
@@ -1224,6 +1413,10 @@ document.getElementById('playBtn').addEventListener('click', async () => {
 document.getElementById('stopBtn').addEventListener('click', () => {
     processor.stop();
     updatePlaybackButtons();
+});
+
+document.getElementById('renderBtn').addEventListener('click', async () => {
+    await processor.renderToWav();
 });
 
 document.getElementById('testSignal').addEventListener('change', (e) => {

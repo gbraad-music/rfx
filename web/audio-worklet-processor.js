@@ -81,6 +81,7 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             { name: 'model1_lpf', prefix: '_fx_model1_lpf', defaultEnabled: true },
             { name: 'model1_hpf', prefix: '_fx_model1_hpf', defaultEnabled: true },
             { name: 'distortion', prefix: '_fx_distortion', defaultEnabled: false },
+            { name: 'limiter', prefix: '_fx_limiter', defaultEnabled: false },
             { name: 'filter', prefix: '_fx_filter', defaultEnabled: false },
             { name: 'eq', prefix: '_fx_eq', defaultEnabled: false },
             { name: 'compressor', prefix: '_fx_compressor', defaultEnabled: false },
@@ -88,7 +89,9 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             { name: 'reverb', prefix: '_fx_reverb', defaultEnabled: false },
             { name: 'phaser', prefix: '_fx_phaser', defaultEnabled: false },
             { name: 'stereo_widen', prefix: '_fx_stereo_widen', defaultEnabled: false },
-            { name: 'ring_mod', prefix: '_fx_ring_mod', defaultEnabled: false }
+            { name: 'ring_mod', prefix: '_fx_ring_mod', defaultEnabled: false },
+            { name: 'vocoder', prefix: '_fx_vocoder', defaultEnabled: false },
+            { name: 'pitchshift', prefix: '_fx_pitchshift', defaultEnabled: false }
         ];
 
         for (const config of effectConfigs) {

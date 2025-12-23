@@ -10,6 +10,8 @@ CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
 # Source files
 EFFECTS_DIR = ../effects
 SOURCES = $(EFFECTS_DIR)/fx_distortion.c \
+          $(EFFECTS_DIR)/fx_limiter.c \
+          $(EFFECTS_DIR)/fx_pitchshift.c \
           $(EFFECTS_DIR)/fx_filter.c \
           $(EFFECTS_DIR)/fx_eq.c \
           $(EFFECTS_DIR)/fx_compressor.c \
@@ -18,6 +20,7 @@ SOURCES = $(EFFECTS_DIR)/fx_distortion.c \
           $(EFFECTS_DIR)/fx_phaser.c \
           $(EFFECTS_DIR)/fx_stereo_widen.c \
           $(EFFECTS_DIR)/fx_ring_mod.c \
+          $(EFFECTS_DIR)/fx_vocoder.c \
           $(EFFECTS_DIR)/fx_model1_trim.c \
           $(EFFECTS_DIR)/fx_model1_hpf.c \
           $(EFFECTS_DIR)/fx_model1_lpf.c \
@@ -34,6 +37,18 @@ EXPORTED_FUNCTIONS = \
     "_fx_distortion_set_enabled", "_fx_distortion_set_drive", "_fx_distortion_set_mix",\
     "_fx_distortion_get_enabled", "_fx_distortion_get_drive", "_fx_distortion_get_mix",\
     "_fx_distortion_process_f32",\
+    "_fx_limiter_create", "_fx_limiter_destroy", "_fx_limiter_reset",\
+    "_fx_limiter_set_enabled", "_fx_limiter_set_threshold", "_fx_limiter_set_release",\
+    "_fx_limiter_set_ceiling", "_fx_limiter_set_lookahead",\
+    "_fx_limiter_get_enabled", "_fx_limiter_get_threshold", "_fx_limiter_get_release",\
+    "_fx_limiter_get_ceiling", "_fx_limiter_get_lookahead",\
+    "_fx_limiter_process_f32",\
+    "_fx_pitchshift_create", "_fx_pitchshift_destroy", "_fx_pitchshift_reset",\
+    "_fx_pitchshift_set_enabled", "_fx_pitchshift_set_pitch", "_fx_pitchshift_set_mix",\
+    "_fx_pitchshift_set_formant",\
+    "_fx_pitchshift_get_enabled", "_fx_pitchshift_get_pitch", "_fx_pitchshift_get_mix",\
+    "_fx_pitchshift_get_formant",\
+    "_fx_pitchshift_process_f32",\
     "_fx_filter_create", "_fx_filter_destroy", "_fx_filter_reset",\
     "_fx_filter_set_enabled", "_fx_filter_set_cutoff", "_fx_filter_set_resonance",\
     "_fx_filter_get_enabled", "_fx_filter_get_cutoff", "_fx_filter_get_resonance",\
@@ -68,6 +83,14 @@ EXPORTED_FUNCTIONS = \
     "_fx_ring_mod_set_enabled", "_fx_ring_mod_set_frequency", "_fx_ring_mod_set_mix",\
     "_fx_ring_mod_get_enabled", "_fx_ring_mod_get_frequency", "_fx_ring_mod_get_mix",\
     "_fx_ring_mod_process_f32",\
+    "_fx_vocoder_create", "_fx_vocoder_destroy", "_fx_vocoder_reset",\
+    "_fx_vocoder_set_enabled", "_fx_vocoder_set_carrier_freq", "_fx_vocoder_set_carrier_wave",\
+    "_fx_vocoder_set_formant_shift", "_fx_vocoder_set_release", "_fx_vocoder_set_mix",\
+    "_fx_vocoder_set_carrier_mode", "_fx_vocoder_set_midi_note",\
+    "_fx_vocoder_get_enabled", "_fx_vocoder_get_carrier_freq", "_fx_vocoder_get_carrier_wave",\
+    "_fx_vocoder_get_formant_shift", "_fx_vocoder_get_release", "_fx_vocoder_get_mix",\
+    "_fx_vocoder_get_carrier_mode", "_fx_vocoder_get_midi_note",\
+    "_fx_vocoder_process_f32", "_fx_vocoder_process_dual_f32",\
     "_fx_model1_trim_create", "_fx_model1_trim_destroy", "_fx_model1_trim_reset",\
     "_fx_model1_trim_set_enabled", "_fx_model1_trim_set_drive",\
     "_fx_model1_trim_get_enabled", "_fx_model1_trim_get_drive", "_fx_model1_trim_get_peak_level",\

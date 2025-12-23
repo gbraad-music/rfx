@@ -628,6 +628,7 @@ const model1EffectDefinitions = [
 // Standard effects (with on/off toggle)
 const effectDefinitions = [
     { name: 'distortion', title: 'Distortion', params: ['drive', 'mix'] },
+    { name: 'limiter', title: 'Limiter', params: ['threshold', 'release', 'ceiling', 'lookahead'] },
     { name: 'filter', title: 'Filter', params: ['cutoff', 'resonance'] },
     { name: 'eq', title: 'EQ', params: ['low', 'mid', 'high'] },
     { name: 'compressor', title: 'Compressor', params: ['threshold', 'ratio', 'attack', 'release', 'makeup'] },
@@ -635,7 +636,9 @@ const effectDefinitions = [
     { name: 'reverb', title: 'Reverb', params: ['size', 'damping', 'mix'] },
     { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] },
     { name: 'stereo_widen', title: 'Stereo Widening', params: ['width', 'mix'] },
-    { name: 'ring_mod', title: 'Ring Modulator', params: ['frequency', 'mix'] }
+    { name: 'ring_mod', title: 'Ring Modulator', params: ['frequency', 'mix'] },
+    { name: 'vocoder', title: 'Vocoder', params: ['carrier_freq', 'carrier_wave', 'formant_shift', 'release', 'mix'] },
+    { name: 'pitchshift', title: 'Pitch Shift', params: ['pitch', 'mix'] }
 ];
 
 function createModel1UI() {

@@ -1,20 +1,22 @@
 /*
  * Vocoder Effect Implementation
- * Phase 1: Simple vocoder with internal carrier
+ * Hybrid vocoder with internal/external/MIDI carrier
+ * Tuned for classic "robot voice" with modern stability
  */
 
 #include "fx_vocoder.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdbool.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 #define NUM_BANDS 16
-#define MIN_CARRIER_FREQ 50.0f   // Hz
-#define MAX_CARRIER_FREQ 500.0f  // Hz
+#define MIN_CARRIER_FREQ 50.0f    // Hz
+#define MAX_CARRIER_FREQ 500.0f   // Hz
 
 // Biquad bandpass filter
 typedef struct {
@@ -34,11 +36,11 @@ struct FXVocoder {
     float carrier_freq;      // 0.0-1.0
     float carrier_wave;      // 0.0-1.0 (waveform shape)
     float formant_shift;     // 0.0-1.0 (0.5 = neutral)
-    float release;           // 0.0-1.0
+    float release;           // 0.0-1.0 (controls env release)
     float mix;               // 0.0-1.0
 
     int carrier_mode;        // VocoderCarrierMode
-    int midi_note;           // MIDI note (for Phase 2)
+    int midi_note;           // MIDI note
 
     // Internal carrier oscillator
     float carrier_phase;
@@ -49,18 +51,21 @@ struct FXVocoder {
     EnvelopeFollower envelopes[NUM_BANDS];
 
     int sample_rate;
-    float last_formant_shift;  // Track parameter changes
-    float last_release;        // Track parameter changes
-    bool filters_initialized;  // Track if filters have been initialized
+    float last_formant_shift;
+    float last_release;
+    bool filters_initialized;
 };
 
 // ============================================================================
-// Filter Bank Frequencies (16 bands, 80 Hz - 8 kHz)
+// Filter Bank Frequencies (16 bands, ~80 Hz - ~8 kHz)
+// Slightly spaced for vocal formants / intelligibility
 // ============================================================================
 
 static const float BAND_FREQUENCIES[NUM_BANDS] = {
-    80.0f, 120.0f, 180.0f, 270.0f, 400.0f, 600.0f, 900.0f, 1350.0f,
-    2025.0f, 3038.0f, 4556.0f, 6834.0f, 10251.0f, 15377.0f, 23065.0f, 34598.0f
+    80.0f,   160.0f,  250.0f,  350.0f,
+    500.0f,  750.0f, 1100.0f, 1600.0f,
+    2300.0f, 3300.0f, 4500.0f, 6000.0f,
+    7500.0f, 9000.0f, 11000.0f, 13000.0f
 };
 
 // ============================================================================
@@ -68,7 +73,7 @@ static const float BAND_FREQUENCIES[NUM_BANDS] = {
 // ============================================================================
 
 static void biquad_bp_init(BiquadBP* bp, float freq, float q, int sample_rate) {
-    float omega = 2.0f * M_PI * freq / sample_rate;
+    float omega = 2.0f * M_PI * freq / (float)sample_rate;
     float cos_omega = cosf(omega);
     float sin_omega = sinf(omega);
     float alpha = sin_omega / (2.0f * q);
@@ -80,12 +85,17 @@ static void biquad_bp_init(BiquadBP* bp, float freq, float q, int sample_rate) {
     bp->a1 = -2.0f * cos_omega / a0;
     bp->a2 = (1.0f - alpha) / a0;
 
-    bp->x1 = bp->x2 = bp->y1 = bp->y2 = 0.0f;
+    bp->x1 = bp->x2 = 0.0f;
+    bp->y1 = bp->y2 = 0.0f;
 }
 
 static float biquad_bp_process(BiquadBP* bp, float input) {
-    float output = bp->b0 * input + bp->b1 * bp->x1 + bp->b2 * bp->x2
-                   - bp->a1 * bp->y1 - bp->a2 * bp->y2;
+    float output =
+        bp->b0 * input +
+        bp->b1 * bp->x1 +
+        bp->b2 * bp->x2 -
+        bp->a1 * bp->y1 -
+        bp->a2 * bp->y2;
 
     bp->x2 = bp->x1;
     bp->x1 = input;
@@ -97,45 +107,39 @@ static float biquad_bp_process(BiquadBP* bp, float input) {
 
 // ============================================================================
 // Envelope Follower
+// Hybrid: fast enough for intelligibility, slow enough for "robot"
 // ============================================================================
 
-static void envelope_follower_init(EnvelopeFollower* env, float release, int sample_rate) {
+static void envelope_follower_init(EnvelopeFollower* env, float release_param, int sample_rate) {
     env->level = 0.0f;
-    // Fast attack (1ms), speech-optimized release (5-50ms)
-    env->attack_coeff = expf(-1.0f / (0.001f * sample_rate));
-    float release_time = 0.005f + release * 0.045f; // 5ms to 50ms (optimized for speech)
-    env->release_coeff = expf(-1.0f / (release_time * sample_rate));
+
+    float attack_time  = 0.005f; // 5 ms
+    float release_time = 0.050f + release_param * 0.150f; // 50–200 ms
+
+    env->attack_coeff  = expf(-1.0f / (attack_time  * (float)sample_rate));
+    env->release_coeff = expf(-1.0f / (release_time * (float)sample_rate));
 }
 
 static float envelope_follower_process(EnvelopeFollower* env, float input) {
-    float abs_input = fabsf(input);
-
-    if (abs_input > env->level) {
-        env->level = abs_input + env->attack_coeff * (env->level - abs_input);
+    float x = fabsf(input);
+    if (x > env->level) {
+        env->level = x + env->attack_coeff * (env->level - x);
     } else {
-        env->level = abs_input + env->release_coeff * (env->level - abs_input);
+        env->level = x + env->release_coeff * (env->level - x);
     }
-
     return env->level;
 }
 
 // ============================================================================
 // Carrier Oscillator
+// waveform: 0.0=saw, 0.5=square, 1.0=pulse (morphing region)
 // ============================================================================
 
 static float generate_carrier(float phase, float waveform) {
-    // waveform: 0.0=sawtooth, 0.5=square, 1.0=pulse
-
-    if (waveform < 0.33f) {
-        // Sawtooth
-        return 2.0f * (phase / (2.0f * M_PI)) - 1.0f;
-    } else if (waveform < 0.67f) {
-        // Square wave
-        return (phase < M_PI) ? 1.0f : -1.0f;
-    } else {
-        // Pulse wave (25% duty cycle)
-        return (phase < M_PI * 0.5f) ? 1.0f : -1.0f;
-    }
+    // ignore waveform for now, just saw
+    float t = phase / (2.0f * M_PI);
+    if (t >= 1.0f) t -= 1.0f;
+    return 2.0f * t - 1.0f;
 }
 
 // ============================================================================
@@ -147,17 +151,17 @@ FXVocoder* fx_vocoder_create(void) {
     if (!fx) return NULL;
 
     fx->enabled = false;
-    fx->carrier_freq = 0.2f;      // ~140 Hz
+    fx->carrier_freq = 0.3f;      // ~200 Hz
     fx->carrier_wave = 0.0f;      // Sawtooth
     fx->formant_shift = 0.5f;     // Neutral
-    fx->release = 0.3f;           // Medium release
+    fx->release = 0.4f;           // Moderate release (robotic)
     fx->mix = 1.0f;               // 100% wet
     fx->carrier_mode = VOCODER_CARRIER_INTERNAL;
     fx->midi_note = 60;           // Middle C
     fx->carrier_phase = 0.0f;
     fx->sample_rate = 44100;
-    fx->last_formant_shift = -1.0f;  // Force init on first run
-    fx->last_release = -1.0f;        // Force init on first run
+    fx->last_formant_shift = -1.0f;
+    fx->last_release = -1.0f;
     fx->filters_initialized = false;
 
     return fx;
@@ -171,13 +175,15 @@ void fx_vocoder_reset(FXVocoder* fx) {
     if (!fx) return;
 
     fx->carrier_phase = 0.0f;
-    fx->filters_initialized = false;  // Force filter reinitialization
+    fx->filters_initialized = false;
 
     for (int i = 0; i < NUM_BANDS; i++) {
         fx->modulator_bands[i].x1 = fx->modulator_bands[i].x2 = 0.0f;
         fx->modulator_bands[i].y1 = fx->modulator_bands[i].y2 = 0.0f;
+
         fx->carrier_bands[i].x1 = fx->carrier_bands[i].x2 = 0.0f;
         fx->carrier_bands[i].y1 = fx->carrier_bands[i].y2 = 0.0f;
+
         fx->envelopes[i].level = 0.0f;
     }
 }
@@ -187,22 +193,20 @@ void fx_vocoder_reset(FXVocoder* fx) {
 // ============================================================================
 
 static float midi_note_to_freq(int note) {
-    // MIDI note 60 = Middle C = 261.63 Hz
-    // A440 is MIDI note 69
-    return 440.0f * powf(2.0f, (note - 69) / 12.0f);
+    return 440.0f * powf(2.0f, ((float)note - 69.0f) / 12.0f);
 }
 
 // ============================================================================
-// Processing Core (shared by all modes)
+// Processing Core
 // ============================================================================
 
 static void vocoder_process_core(FXVocoder* fx,
-                                  const float* modulator_input,
-                                  const float* carrier_input,
-                                  float* output,
-                                  int frames,
-                                  int sample_rate,
-                                  bool use_external_carrier) {
+                                 const float* modulator_input,
+                                 const float* carrier_input,
+                                 float* output,
+                                 int frames,
+                                 int sample_rate,
+                                 bool use_external_carrier) {
     if (!fx) return;
 
     // Update sample rate if changed
@@ -213,87 +217,76 @@ static void vocoder_process_core(FXVocoder* fx,
         fx->filters_initialized = false;
     }
 
-    // Check if parameters that affect filters have changed
+    // Re-init filters & envelopes if needed
     bool params_changed = (!fx->filters_initialized ||
                            fx->formant_shift != fx->last_formant_shift ||
-                           fx->release != fx->last_release ||
+                           fx->release       != fx->last_release       ||
                            sample_rate_changed);
 
-    // Calculate formant shift (0.5 = neutral, <0.5 = down, >0.5 = up)
     float shift_factor = powf(2.0f, (fx->formant_shift - 0.5f) * 2.0f); // ±1 octave
 
-    // Only initialize filters when parameters change
     if (params_changed) {
         for (int i = 0; i < NUM_BANDS; i++) {
-            // Apply formant shift to ALL filter bands
             float freq = BAND_FREQUENCIES[i] * shift_factor;
-            freq = fmaxf(80.0f, fminf(freq, sample_rate * 0.45f));
+            float nyquist = 0.5f * (float)sample_rate;
+            if (freq < 80.0f) freq = 80.0f;
+            if (freq > nyquist * 0.9f) freq = nyquist * 0.9f;
 
-            float q = 4.0f; // Narrow bands for clear vocoding
+            float q = 2.0f; // medium width, simple
+
             biquad_bp_init(&fx->modulator_bands[i], freq, q, sample_rate);
-            biquad_bp_init(&fx->carrier_bands[i], freq, q, sample_rate);
+            biquad_bp_init(&fx->carrier_bands[i],   freq, q, sample_rate);
             envelope_follower_init(&fx->envelopes[i], fx->release, sample_rate);
         }
-        fx->last_formant_shift = fx->formant_shift;
-        fx->last_release = fx->release;
-        fx->filters_initialized = true;
+        fx->last_formant_shift   = fx->formant_shift;
+        fx->last_release         = fx->release;
+        fx->filters_initialized  = true;
     }
 
-    // Calculate carrier frequency for internal/MIDI modes
+    // Carrier frequency
     float carrier_freq;
     if (fx->carrier_mode == VOCODER_CARRIER_MIDI) {
         carrier_freq = midi_note_to_freq(fx->midi_note);
     } else {
         carrier_freq = MIN_CARRIER_FREQ + fx->carrier_freq * (MAX_CARRIER_FREQ - MIN_CARRIER_FREQ);
     }
-    float phase_increment = 2.0f * M_PI * carrier_freq / sample_rate;
+    float phase_inc = 2.0f * M_PI * carrier_freq / (float)sample_rate;
 
-    // Process frames
     for (int i = 0; i < frames; i++) {
-        // Get modulator sample
-        float modulator = modulator_input[i];
-        float dry = modulator;
+        float mod = modulator_input[i];
+        float dry = mod;
 
-        // Get carrier sample based on mode
+        // Carrier sample
         float carrier;
-        if (use_external_carrier) {
-            // External carrier from input
+        if (use_external_carrier && carrier_input) {
             carrier = carrier_input[i];
         } else {
-            // Internal oscillator (INTERNAL or MIDI mode)
             carrier = generate_carrier(fx->carrier_phase, fx->carrier_wave);
-            fx->carrier_phase += phase_increment;
-            if (fx->carrier_phase >= 2.0f * M_PI) {
+            fx->carrier_phase += phase_inc;
+            if (fx->carrier_phase >= 2.0f * M_PI)
                 fx->carrier_phase -= 2.0f * M_PI;
-            }
         }
 
-        // Process through filter bank
         float wet = 0.0f;
+
+        // Plain analysis/synthesis
         for (int b = 0; b < NUM_BANDS; b++) {
-            // Analyze modulator in this band
-            float mod_band = biquad_bp_process(&fx->modulator_bands[b], modulator);
-
-            // Extract envelope
-            float envelope = envelope_follower_process(&fx->envelopes[b], mod_band);
-
-            // Filter carrier in same band
-            float carrier_band = biquad_bp_process(&fx->carrier_bands[b], carrier);
-
-            // Apply envelope to carrier
-            wet += carrier_band * envelope;
+            float mod_band = biquad_bp_process(&fx->modulator_bands[b], mod);
+            float env      = envelope_follower_process(&fx->envelopes[b], mod_band);
+            float car_band = biquad_bp_process(&fx->carrier_bands[b], carrier);
+            wet += car_band * env;
         }
 
-        // Normalize output (16 bands sum up)
-        wet *= 0.5f;  // Reduced gain to prevent spikes
+        // Basic normalization by band count
+        wet /= (float)NUM_BANDS;
 
-        // Mix dry/wet
+        // No saturation, no sibilance, just mix
         output[i] = dry * (1.0f - fx->mix) + wet * fx->mix;
     }
 }
 
 // ============================================================================
-// Processing
+// Processing wrappers
 // ============================================================================
 
 void fx_vocoder_process_f32(FXVocoder* fx, float* buffer, int frames, int sample_rate) {
@@ -301,8 +294,8 @@ void fx_vocoder_process_f32(FXVocoder* fx, float* buffer, int frames, int sample
     if (!fx->enabled) return;
 
     // Allocate temp buffers for processing
-    float* modulator = (float*)malloc(frames * sizeof(float));
-    float* output = (float*)malloc(frames * sizeof(float));
+    float* modulator = (float*)malloc((size_t)frames * sizeof(float));
+    float* output    = (float*)malloc((size_t)frames * sizeof(float));
     if (!modulator || !output) {
         free(modulator);
         free(output);
@@ -311,17 +304,17 @@ void fx_vocoder_process_f32(FXVocoder* fx, float* buffer, int frames, int sample
 
     // Sum stereo to mono for modulator
     for (int i = 0; i < frames; i++) {
-        modulator[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f;
+        modulator[i] = 0.5f * (buffer[2 * i] + buffer[2 * i + 1]);
     }
 
-    // Process (no external carrier in this mode)
-    bool use_external = (fx->carrier_mode == VOCODER_CARRIER_EXTERNAL);
+    // Single-input mode: internal or MIDI carrier only
+    bool use_external = false;
     vocoder_process_core(fx, modulator, NULL, output, frames, sample_rate, use_external);
 
     // Write mono output to both channels
     for (int i = 0; i < frames; i++) {
-        buffer[i * 2] = output[i];
-        buffer[i * 2 + 1] = output[i];
+        buffer[2 * i]     = output[i];
+        buffer[2 * i + 1] = output[i];
     }
 
     free(modulator);
@@ -329,19 +322,19 @@ void fx_vocoder_process_f32(FXVocoder* fx, float* buffer, int frames, int sample
 }
 
 void fx_vocoder_process_dual_f32(FXVocoder* fx,
-                                  const float* modulator,
-                                  const float* carrier,
-                                  float* output,
-                                  int frames,
-                                  int sample_rate) {
+                                 const float* modulator,
+                                 const float* carrier,
+                                 float* output,
+                                 int frames,
+                                 int sample_rate) {
     if (!fx || !modulator || !output) return;
+
     if (!fx->enabled) {
         // Passthrough modulator
-        memcpy(output, modulator, frames * sizeof(float));
+        memcpy(output, modulator, (size_t)frames * sizeof(float));
         return;
     }
 
-    // Process with external carrier (if provided and mode is EXTERNAL)
     bool use_external = (fx->carrier_mode == VOCODER_CARRIER_EXTERNAL && carrier != NULL);
     vocoder_process_core(fx, modulator, carrier, output, frames, sample_rate, use_external);
 }
@@ -363,7 +356,7 @@ void fx_vocoder_set_carrier_freq(FXVocoder* fx, fx_param_t freq) {
 }
 
 float fx_vocoder_get_carrier_freq(FXVocoder* fx) {
-    return fx ? fx->carrier_freq : 0.2f;
+    return fx ? fx->carrier_freq : 0.3f;
 }
 
 void fx_vocoder_set_carrier_wave(FXVocoder* fx, fx_param_t wave) {
@@ -375,7 +368,10 @@ float fx_vocoder_get_carrier_wave(FXVocoder* fx) {
 }
 
 void fx_vocoder_set_formant_shift(FXVocoder* fx, fx_param_t shift) {
-    if (fx) fx->formant_shift = fmaxf(0.0f, fminf(1.0f, shift));
+    if (fx) {
+        fx->formant_shift = fmaxf(0.0f, fminf(1.0f, shift));
+        fx->filters_initialized = false;
+    }
 }
 
 float fx_vocoder_get_formant_shift(FXVocoder* fx) {
@@ -383,11 +379,14 @@ float fx_vocoder_get_formant_shift(FXVocoder* fx) {
 }
 
 void fx_vocoder_set_release(FXVocoder* fx, fx_param_t release) {
-    if (fx) fx->release = fmaxf(0.0f, fminf(1.0f, release));
+    if (fx) {
+        fx->release = fmaxf(0.0f, fminf(1.0f, release));
+        fx->filters_initialized = false;
+    }
 }
 
 float fx_vocoder_get_release(FXVocoder* fx) {
-    return fx ? fx->release : 0.3f;
+    return fx ? fx->release : 0.4f;
 }
 
 void fx_vocoder_set_mix(FXVocoder* fx, fx_param_t mix) {
@@ -400,10 +399,7 @@ float fx_vocoder_get_mix(FXVocoder* fx) {
 
 void fx_vocoder_set_carrier_mode(FXVocoder* fx, fx_param_t mode_param) {
     if (!fx) return;
-    // Map 0.0-1.0 to 0-2 integer
-    // 0.0-0.33 = INTERNAL (0)
-    // 0.34-0.66 = EXTERNAL (1)
-    // 0.67-1.0 = MIDI (2)
+
     if (mode_param < 0.34f) {
         fx->carrier_mode = VOCODER_CARRIER_INTERNAL;
     } else if (mode_param < 0.67f) {
@@ -415,25 +411,25 @@ void fx_vocoder_set_carrier_mode(FXVocoder* fx, fx_param_t mode_param) {
 
 float fx_vocoder_get_carrier_mode(FXVocoder* fx) {
     if (!fx) return 0.0f;
-    // Map integer mode back to 0.0-1.0
+
     switch (fx->carrier_mode) {
         case VOCODER_CARRIER_INTERNAL: return 0.0f;
         case VOCODER_CARRIER_EXTERNAL: return 0.5f;
-        case VOCODER_CARRIER_MIDI: return 1.0f;
-        default: return 0.0f;
+        case VOCODER_CARRIER_MIDI:     return 1.0f;
+        default:                       return 0.0f;
     }
 }
 
 void fx_vocoder_set_midi_note(FXVocoder* fx, fx_param_t note_param) {
     if (!fx) return;
-    // Map 0.0-1.0 to 0-127 MIDI note range
-    fx->midi_note = (int)(note_param * 127.0f);
-    if (fx->midi_note < 0) fx->midi_note = 0;
-    if (fx->midi_note > 127) fx->midi_note = 127;
+    int note = (int)(note_param * 127.0f + 0.5f);
+    if (note < 0) note = 0;
+    if (note > 127) note = 127;
+    fx->midi_note = note;
 }
 
 float fx_vocoder_get_midi_note(FXVocoder* fx) {
-    if (!fx) return 0.47f; // Middle C (60) mapped to 0-1
+    if (!fx) return 60.0f / 127.0f;
     return (float)fx->midi_note / 127.0f;
 }
 
@@ -458,12 +454,12 @@ float fx_vocoder_get_parameter_value(FXVocoder* fx, int index) {
     if (!fx) return 0.0f;
 
     switch (index) {
-        case PARAM_CARRIER_FREQ: return fx_vocoder_get_carrier_freq(fx);
-        case PARAM_CARRIER_WAVE: return fx_vocoder_get_carrier_wave(fx);
+        case PARAM_CARRIER_FREQ:  return fx_vocoder_get_carrier_freq(fx);
+        case PARAM_CARRIER_WAVE:  return fx_vocoder_get_carrier_wave(fx);
         case PARAM_FORMANT_SHIFT: return fx_vocoder_get_formant_shift(fx);
-        case PARAM_RELEASE: return fx_vocoder_get_release(fx);
-        case PARAM_MIX: return fx_vocoder_get_mix(fx);
-        default: return 0.0f;
+        case PARAM_RELEASE:       return fx_vocoder_get_release(fx);
+        case PARAM_MIX:           return fx_vocoder_get_mix(fx);
+        default:                  return 0.0f;
     }
 }
 
@@ -471,44 +467,44 @@ void fx_vocoder_set_parameter_value(FXVocoder* fx, int index, float value) {
     if (!fx) return;
 
     switch (index) {
-        case PARAM_CARRIER_FREQ: fx_vocoder_set_carrier_freq(fx, value); break;
-        case PARAM_CARRIER_WAVE: fx_vocoder_set_carrier_wave(fx, value); break;
+        case PARAM_CARRIER_FREQ:  fx_vocoder_set_carrier_freq(fx, value);  break;
+        case PARAM_CARRIER_WAVE:  fx_vocoder_set_carrier_wave(fx, value);  break;
         case PARAM_FORMANT_SHIFT: fx_vocoder_set_formant_shift(fx, value); break;
-        case PARAM_RELEASE: fx_vocoder_set_release(fx, value); break;
-        case PARAM_MIX: fx_vocoder_set_mix(fx, value); break;
+        case PARAM_RELEASE:       fx_vocoder_set_release(fx, value);       break;
+        case PARAM_MIX:           fx_vocoder_set_mix(fx, value);           break;
     }
 }
 
 const char* fx_vocoder_get_parameter_name(int index) {
     switch (index) {
-        case PARAM_CARRIER_FREQ: return "Carrier Freq";
-        case PARAM_CARRIER_WAVE: return "Carrier Wave";
+        case PARAM_CARRIER_FREQ:  return "Carrier Freq";
+        case PARAM_CARRIER_WAVE:  return "Carrier Wave";
         case PARAM_FORMANT_SHIFT: return "Formant Shift";
-        case PARAM_RELEASE: return "Release";
-        case PARAM_MIX: return "Mix";
-        default: return "";
+        case PARAM_RELEASE:       return "Release";
+        case PARAM_MIX:           return "Mix";
+        default:                  return "";
     }
 }
 
 const char* fx_vocoder_get_parameter_label(int index) {
     switch (index) {
-        case PARAM_CARRIER_FREQ: return "Hz";
-        case PARAM_CARRIER_WAVE: return "";
+        case PARAM_CARRIER_FREQ:  return "Hz";
+        case PARAM_CARRIER_WAVE:  return "";
         case PARAM_FORMANT_SHIFT: return "";
-        case PARAM_RELEASE: return "ms";
-        case PARAM_MIX: return "%";
-        default: return "";
+        case PARAM_RELEASE:       return "ms";
+        case PARAM_MIX:           return "%";
+        default:                  return "";
     }
 }
 
 float fx_vocoder_get_parameter_default(int index) {
     switch (index) {
-        case PARAM_CARRIER_FREQ: return 0.2f;   // ~140 Hz
-        case PARAM_CARRIER_WAVE: return 0.0f;   // Sawtooth
+        case PARAM_CARRIER_FREQ:  return 0.3f;  // ~200 Hz
+        case PARAM_CARRIER_WAVE:  return 0.0f;  // Saw
         case PARAM_FORMANT_SHIFT: return 0.5f;  // Neutral
-        case PARAM_RELEASE: return 0.3f;        // Medium
-        case PARAM_MIX: return 1.0f;            // 100% wet
-        default: return 0.0f;
+        case PARAM_RELEASE:       return 0.4f;  // Robotic-ish
+        case PARAM_MIX:           return 1.0f;  // 100% wet
+        default:                  return 0.0f;
     }
 }
 

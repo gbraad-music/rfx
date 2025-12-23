@@ -110,6 +110,11 @@ static float generate_sawtooth(uint32_t phase) {
 }
 
 static float generate_pulse(uint32_t phase, float pulse_width) {
+    // Clamp pulse width to prevent DC at extremes (0.5% - 99.5% duty cycle)
+    // Real SID also produces no sound at 0% or 100%, but this is more musical
+    if (pulse_width < 0.005f) pulse_width = 0.005f;
+    if (pulse_width > 0.995f) pulse_width = 0.995f;
+
     uint32_t threshold = (uint32_t)(pulse_width * 0x1000000);
     return (phase < threshold) ? 1.0f : -1.0f;
 }
@@ -369,10 +374,13 @@ void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_
             float sample = 0.0f;
             uint32_t phase_to_use = voice->phase;
 
-            // Ring modulation (XOR with previous voice phase MSB)
-            if (voice->ring_mod && v > 0) {
-                uint32_t prev_phase = sid->voices[v - 1].phase;
-                phase_to_use = voice->phase ^ (prev_phase & 0x800000);
+            // Ring modulation (circular chain like real SID)
+            // Voice 1 modded by Voice 3, Voice 2 by Voice 1, Voice 3 by Voice 2
+            if (voice->ring_mod) {
+                int src_voice = (v + 2) % SID_VOICES;  // Previous voice in circular chain
+                uint32_t src_phase = sid->voices[src_voice].phase;
+                // XOR phase with source MSB to create ring mod effect
+                phase_to_use = voice->phase ^ (src_phase & 0x800000);
             }
 
             // Generate combined waveform (SID allows multiple waveforms simultaneously)

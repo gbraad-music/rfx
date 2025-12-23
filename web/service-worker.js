@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v63';
+const CACHE_NAME = 'rfx-effects-v64';
 const ASSETS = [
     './',
     './index.html',
@@ -13,7 +13,6 @@ const ASSETS = [
     './audio-worklet-processor.js',
     './regroove-effects.js',
     './regroove-effects.wasm',
-    './wasm-mappings.json',
     './pad-knob.js',
     './svg-slider.js',
     './fader-components.js'

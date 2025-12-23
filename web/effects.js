@@ -1111,8 +1111,18 @@ function drawVisualizer() {
 
 function updatePlaybackButtons() {
     const hasAudio = processor.audioBuffer !== null || processor.isStreaming;
-    document.getElementById('playBtn').disabled = !hasAudio || processor.isPlaying;
-    document.getElementById('stopBtn').disabled = !processor.isPlaying;
+    const playBtn = document.getElementById('playBtn');
+    const stopBtn = document.getElementById('stopBtn');
+
+    if (processor.isPlaying) {
+        playBtn.textContent = '⏸ Pause';
+        playBtn.disabled = false;
+    } else {
+        playBtn.textContent = '▶ Play';
+        playBtn.disabled = !hasAudio;
+    }
+
+    stopBtn.disabled = !processor.isPlaying;
 }
 
 // Event Listeners
@@ -1149,7 +1159,11 @@ document.getElementById('micBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('playBtn').addEventListener('click', async () => {
-    await processor.play();
+    if (processor.isPlaying) {
+        processor.stop();
+    } else {
+        await processor.play();
+    }
     updatePlaybackButtons();
 });
 

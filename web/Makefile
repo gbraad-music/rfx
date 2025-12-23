@@ -4,7 +4,10 @@
 CC = emcc
 CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
          -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 \
-         -s EXPORT_NAME='RegrooveEffectsModule' -I../effects
+         -s EXPORT_NAME='RegrooveEffectsModule' \
+         -s MINIFY_WASM_IMPORTED_MODULES=0 \
+         -s KEEP_RUNTIME_ALIVE=1 \
+         -I../effects
 
 # Source files
 EFFECTS_DIR = ../effects
@@ -84,8 +87,7 @@ all: $(OUTPUT)
 
 $(OUTPUT): $(SOURCES)
 	$(CC) $(CFLAGS) $(EXPORTED_FUNCTIONS) $(SOURCES) -o $(OUTPUT)
-	@echo "🔄 Auto-updating WASM function mappings..."
-	@python3 update-wasm-mappings.py || echo "⚠️ Failed to update mappings (continuing anyway)"
+	@echo "✅ Built WASM with non-minified function names (no mappings needed!)"
 	@echo "📦 Copying drop-in files to revision project..."
 	@if [ -d ~/Projects/revision/effects ]; then \
 		cp regroove-effects.wasm regroove-effects.js audio-worklet-processor.js ~/Projects/revision/effects/ && \

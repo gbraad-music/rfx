@@ -634,7 +634,8 @@ const effectDefinitions = [
     { name: 'delay', title: 'Delay', params: ['time', 'feedback', 'mix'] },
     { name: 'reverb', title: 'Reverb', params: ['size', 'damping', 'mix'] },
     { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] },
-    { name: 'stereo_widen', title: 'Stereo Widening', params: ['width', 'mix'] }
+    { name: 'stereo_widen', title: 'Stereo Widening', params: ['width', 'mix'] },
+    { name: 'ring_mod', title: 'Ring Modulator', params: ['frequency', 'mix'] }
 ];
 
 function createModel1UI() {

@@ -17,6 +17,7 @@ SOURCES = $(EFFECTS_DIR)/fx_distortion.c \
           $(EFFECTS_DIR)/fx_reverb.c \
           $(EFFECTS_DIR)/fx_phaser.c \
           $(EFFECTS_DIR)/fx_stereo_widen.c \
+          $(EFFECTS_DIR)/fx_ring_mod.c \
           $(EFFECTS_DIR)/fx_model1_trim.c \
           $(EFFECTS_DIR)/fx_model1_hpf.c \
           $(EFFECTS_DIR)/fx_model1_lpf.c \
@@ -63,6 +64,10 @@ EXPORTED_FUNCTIONS = \
     "_fx_stereo_widen_set_enabled", "_fx_stereo_widen_set_width", "_fx_stereo_widen_set_mix",\
     "_fx_stereo_widen_get_enabled", "_fx_stereo_widen_get_width", "_fx_stereo_widen_get_mix",\
     "_fx_stereo_widen_process_interleaved",\
+    "_fx_ring_mod_create", "_fx_ring_mod_destroy", "_fx_ring_mod_reset",\
+    "_fx_ring_mod_set_enabled", "_fx_ring_mod_set_frequency", "_fx_ring_mod_set_mix",\
+    "_fx_ring_mod_get_enabled", "_fx_ring_mod_get_frequency", "_fx_ring_mod_get_mix",\
+    "_fx_ring_mod_process_f32",\
     "_fx_model1_trim_create", "_fx_model1_trim_destroy", "_fx_model1_trim_reset",\
     "_fx_model1_trim_set_enabled", "_fx_model1_trim_set_drive",\
     "_fx_model1_trim_get_enabled", "_fx_model1_trim_get_drive", "_fx_model1_trim_get_peak_level",\

@@ -87,7 +87,8 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             { name: 'delay', prefix: '_fx_delay', defaultEnabled: false },
             { name: 'reverb', prefix: '_fx_reverb', defaultEnabled: false },
             { name: 'phaser', prefix: '_fx_phaser', defaultEnabled: false },
-            { name: 'stereo_widen', prefix: '_fx_stereo_widen', defaultEnabled: false }
+            { name: 'stereo_widen', prefix: '_fx_stereo_widen', defaultEnabled: false },
+            { name: 'ring_mod', prefix: '_fx_ring_mod', defaultEnabled: false }
         ];
 
         for (const config of effectConfigs) {

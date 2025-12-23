@@ -31,29 +31,34 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         }
     }
 
-    async initWasm(wasmBytes) {
+    async initWasm(wasmData) {
         try {
-            console.log('[Worklet] Compiling WASM...');
+            console.log('[Worklet] Loading Emscripten module...');
 
-            // Compile and instantiate WASM directly
-            const wasmModule = await WebAssembly.compile(wasmBytes);
-            const instance = await WebAssembly.instantiate(wasmModule, {
-                a: {
-                    a: (size) => { // _emscripten_resize_heap
-                        console.warn('[Worklet] Heap resize requested:', size);
-                        return false;
-                    }
-                }
+            const moduleCode = wasmData.jsCode;
+            const wasmBytes = wasmData.wasmBytes;
+
+            // Eval the Emscripten loader and capture memory reference
+            // Modify code to expose wasmMemory before it returns
+            const modifiedCode = moduleCode.replace(
+                ';return moduleRtn',
+                ';globalThis.__wasmMemory=wasmMemory;return moduleRtn'
+            );
+
+            eval(modifiedCode + '\nthis.RegrooveEffectsModule = RegrooveEffectsModule;');
+
+            // Call the factory with WASM bytes
+            this.wasmModule = await this.RegrooveEffectsModule({
+                wasmBinary: wasmBytes
             });
 
-            console.log('[Worklet] WASM instantiated');
+            // Capture the memory reference that was exposed
+            this.wasmMemory = globalThis.__wasmMemory;
+            delete globalThis.__wasmMemory; // Clean up
 
-            // Create module wrapper with direct access to exports
-            this.wasmModule = instance.exports;
+            console.log('[Worklet] WASM ready!');
 
-            console.log('[Worklet] WASM ready - function names preserved!');
-
-            // Allocate audio buffer using direct function names
+            // Allocate audio buffer
             this.audioBufferPtr = this.wasmModule._malloc(this.bufferSize * 2 * 4);
             console.log(`[Worklet] Buffer: 0x${this.audioBufferPtr.toString(16)}`);
 
@@ -158,9 +163,9 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
 
         const frames = input[0].length;
 
-        // Update heap view - access memory directly
+        // Update heap view - access memory through captured wasmMemory
         const heapF32 = new Float32Array(
-            this.wasmModule.b.buffer,  // memory export
+            this.wasmMemory.buffer,
             this.audioBufferPtr,
             frames * 2
         );
@@ -178,7 +183,8 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
         for (const [name, effect] of this.effects) {
             if (effect.enabled) {
                 // Determine process function based on effect type
-                const processSuffix = name.startsWith('model1_')
+                // model1_ and stereo_widen use interleaved processing
+                const processSuffix = (name.startsWith('model1_') || name === 'stereo_widen')
                     ? '_process_interleaved'
                     : '_process_f32';
                 const processFn = this.wasmModule[effect.prefix + processSuffix];

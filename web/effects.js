@@ -81,7 +81,10 @@ class AudioEffectsProcessor {
                     console.log('📨 Sending WASM to worklet...');
                     this.workletNode.port.postMessage({
                         type: 'wasmBytes',
-                        data: wasmBytes
+                        data: {
+                            jsCode: jsCode,
+                            wasmBytes: wasmBytes
+                        }
                     }, [wasmBytes]);
                 } else if (e.data.type === 'ready') {
                     clearTimeout(timeout);
@@ -169,8 +172,15 @@ class AudioEffectsProcessor {
         // 0 = 90% (10% slower)
         // 127 = 110% (10% faster)
 
-        // Map 0-127 to 0.90-1.10
-        const percentage = 90 + (value / 127) * 20; // 90% to 110%
+        // Map with exact center at 64 = 100%
+        let percentage;
+        if (value <= 64) {
+            // 0-64 maps to 90-100%
+            percentage = 90 + (value / 64) * 10;
+        } else {
+            // 65-127 maps to 100-110%
+            percentage = 100 + ((value - 64) / 63) * 10;
+        }
         const playbackRate = percentage / 100;
 
         // Apply tempo to streaming audio
@@ -344,6 +354,38 @@ class AudioEffectsProcessor {
 
         // Reset Drive LED when microphone stops
         this.updateTrimLED(0);
+    }
+
+    pause() {
+        if (!this.isPlaying) return;
+
+        if (this.isStreaming && this.audioElement) {
+            // Pause streaming audio
+            this.audioElement.pause();
+            this.isPlaying = false;
+            console.log('⏸ Paused (streaming)');
+        } else if (this.sourceNode) {
+            // For buffer sources, we can't truly pause - just suspend the context
+            this.audioContext.suspend();
+            this.isPlaying = false;
+            console.log('⏸ Paused (buffer)');
+        }
+    }
+
+    async resume() {
+        if (this.isPlaying) return;
+
+        if (this.isStreaming && this.audioElement) {
+            // Resume streaming audio
+            await this.audioElement.play();
+            this.isPlaying = true;
+            console.log('▶️ Resumed (streaming)');
+        } else if (this.audioBuffer) {
+            // Resume buffer playback
+            await this.audioContext.resume();
+            this.isPlaying = true;
+            console.log('▶️ Resumed (buffer)');
+        }
     }
 
     async play() {
@@ -1160,9 +1202,17 @@ document.getElementById('micBtn').addEventListener('click', async () => {
 
 document.getElementById('playBtn').addEventListener('click', async () => {
     if (processor.isPlaying) {
-        processor.stop();
+        processor.pause();
     } else {
-        await processor.play();
+        // Check if we need to start from beginning or just resume
+        const hasBeenStopped = (processor.audioBuffer && !processor.sourceNode) ||
+                               (processor.isStreaming && processor.audioElement && processor.audioElement.paused);
+
+        if (hasBeenStopped || (!processor.sourceNode && !processor.audioElement)) {
+            await processor.play();
+        } else {
+            await processor.resume();
+        }
     }
     updatePlaybackButtons();
 });

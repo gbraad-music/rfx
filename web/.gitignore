@@ -1,7 +1,6 @@
 # Generated files from Emscripten build
 regroove-effects.js
 regroove-effects.wasm
-wasm-mappings.json
 *.js.mem
 
 # Python cache

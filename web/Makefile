@@ -109,18 +109,46 @@ EXPORTED_FUNCTIONS = \
     "_fx_model1_sculpt_process_interleaved"\
   ]'
 
-all: $(OUTPUT)
+all: $(OUTPUT) synths
 
 $(OUTPUT): $(SOURCES)
 	$(CC) $(CFLAGS) $(EXPORTED_FUNCTIONS) $(SOURCES) -o $(OUTPUT)
-	@echo "✅ Built WASM with non-minified function names (no mappings needed!)"
-	@echo "📦 Copying drop-in files to revision project..."
+	@echo "[BUILD] WASM effects built with non-minified function names"
+	@echo "[COPY] Copying drop-in files to revision project..."
 	@if [ -d ~/Projects/revision/effects ]; then \
 		cp regroove-effects.wasm regroove-effects.js audio-worklet-processor.js ~/Projects/revision/effects/ && \
-		echo "   ✅ Copied to ~/Projects/revision/effects/"; \
+		echo "  [OK] Copied to ~/Projects/revision/effects/"; \
 	fi
+
+# Copy synth WASM files and AudioWorklet processors from revision
+synths:
+	@echo "[BUILD] Copying synth WASM binaries and processors..."
+	@mkdir -p synths
+	@if [ -f ../plugins/RGResonate1_Synth/rgresonate1-synth.wasm ]; then \
+		cp ../plugins/RGResonate1_Synth/rgresonate1-synth.wasm synths/ && \
+		cp ../plugins/RGResonate1_Synth/rgresonate1-synth.js synths/ && \
+		echo "  [OK] RGResonate1 synth"; \
+	else \
+		echo "  [WARN] RGResonate1 not built (run 'make' in plugins/RGResonate1_Synth)"; \
+	fi
+	@if [ -f ../plugins/RG909_Drum/rg909-drum.wasm ]; then \
+		cp ../plugins/RG909_Drum/rg909-drum.wasm synths/ && \
+		cp ../plugins/RG909_Drum/rg909-drum.js synths/ && \
+		echo "  [OK] RG909 drum machine"; \
+	else \
+		echo "  [WARN] RG909 not built (run 'make' in plugins/RG909_Drum)"; \
+	fi
+	@if [ -d ~/Projects/revision/synths ]; then \
+		cp ~/Projects/revision/synths/synth-worklet-processor.js synths/ && \
+		cp ~/Projects/revision/synths/drum-worklet-processor.js synths/ && \
+		echo "  [OK] AudioWorklet processors"; \
+	else \
+		echo "  [WARN] AudioWorklet processors not found"; \
+	fi
+	@echo "[DONE] Synth files ready for deployment"
 
 clean:
 	rm -f $(OUTPUT) regroove-effects.wasm
+	rm -rf synths
 
-.PHONY: all clean
+.PHONY: all synths clean

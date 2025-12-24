@@ -709,11 +709,13 @@ class AudioEffectsProcessor {
             // Create source and connect
             const source = offlineContext.createBufferSource();
             source.buffer = audioBuffer;
+            source.playbackRate.value = this.playbackRate; // Apply tempo
             source.connect(offlineWorklet);
             offlineWorklet.connect(offlineContext.destination);
 
             // Render
             source.start();
+            console.log(`🎵 Rendering at ${(this.playbackRate * 100).toFixed(1)}% tempo`);
             const renderedBuffer = await offlineContext.startRendering();
 
             console.log('✅ Rendering complete!');

@@ -61,11 +61,11 @@ lv2_sep: $(lv2_dsp) $(lv2_ui)
 EMCC = emcc
 WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
               -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 \
-              -s EXPORT_NAME='RGResonate1Module' -I../.. -I../../synth
+              -s EXPORT_NAME='RGResonate1Module' \
+              -I../.. -I../../synth
 
-# WebAssembly source files (use regroove_synth wrapper, not DPF)
-WASM_SOURCES = ../../regroove_synth.c \
-               ../../synth/synth_resonate1.c \
+# WebAssembly source files
+WASM_SOURCES = ../../synth/synth_resonate1.c \
                ../../synth/synth_voice_manager.c \
                ../../synth/synth_oscillator.c \
                ../../synth/synth_envelope.c \
@@ -111,14 +111,11 @@ web: $(WASM_SOURCES)
 	@echo "Building RGResonate1 for WebAssembly..."
 	$(EMCC) $(WASM_CFLAGS) $(WASM_EXPORTED_FUNCTIONS) $(WASM_SOURCES) -o $(WASM_OUTPUT)
 	@echo "Built: $(WASM_OUTPUT) and rgresonate1-synth.wasm"
-	@echo "Copying to revision project (if exists)..."
-	@if [ -d ~/Projects/revision/synths ]; then \
+	@echo "Copying to revision project synths/ directory..."
+	@if [ -d ~/Projects/revision ]; then \
 		mkdir -p ~/Projects/revision/synths && \
 		cp rgresonate1-synth.wasm rgresonate1-synth.js ~/Projects/revision/synths/ && \
-		echo "   Copied to ~/Projects/revision/synths/"; \
-	elif [ -d ~/Projects/revision ]; then \
-		cp rgresonate1-synth.wasm rgresonate1-synth.js ~/Projects/revision/ && \
-		echo "   Copied to ~/Projects/revision/"; \
+		echo "   ✅ Copied to ~/Projects/revision/synths/"; \
 	fi
 
 clean-web:

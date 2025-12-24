@@ -3,6 +3,9 @@ regroove-effects.js
 regroove-effects.wasm
 *.js.mem
 
+# Synth WASM files (copied from plugins/ during build)
+synths/
+
 # Python cache
 __pycache__/
 *.pyc

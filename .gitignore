@@ -45,3 +45,6 @@ logue-sdk-effects/*/*.map
 # OS
 .DS_Store
 Thumbs.db
+
+# Test output
+*.wav

@@ -240,7 +240,7 @@
                 <select id="midiInput">
                     <option value="">Select MIDI Input...</option>
                 </select>
-                <button id="webrtcBtn">🌐 WebRTC MIDI</button>
+                <button id="webrtcBtn">WebRTC MIDI</button>
             </div>
             <div class="status">
                 <div class="status-item" id="midiStatus">
@@ -268,40 +268,44 @@
 
         <!-- RG909 Drum Machine -->
         <div class="section">
-            <div class="section-title">RG909 Drum Machine (WASM)</div>
-            <button id="btnInitDrum" style="margin-bottom: 15px;">Initialize RG909 Drum</button>
+            <div class="section-title">Drum Engine</div>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button id="btnInitDrum">Initialize RG909 Drum</button>
+                <button id="btnRenderDrums" disabled>Render All Drums to WAV</button>
+            </div>
+            <div id="renderStatus" style="font-size: 12px; color: #666; margin-bottom: 15px;"></div>
             <div class="drum-pads">
                 <div class="drum-pad" data-note="36">
-                    <div class="drum-pad-name">Kick</div>
+                    <div class="drum-pad-name">Bass Drum</div>
                     <div class="drum-pad-note">C1 (36)</div>
                 </div>
                 <div class="drum-pad" data-note="38">
                     <div class="drum-pad-name">Snare</div>
                     <div class="drum-pad-note">D1 (38)</div>
                 </div>
-                <div class="drum-pad" data-note="42">
-                    <div class="drum-pad-name">Hi-Hat Closed</div>
-                    <div class="drum-pad-note">F#1 (42)</div>
+                <div class="drum-pad" data-note="37">
+                    <div class="drum-pad-name">Rimshot</div>
+                    <div class="drum-pad-note">C#1 (37)</div>
                 </div>
-                <div class="drum-pad" data-note="46">
-                    <div class="drum-pad-name">Hi-Hat Open</div>
-                    <div class="drum-pad-note">A#1 (46)</div>
+                <div class="drum-pad" data-note="39">
+                    <div class="drum-pad-name">Hand Clap</div>
+                    <div class="drum-pad-note">D#1 (39)</div>
                 </div>
                 <div class="drum-pad" data-note="41">
                     <div class="drum-pad-name">Tom Low</div>
                     <div class="drum-pad-note">F1 (41)</div>
                 </div>
-                <div class="drum-pad" data-note="43">
+                <div class="drum-pad" data-note="47">
                     <div class="drum-pad-name">Tom Mid</div>
-                    <div class="drum-pad-note">G1 (43)</div>
+                    <div class="drum-pad-note">B1 (47)</div>
                 </div>
-                <div class="drum-pad" data-note="45">
+                <div class="drum-pad" data-note="50">
                     <div class="drum-pad-name">Tom High</div>
-                    <div class="drum-pad-note">A1 (45)</div>
+                    <div class="drum-pad-note">D2 (50)</div>
                 </div>
-                <div class="drum-pad" data-note="49">
-                    <div class="drum-pad-name">Crash</div>
-                    <div class="drum-pad-note">C#2 (49)</div>
+                <div class="drum-pad" data-note="36">
+                    <div class="drum-pad-name">-</div>
+                    <div class="drum-pad-note">-</div>
                 </div>
             </div>
             <div class="info">
@@ -317,6 +321,9 @@
     <script src="external/midi-audio-synth.js"></script>
     <script src="external/rgresonate1-synth.js"></script>
     <script src="external/rg909-drum.js"></script>
+
+    <!-- Load WASM modules -->
+    <script src="synths/rg909-drum.js"></script>
 
     <!-- WebRTC MIDI (loaded as module) -->
     <script type="module" src="external/midi-rtc-bridge.js"></script>
@@ -391,6 +398,9 @@
 
             // Initialize drum
             document.getElementById('btnInitDrum').addEventListener('click', initializeDrum);
+
+            // Render drums
+            document.getElementById('btnRenderDrums').addEventListener('click', renderAllDrums);
 
             // Drum pads
             document.querySelectorAll('.drum-pad').forEach(pad => {
@@ -520,8 +530,9 @@
             // Always enable audio
             await drumSynth.setAudible(true);
 
-            document.getElementById('btnInitDrum').textContent = 'RG909 Drum Initialized ✓';
+            document.getElementById('btnInitDrum').textContent = 'RG909 Drum Initialized';
             document.getElementById('btnInitDrum').disabled = true;
+            document.getElementById('btnRenderDrums').disabled = false;
         }
 
         async function initWebRTCMIDI() {
@@ -555,7 +566,7 @@
                 webrtcMidi.start();
                 midiStatus.innerHTML = 'MIDI: <span class="connected">WebRTC Connected</span>';
                 midiStatus.classList.add('connected');
-                document.getElementById('webrtcBtn').textContent = '🌐 WebRTC Active ✓';
+                document.getElementById('webrtcBtn').textContent = 'WebRTC Active';
                 console.log('[Synth Test] WebRTC MIDI initialized');
             } catch (error) {
                 console.error('[Synth Test] WebRTC MIDI failed:', error);
@@ -682,6 +693,190 @@
                 spectrumCtx.fillRect(barX, spectrumCanvas.height - barHeight, barWidth, barHeight);
 
                 barX += barWidth + 1;
+            }
+        }
+
+        // WAV file encoding
+        function encodeWAV(samples, sampleRate) {
+            const buffer = new ArrayBuffer(44 + samples.length * 2);
+            const view = new DataView(buffer);
+
+            // WAV header
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + samples.length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true); // PCM format
+            view.setUint16(20, 1, true);  // Mono
+            view.setUint16(22, 1, true);  // Channels
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true); // Byte rate
+            view.setUint16(32, 2, true);  // Block align
+            view.setUint16(34, 16, true); // Bits per sample
+            writeString(36, 'data');
+            view.setUint32(40, samples.length * 2, true);
+
+            // Convert float samples to 16-bit PCM
+            let offset = 44;
+            for (let i = 0; i < samples.length; i++) {
+                const s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                offset += 2;
+            }
+
+            return buffer;
+        }
+
+        // Render a single drum sound
+        async function renderDrumSound(note, drumName, duration = 2.0) {
+            const sampleRate = 48000;
+            const totalFrames = Math.floor(duration * sampleRate);
+
+            // Load and patch WASM module to expose memory (same as worklet processor)
+            const jsResponse = await fetch('synths/rg909-drum.js');
+            const jsCode = await jsResponse.text();
+            const wasmResponse = await fetch('synths/rg909-drum.wasm');
+            const wasmBytes = await wasmResponse.arrayBuffer();
+
+            // Patch to expose wasmMemory
+            const modifiedCode = jsCode.replace(
+                ';return moduleRtn',
+                ';globalThis.__wasmMemoryRender=wasmMemory;return moduleRtn'
+            );
+
+            // Load module with patched code in isolated scope
+            let PatchedRG909Module;
+            (function() {
+                eval(modifiedCode);
+                PatchedRG909Module = RG909Module;
+            })();
+
+            const RG909Module = await PatchedRG909Module({
+                wasmBinary: wasmBytes
+            });
+
+            // Get memory reference
+            const wasmMemory = globalThis.__wasmMemoryRender;
+            delete globalThis.__wasmMemoryRender;
+
+            console.log('[Render] WASM module loaded with memory access');
+
+            // Create synth instance
+            const synthPtr = RG909Module._rg909_create(sampleRate);
+
+            // Trigger the drum
+            RG909Module._rg909_trigger_drum(synthPtr, note, 127, sampleRate);
+
+            // Allocate buffer for rendering
+            const framesPerBlock = 128;
+            const bufferPtr = RG909Module._malloc(framesPerBlock * 2 * 4); // stereo float32
+
+            // Output buffer (stereo)
+            const outputLeft = new Float32Array(totalFrames);
+            const outputRight = new Float32Array(totalFrames);
+
+            // Render in blocks
+            let currentFrame = 0;
+            while (currentFrame < totalFrames) {
+                const framesToRender = Math.min(framesPerBlock, totalFrames - currentFrame);
+
+                // Process audio
+                RG909Module._rg909_process_f32(synthPtr, bufferPtr, framesToRender, sampleRate);
+
+                // Access heap using memory reference (same as worklet)
+                const heapF32 = new Float32Array(
+                    wasmMemory.buffer,
+                    bufferPtr,
+                    framesToRender * 2
+                );
+
+                // Read samples from heap
+                for (let i = 0; i < framesToRender; i++) {
+                    outputLeft[currentFrame + i] = heapF32[i * 2];
+                    outputRight[currentFrame + i] = heapF32[i * 2 + 1];
+                }
+
+                currentFrame += framesToRender;
+            }
+
+            // Cleanup
+            RG909Module._free(bufferPtr);
+            RG909Module._rg909_destroy(synthPtr);
+
+            // Mix stereo to mono for comparison
+            const monoSamples = new Float32Array(totalFrames);
+            for (let i = 0; i < totalFrames; i++) {
+                monoSamples[i] = (outputLeft[i] + outputRight[i]) / 2;
+            }
+
+            // Encode to WAV
+            const wavBuffer = encodeWAV(monoSamples, sampleRate);
+            const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+
+            return {
+                name: drumName,
+                blob: blob,
+                url: URL.createObjectURL(blob)
+            };
+        }
+
+        // Render all drums
+        async function renderAllDrums() {
+            const renderBtn = document.getElementById('btnRenderDrums');
+            const statusDiv = document.getElementById('renderStatus');
+
+            renderBtn.disabled = true;
+            statusDiv.innerHTML = 'Rendering drums...';
+
+            const drums = [
+                { note: 36, name: 'BD_BassDrum' },
+                { note: 38, name: 'SD_Snare' },
+                { note: 37, name: 'RS_Rimshot' },
+                { note: 39, name: 'HC_HandClap' },
+                { note: 41, name: 'LT_TomLow' },
+                { note: 47, name: 'MT_TomMid' },
+                { note: 50, name: 'HT_TomHigh' }
+            ];
+
+            try {
+                const renderedFiles = [];
+
+                for (let i = 0; i < drums.length; i++) {
+                    const drum = drums[i];
+                    statusDiv.innerHTML = `Rendering ${drum.name}... (${i + 1}/${drums.length})`;
+
+                    const result = await renderDrumSound(drum.note, drum.name);
+                    renderedFiles.push(result);
+
+                    console.log(`[Render] Completed: ${drum.name}`);
+                }
+
+                // Create download links
+                statusDiv.innerHTML = `
+                    <div style="color: #00FF00; margin-bottom: 10px;">
+                        [DONE] All drums rendered successfully! Click links below to download:
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;">
+                        ${renderedFiles.map(file => `
+                            <a href="${file.url}" download="RG909_${file.name}.wav"
+                               style="color: #0066FF; text-decoration: none; padding: 5px; background: #2a2a2a; border-radius: 3px; text-align: center;">
+                                ${file.name}
+                            </a>
+                        `).join('')}
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('[Render] Error:', error);
+                statusDiv.innerHTML = `<span style="color: #ff3333;">Render failed: ${error.message}</span>`;
+            } finally {
+                renderBtn.disabled = false;
             }
         }
 

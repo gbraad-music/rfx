@@ -13,11 +13,12 @@ TARGETS = lv2_sep vst3
 FILES_DSP = \
 	RG909_DrumPlugin.cpp \
 	../../synth/synth_utils.c \
-	../../synth/synth_oscillator.c \
+	../../synth/synth_resonator.c \
 	../../synth/synth_noise.c \
 	../../synth/synth_filter.c \
 	../../synth/synth_envelope.c \
-	../../synth/synth_voice_manager.c
+	../../synth/synth_voice_manager.c \
+	../../synth/rg909_drum_synth.c
 
 FILES_UI = \
 	RG909_DrumUI.cpp \
@@ -51,18 +52,19 @@ lv2_sep: $(lv2_dsp) $(lv2_ui)
 # ==============================================================================
 
 EMCC = emcc
-WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
-              -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 \
-              -s EXPORT_NAME='RG909Module' \
+WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall","getValue","setValue"]' \
+              -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=1048576 \
+              -s MODULARIZE=1 -s EXPORT_NAME='RG909Module' \
               -I../.. -I../../synth
 
 # WebAssembly source files (core synth only, no DPF/UI)
-WASM_SOURCES = ../../synth/synth_oscillator.c \
+WASM_SOURCES = ../../synth/synth_resonator.c \
                ../../synth/synth_noise.c \
                ../../synth/synth_filter.c \
                ../../synth/synth_envelope.c \
                ../../synth/synth_voice_manager.c \
                ../../synth/synth_utils.c \
+               ../../synth/rg909_drum_synth.c \
                wasm_bindings.c
 
 # Exported functions for JavaScript

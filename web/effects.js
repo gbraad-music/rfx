@@ -223,21 +223,56 @@ class AudioEffectsProcessor {
     }
 
     async loadAudioFile(file) {
-        console.log(`📂 Streaming: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        console.log(`📂 Loading: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
         this.cleanupAudioElement();
 
         this.audioElement = new Audio();
         this.audioElement.loop = true;
-        this.audioElement.src = URL.createObjectURL(file);
 
-        await new Promise((resolve, reject) => {
-            this.audioElement.oncanplay = resolve;
-            this.audioElement.onerror = reject;
-            this.audioElement.load();
-        });
+        // Try blob URL first, fallback to data URL for immutable systems
+        try {
+            this.audioElement.src = URL.createObjectURL(file);
 
-        console.log(`✅ Ready to stream: ${file.name}`);
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => reject(new Error('Blob URL timeout')), 2000);
+                this.audioElement.oncanplay = () => {
+                    clearTimeout(timeout);
+                    resolve();
+                };
+                this.audioElement.onerror = () => {
+                    clearTimeout(timeout);
+                    reject(new Error('Blob URL failed'));
+                };
+                this.audioElement.load();
+            });
+
+            console.log(`✅ Loaded via blob URL: ${file.name}`);
+        } catch (error) {
+            console.warn('Blob URL failed, using data URL fallback:', error.message);
+
+            // Fallback: Read file as ArrayBuffer and convert to data URL
+            const arrayBuffer = await file.arrayBuffer();
+            const blob = new Blob([arrayBuffer], { type: file.type || 'audio/wav' });
+            const reader = new FileReader();
+
+            const dataUrl = await new Promise((resolve, reject) => {
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+
+            this.audioElement.src = dataUrl;
+
+            await new Promise((resolve, reject) => {
+                this.audioElement.oncanplay = resolve;
+                this.audioElement.onerror = reject;
+                this.audioElement.load();
+            });
+
+            console.log(`✅ Loaded via data URL: ${file.name}`);
+        }
+
         this.isStreaming = true;
         this.loadedFile = file;  // Store for offline rendering
 
@@ -1380,6 +1415,8 @@ document.getElementById('audioFile').addEventListener('change', async (e) => {
             console.error('Error loading file:', error);
         }
     }
+    // Clear the input value to allow reloading the same file
+    e.target.value = '';
 });
 
 document.getElementById('micBtn').addEventListener('click', async () => {

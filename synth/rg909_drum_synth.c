@@ -394,9 +394,16 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                     }
 
                     // During spike: use spike only (no oscillator)
-                    // After spike: use oscillator with envelope
+                    // Smooth crossfade from spike to oscillator (5.5ms → 6.0ms)
                     if (spike_active > 0.0f) {
                         sample = spike * 0.80f;  // 80% amplitude
+                    } else if (voice->sweep_pos < 0.0060f) {
+                        // Crossfade window: 5.5ms to 6.0ms
+                        float fade_t = (voice->sweep_pos - 0.0055f) / 0.0005f;  // 0→1 over 0.5ms
+                        fade_t = fade_t * fade_t * (3.0f - 2.0f * fade_t);  // Smoothstep
+                        float spike_out = spike * 0.80f;
+                        float osc_out = sample * amp_env;
+                        sample = spike_out * (1.0f - fade_t) + osc_out * fade_t;
                     } else {
                         sample = sample * amp_env;
                     }

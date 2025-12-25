@@ -166,7 +166,9 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
             v->sweep_amount = end_freq;  // End frequency
             v->sweep_time = 0.060f;      // 60ms pitch sweep
             v->sweep_pos = 0.0f;
-            v->noise_env = 0.75f;        // Start at zero crossing for smooth spike→osc transition
+            // Pre-advance phase to compensate for 6ms delay
+            // Needs to align at 30-40ms, so less advancement
+            v->noise_env = 0.25f;        // Advance by ~0.25 cycle to align at 30-40ms
 
             // Amplitude envelope - TR-909: Fast attack, balanced decay
             v->decay_env = 1.0f;
@@ -314,6 +316,19 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
 
                     // Generate sine wave (909 uses bridged-T oscillator)
                     float phase_inc = freq / sample_rate;
+
+                    // Speed up during 30-40ms to catch up phase and align at 50ms
+                    if (voice->sweep_pos >= 0.030f && voice->sweep_pos < 0.040f) {
+                        phase_inc *= 1.15f;  // 15% faster to catch up
+                    }
+
+                    // Graduated speed-up from 50-90ms to catch cumulative phase lag
+                    // 50ms: 10% behind → 60ms: 50% behind → 85ms: 100% behind
+                    if (voice->sweep_pos >= 0.050f && voice->sweep_pos < 0.090f) {
+                        float t = (voice->sweep_pos - 0.050f) / 0.040f;  // 0.0 at 50ms, 1.0 at 90ms
+                        phase_inc *= 1.10f + (t * 0.40f);  // Ramp from 10% to 50% boost
+                    }
+
                     // Start oscillator phase at 6.0ms (0.5ms after spike ends)
                     if (voice->sweep_pos >= 0.0060f) {
                         voice->noise_env += phase_inc;
@@ -338,7 +353,7 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                         amp_env = powf(t, 2.8f);  // Very sharp attack for pronounced start
                     } else {
                         // Slower exponential decay (sustains longer)
-                        voice->decay_env -= voice->decay_env * (0.7f / (voice->decay_coeff * sample_rate));
+                        voice->decay_env -= voice->decay_env * (0.805f / (voice->decay_coeff * sample_rate));
                         if (voice->decay_env < 0.0001f) voice->decay_env = 0.0f;
                         amp_env = voice->decay_env;
                     }

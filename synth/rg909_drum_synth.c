@@ -317,16 +317,13 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                     // Generate sine wave (909 uses bridged-T oscillator)
                     float phase_inc = freq / sample_rate;
 
-                    // Speed up during 30-40ms to catch up phase and align at 50ms
-                    if (voice->sweep_pos >= 0.030f && voice->sweep_pos < 0.040f) {
-                        phase_inc *= 1.15f;  // 15% faster to catch up
-                    }
-
-                    // Graduated speed-up from 50-90ms to catch cumulative phase lag
-                    // 50ms: 10% behind → 60ms: 50% behind → 85ms: 100% behind
-                    if (voice->sweep_pos >= 0.050f && voice->sweep_pos < 0.090f) {
-                        float t = (voice->sweep_pos - 0.050f) / 0.040f;  // 0.0 at 50ms, 1.0 at 90ms
-                        phase_inc *= 1.10f + (t * 0.40f);  // Ramp from 10% to 50% boost
+                    // Smooth continuous phase compensation from 20-90ms
+                    // Gradual ramp with gentler peak to match circuit saturation
+                    if (voice->sweep_pos >= 0.020f && voice->sweep_pos < 0.090f) {
+                        float t = (voice->sweep_pos - 0.020f) / 0.070f;  // 0.0 at 20ms, 1.0 at 90ms
+                        // Exponential ramp with reduced peak: +5% to +52%
+                        float boost = 1.05f + (powf(t, 1.5f) * 0.47f);
+                        phase_inc *= boost;
                     }
 
                     // Start oscillator phase at 6.0ms (0.5ms after spike ends)

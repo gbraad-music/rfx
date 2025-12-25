@@ -166,6 +166,9 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
             v->sweep_amount = end_freq;  // End frequency
             v->sweep_time = 0.060f;      // 60ms pitch sweep
             v->sweep_pos = 0.0f;
+            // Pre-advance phase to compensate for 6ms delay
+            // Needs to align at 30-40ms, so less advancement
+            v->noise_env = 0.25f;        // Advance by ~0.25 cycle to align at 30-40ms
 
             // Amplitude envelope - TR-909: Fast attack, balanced decay
             v->decay_env = 1.0f;
@@ -313,44 +316,97 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
 
                     // Generate sine wave (909 uses bridged-T oscillator)
                     float phase_inc = freq / sample_rate;
-                    voice->noise_env += phase_inc;
-                    if (voice->noise_env >= 1.0f) voice->noise_env -= 1.0f;
 
-                    // Bridged-T sine with analog character (subtle harmonics)
-                    float phase = voice->noise_env * 2.0f * M_PI;
-                    sample = sinf(phase);
+                    // Smooth continuous phase compensation from 20-90ms
+                    // Gradual ramp with gentler peak to match circuit saturation
+                    if (voice->sweep_pos >= 0.020f && voice->sweep_pos < 0.090f) {
+                        float t = (voice->sweep_pos - 0.020f) / 0.070f;  // 0.0 at 20ms, 1.0 at 90ms
+                        // Exponential ramp with reduced peak: +5% to +52%
+                        float boost = 1.05f + (powf(t, 1.5f) * 0.47f);
+                        phase_inc *= boost;
+                    }
 
-                    // Add subtle 2nd and 3rd harmonics for analog warmth
-                    sample += sinf(phase * 2.0f) * 0.08f;  // 2nd harmonic (even)
-                    sample += sinf(phase * 3.0f) * 0.04f;  // 3rd harmonic (odd)
+                    // Start oscillator phase at 6.0ms (0.5ms after spike ends)
+                    if (voice->sweep_pos >= 0.0060f) {
+                        voice->noise_env += phase_inc;
+                        if (voice->noise_env >= 1.0f) voice->noise_env -= 1.0f;
+                    }
 
-                    // Very subtle soft saturation (transistor/opamp character)
-                    sample = sample * 0.92f + tanhf(sample * 0.4f) * 0.08f;
+                    // Bridged-T oscillator: triangle wave → diode clipper
+                    float tri_phase = voice->noise_env;
+                    float triangle = 4.0f * fabsf(tri_phase - 0.5f) - 1.0f;
 
-                    // Amplitude envelope: SHARP attack to 5ms peak, then fast initial decay
+                    // Diode clipper: more triangle for grit and brightness
+                    // 16% triangle for gritty tips, 84% light tanh for body
+                    float clipped = tanhf(triangle * 1.5f);
+                    sample = triangle * 0.16f + clipped * 0.84f;
+
+                    // Amplitude envelope: FAST attack with pronounced start, then SLOW decay
                     float amp_env;
-                    float attack_time = 0.005f;  // 5ms to envelope peak
+                    float attack_time = 0.005f;  // 5ms to envelope peak (very fast for punch)
                     if (voice->sweep_pos < attack_time) {
-                        // Very fast rise to peak
-                        amp_env = voice->sweep_pos / attack_time;
+                        // Very fast rise to peak (x^2.8 for aggressive "start bit")
+                        float t = voice->sweep_pos / attack_time;
+                        amp_env = powf(t, 2.8f);  // Very sharp attack for pronounced start
                     } else {
-                        // Exponential decay after peak
-                        voice->decay_env -= voice->decay_env * (1.0f / (voice->decay_coeff * sample_rate));
+                        // Slower exponential decay (sustains longer)
+                        voice->decay_env -= voice->decay_env * (0.805f / (voice->decay_coeff * sample_rate));
                         if (voice->decay_env < 0.0001f) voice->decay_env = 0.0f;
                         amp_env = voice->decay_env;
                     }
 
-                    sample *= amp_env;
+                    // Pronounced "start bit" spike (initial transient punch)
+                    // Real TR-909 has a complex attack with 4 phases:
+                    // Phase 1 (0-1.9ms): Positive spike rising 0→+0.98
+                    // Phase 2 (1.9-3.8ms): Swing down +0.98→-0.99
+                    // Phase 3 (3.8-4.8ms): Sustain at -0.99 (plateau)
+                    // Phase 4 (4.8-5.5ms): Rise back -0.99→0, blend to oscillator
+                    float spike = 0.0f;
+                    float spike_active = 0.0f;  // 0=oscillator only, 1=spike only
 
-                    // Sharp initial spike (separate from envelope) for pronounced attack
-                    if (voice->sweep_pos < 0.002f) {
-                        float spike_t = voice->sweep_pos / 0.002f;
-                        float spike_env = 1.0f - spike_t;
-                        sample += (0.25f + synth->bd_attack * 0.25f) * spike_env;
+                    if (voice->sweep_pos < 0.0015f) {
+                        // Phase 1a: Very slow gradual rise 0→0.18 over 1.5ms
+                        float t = voice->sweep_pos / 0.0015f;
+                        spike = 0.18f * t * t;  // Slow quadratic rise
+                        spike_active = 1.0f;
+                    } else if (voice->sweep_pos < 0.0019f) {
+                        // Phase 1b: Rapid acceleration 0.18→1.0 over 0.4ms
+                        float t = (voice->sweep_pos - 0.0015f) / 0.0004f;
+                        spike = 0.18f + (1.0f - 0.18f) * powf(sinf(t * 1.5708f), 2.0f);
+                        spike_active = 1.0f;
+                    } else if (voice->sweep_pos < 0.0038f) {
+                        // Phase 2: Smooth sine swing from +1 to -1
+                        float t = (voice->sweep_pos - 0.0019f) / 0.0019f;
+                        spike = cosf(t * 3.14159f);  // cos(0→π) = +1→-1
+                        spike_active = 1.0f;
+                    } else if (voice->sweep_pos < 0.0048f) {
+                        // Phase 3: Sustain at -1 (flat plateau)
+                        spike = -1.0f;
+                        spike_active = 1.0f;
+                    } else if (voice->sweep_pos < 0.0055f) {
+                        // Phase 4: Rise back from -1 to 0 (smooth transition)
+                        float t = (voice->sweep_pos - 0.0048f) / 0.0007f;
+                        spike = -1.0f + t * t * (3.0f - 2.0f * t);  // smoothstep: -1→0
+                        spike_active = 1.0f;  // Keep spike active
                     }
 
-                    // Output gain - match real 909's pronounced peaks
-                    // 2.40 * 0.48 (bd_level*master_volume) = 1.152, slight overdrive for punch
+                    // During spike: use spike only (no oscillator)
+                    // Smooth crossfade from spike to oscillator (5.5ms → 6.0ms)
+                    if (spike_active > 0.0f) {
+                        sample = spike * 0.90f;  // 90% amplitude for punchier attack
+                    } else if (voice->sweep_pos < 0.0060f) {
+                        // Crossfade window: 5.5ms to 6.0ms
+                        float fade_t = (voice->sweep_pos - 0.0055f) / 0.0005f;  // 0→1 over 0.5ms
+                        fade_t = fade_t * fade_t * (3.0f - 2.0f * fade_t);  // Smoothstep
+                        float spike_out = spike * 0.90f;
+                        float osc_out = sample * amp_env;
+                        sample = spike_out * (1.0f - fade_t) + osc_out * fade_t;
+                    } else {
+                        sample = sample * amp_env;
+                    }
+
+                    // Output gain - match real 909 RMS level
+                    // 2.40 * 0.48 (bd_level*master_volume) = 1.15 for proper punch
                     sample = sample * 2.40f;
 
                     voice->sweep_pos += 1.0f / sample_rate;

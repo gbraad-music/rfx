@@ -1,11 +1,13 @@
 #!/bin/bash
 # Bass drum analysis script - compares rendered output to real TR-909 samples
 
-gcc -o render_drums render_drums.c rg909_drum_synth.c synth_resonator.c synth_noise.c synth_filter.c synth_envelope.c synth_voice_manager.c -lm -O2 && \
-./render_drums && \
+cd "$(dirname "$0")/.." || exit 1
+
+gcc -o tools/render_drums tools/render_drums.c synth/rg909_drum_synth.c synth/synth_resonator.c synth/synth_noise.c synth/synth_filter.c synth/synth_envelope.c synth/synth_voice_manager.c -Isynth -lm -O2 && \
+./tools/render_drums && \
 echo "" && \
 echo "=== WAVEFORM SHAPE ANALYSIS ===" && \
-python3 check_drums.py && \
+python3 tools/check_drums.py && \
 echo "" && \
 python3 << 'EOF'
 import wave

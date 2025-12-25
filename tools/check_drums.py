@@ -57,13 +57,21 @@ if HAS_MATPLOTLIB:
         plt.axhline(y=0, color='k', linestyle='-', linewidth=0.5)
         plt.legend()
 
-        # Plot 3: Full envelope comparison
+        # Plot 3: Full envelope comparison (ALIGNED BY TRANSIENT)
         plt.subplot(3, 1, 3)
-        envelope_samples = min(int(0.5 * sr), len(rendered), len(real))  # First 500ms or shorter
+
+        # Find attack transient (first sample > 0.05 threshold)
+        threshold = 0.05
+        rendered_start = np.argmax(np.abs(rendered) > threshold)
+        real_start = np.argmax(np.abs(real) > threshold)
+
+        # Align both waveforms at their transients
+        envelope_samples = min(int(0.5 * sr), len(rendered) - rendered_start, len(real) - real_start)
         time_ms = np.arange(envelope_samples) / sr * 1000  # Convert to milliseconds
-        plt.plot(time_ms, rendered[:envelope_samples], linewidth=1, color='#0066cc', alpha=0.7, label='Rendered')
-        plt.plot(time_ms, real[:envelope_samples], linewidth=1, color='#cc0000', alpha=0.7, label='Real TR-909')
-        plt.title('Full Envelope Comparison', fontsize=14, fontweight='bold')
+
+        plt.plot(time_ms, rendered[rendered_start:rendered_start+envelope_samples], linewidth=1, color='#0066cc', alpha=0.7, label='Rendered')
+        plt.plot(time_ms, real[real_start:real_start+envelope_samples], linewidth=1, color='#cc0000', alpha=0.7, label='Real TR-909')
+        plt.title(f'Full Envelope Comparison (aligned at transient: rendered@{rendered_start}, real@{real_start})', fontsize=14, fontweight='bold')
         plt.xlabel('Time (ms)', fontsize=12)
         plt.ylabel('Amplitude', fontsize=12)
         plt.grid(True, alpha=0.3)

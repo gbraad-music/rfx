@@ -327,6 +327,11 @@
 
     <!-- WebRTC MIDI (loaded as module) -->
     <script type="module" src="external/midi-rtc-bridge.js"></script>
+    <script type="module">
+        // Import and expose BrowserMIDIRTC globally for non-module scripts
+        import { BrowserMIDIRTC } from './external/midi-rtc-bridge.js';
+        window.BrowserMIDIRTC = BrowserMIDIRTC;
+    </script>
 
     <script>
         let audioContext;
@@ -482,8 +487,8 @@
 
             synthStatus.innerHTML = `Synth: <span>${selectedEngine === 'rgresonate1' ? 'RGResonate1' : 'Simple'}</span>`;
 
-            // Always enable audio
-            await currentSynth.setAudible(true);
+            // Don't call setAudible(true) - already connected through analyzer
+            // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
         }
 
         async function initializeDrum() {
@@ -527,8 +532,8 @@
             // Connect analyzer to speakers
             sharedAnalyzer.connectTo(audioContext.destination);
 
-            // Always enable audio
-            await drumSynth.setAudible(true);
+            // Don't call setAudible(true) - already connected through analyzer
+            // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
 
             document.getElementById('btnInitDrum').textContent = 'RG909 Drum Initialized';
             document.getElementById('btnInitDrum').disabled = true;
@@ -536,42 +541,9 @@
         }
 
         async function initWebRTCMIDI() {
-            if (webrtcMidi) {
-                console.log('[Synth Test] WebRTC MIDI already active');
-                return;
-            }
-
-            try {
-                webrtcMidi = new WebRTCMIDISource();
-                await webrtcMidi.initialize();
-
-                // Forward WebRTC MIDI to local MIDI manager
-                webrtcMidi.on('noteon', (data) => {
-                    console.log('[WebRTC MIDI] Note ON:', data);
-                    if (currentSynth) {
-                        currentSynth.handleNoteOn(data.note, data.velocity);
-                    }
-                    if (drumSynth && data.note >= 36 && data.note <= 49) {
-                        drumSynth.triggerDrum(data.note, data.velocity);
-                    }
-                });
-
-                webrtcMidi.on('noteoff', (data) => {
-                    console.log('[WebRTC MIDI] Note OFF:', data);
-                    if (currentSynth) {
-                        currentSynth.handleNoteOff(data.note);
-                    }
-                });
-
-                webrtcMidi.start();
-                midiStatus.innerHTML = 'MIDI: <span class="connected">WebRTC Connected</span>';
-                midiStatus.classList.add('connected');
-                document.getElementById('webrtcBtn').textContent = 'WebRTC Active';
-                console.log('[Synth Test] WebRTC MIDI initialized');
-            } catch (error) {
-                console.error('[Synth Test] WebRTC MIDI failed:', error);
-                alert('WebRTC MIDI failed: ' + error.message);
-            }
+            alert('WebRTC MIDI is temporarily disabled - module import needs fixing');
+            console.warn('[Synth Test] WebRTC MIDI disabled - module import not working');
+            // TODO: Fix module import for BrowserMIDIRTC
         }
 
         function setupMIDIHandlers() {

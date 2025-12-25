@@ -74,10 +74,11 @@ class RG909Drum {
         try {
             console.log('[RG909Drum] Loading WASM...');
 
-            // Fetch both JS glue code and WASM binary
+            // Fetch both JS glue code and WASM binary (cache-busting with timestamp)
+            const timestamp = Date.now();
             const [jsResponse, wasmResponse] = await Promise.all([
-                fetch('synths/rg909-drum.js'),
-                fetch('synths/rg909-drum.wasm')
+                fetch(`synths/rg909-drum.js?t=${timestamp}`),
+                fetch(`synths/rg909-drum.wasm?t=${timestamp}`)
             ]);
 
             const jsCode = await jsResponse.text();

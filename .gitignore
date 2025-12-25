@@ -47,5 +47,6 @@ logue-sdk-effects/*/*.map
 Thumbs.db
 
 # Test output
+/*.sfk
 /*.wav
 /*.png

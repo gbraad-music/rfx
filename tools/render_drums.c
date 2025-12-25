@@ -97,7 +97,7 @@ void render_drum(RG909Synth* synth, uint8_t note, const char* name, float durati
 }
 
 int main() {
-    const int sample_rate = 48000;
+    const int sample_rate = 44100;
     const float duration = 0.5f;  // 500ms - matches real TR-909 samples
 
     printf("RG909 Drum Renderer\n");

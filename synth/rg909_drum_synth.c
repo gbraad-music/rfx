@@ -159,7 +159,7 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
     switch (type) {
         case RG909_DRUM_BD: {
             // REAL 909 BD: Swept sine oscillator (274Hz → 53Hz like andremichelle)
-            float start_freq = 250.0f + synth->bd_tune * 50.0f;  // 250-300Hz start
+            float start_freq = 230.0f + synth->bd_tune * 50.0f;  // 230-280Hz start (reduced from 250-300)
             float end_freq = 50.0f + synth->bd_tune * 10.0f;     // 50-60Hz end
 
             v->base_freq = start_freq;   // Start frequency
@@ -321,8 +321,8 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                     // Gradual ramp with gentler peak to match circuit saturation
                     if (voice->sweep_pos >= 0.020f && voice->sweep_pos < 0.090f) {
                         float t = (voice->sweep_pos - 0.020f) / 0.070f;  // 0.0 at 20ms, 1.0 at 90ms
-                        // Exponential ramp with reduced peak: +5% to +52%
-                        float boost = 1.05f + (powf(t, 1.5f) * 0.47f);
+                        // Exponential ramp: +5% to +20%
+                        float boost = 1.05f + (powf(t, 1.5f) * 0.15f);
                         phase_inc *= boost;
                     }
 
@@ -337,9 +337,9 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                     float triangle = 4.0f * fabsf(tri_phase - 0.5f) - 1.0f;
 
                     // Diode clipper: more triangle for grit and brightness
-                    // 16% triangle for gritty tips, 84% light tanh for body
+                    // 20% triangle for balanced grit, 80% light tanh for body
                     float clipped = tanhf(triangle * 1.5f);
-                    sample = triangle * 0.16f + clipped * 0.84f;
+                    sample = triangle * 0.20f + clipped * 0.80f;
 
                     // Amplitude envelope: FAST attack with pronounced start, then SLOW decay
                     float amp_env;
@@ -379,15 +379,12 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                         float t = (voice->sweep_pos - 0.0019f) / 0.0019f;
                         spike = cosf(t * 3.14159f);  // cos(0→π) = +1→-1
                         spike_active = 1.0f;
-                    } else if (voice->sweep_pos < 0.0048f) {
-                        // Phase 3: Sustain at -1 (flat plateau)
-                        spike = -1.0f;
-                        spike_active = 1.0f;
                     } else if (voice->sweep_pos < 0.0055f) {
-                        // Phase 4: Rise back from -1 to 0 (smooth transition)
-                        float t = (voice->sweep_pos - 0.0048f) / 0.0007f;
+                        // Phase 3-4: Continuous gradual slope from -1 to 0 (no plateau)
+                        // Smooth rise over 1.7ms to avoid clipping
+                        float t = (voice->sweep_pos - 0.0038f) / 0.0017f;
                         spike = -1.0f + t * t * (3.0f - 2.0f * t);  // smoothstep: -1→0
-                        spike_active = 1.0f;  // Keep spike active
+                        spike_active = 1.0f;
                     }
 
                     // During spike: use spike only (no oscillator)

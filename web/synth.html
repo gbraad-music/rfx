@@ -707,7 +707,8 @@
 
         // Render a single drum sound
         async function renderDrumSound(note, drumName, duration = 2.0) {
-            const sampleRate = 48000;
+            // Use AudioContext's native sample rate to avoid resampling artifacts
+            const sampleRate = audioContext.sampleRate;
             const totalFrames = Math.floor(duration * sampleRate);
 
             // Load and patch WASM module to expose memory (same as worklet processor)

@@ -48,9 +48,12 @@ void synth_resonator_set_params(SynthResonator* r, float f0, float decay, float 
 
 void synth_resonator_strike(SynthResonator* r, float strength)
 {
-    // Not used anymore - resonators are excited via process() input
-    (void)r;
-    (void)strength;
+    if (!r) return;
+
+    // Excite the resonator by setting initial state
+    // This creates an impulse that will ring at the resonant frequency
+    r->z1 = strength;
+    r->z2 = 0.0f;
 }
 
 float synth_resonator_process(SynthResonator* r, float x)

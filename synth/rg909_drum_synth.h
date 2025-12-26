@@ -51,17 +51,20 @@ typedef struct {
     float sweep_pos;           // Current position in pitch sweep / time counter
     float sweep_time;          // Total sweep duration
     float sweep_amount;        // Sweep multiplier
-    float noise_env;           // Exponential noise envelope
+    float noise_env;           // Exponential noise envelope (also used as phase accumulator)
     float noise_decay;         // Noise decay coefficient
     float decay_env;           // Exponential decay VCA
     float decay_coeff;         // Decay coefficient
+    float phase_offset;        // Phase offset for sweep-shape to ensure positive start
+    float tail_phase_offset;   // Phase offset for tail to start at zero crossing
+    float tail_slow_offset;    // Phase offset for tail_slow to start at zero crossing (inverted)
 } RG909DrumVoice;
 
 typedef struct {
     SynthVoiceManager* voice_manager;
     RG909DrumVoice voices[RG909_MAX_VOICES];
 
-    // Parameters (0.0 - 1.0 range)
+    // Parameters (0.0 - 1.0 range, except bd_level which can exceed 1.0)
     float bd_level, bd_tune, bd_decay, bd_attack;
     float sd_level, sd_tone, sd_snappy, sd_tuning;
     float lt_level, lt_tuning, lt_decay;
@@ -70,6 +73,19 @@ typedef struct {
     float rs_level, rs_tuning;
     float hc_level, hc_tone;
     float master_volume;
+
+    // BD Sweep-Shape Parameters (user-adjustable)
+    float bd_squiggly_end_ms;    // End of squiggly phase (ms)
+    float bd_fast_end_ms;        // End of fast sweep phase (ms)
+    float bd_slow_end_ms;        // End of slow sweep phase (ms)
+    float bd_tail_slow_start_ms; // Start of tail slow-down (ms)
+    float bd_squiggly_freq;      // Squiggly frequency (Hz)
+    float bd_fast_freq;          // Fast sweep frequency (Hz)
+    float bd_slow_freq;          // Slow sweep frequency (Hz)
+    float bd_tail_freq;          // Tail frequency (Hz)
+    float bd_tail_slow_freq;     // Tail slow frequency (Hz)
+    float bd_fast_saw_pct;       // Fast SAW width (percentage, 0-100)
+    float bd_slow_saw_pct;       // Slow SAW width (percentage, 0-100)
 } RG909Synth;
 
 // Core API

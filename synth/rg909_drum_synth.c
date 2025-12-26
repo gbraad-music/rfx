@@ -82,7 +82,7 @@ RG909Synth* rg909_synth_create(void) {
     // Initialize BD Sweep-Shape parameters (user-optimized defaults)
     synth->bd_squiggly_end_ms = 1.5f;
     synth->bd_fast_end_ms = 10.1f;
-    synth->bd_slow_end_ms = 31.5f;
+    synth->bd_slow_end_ms = 31.6f;
     synth->bd_tail_slow_start_ms = 74.0f;
     synth->bd_squiggly_freq = 230.0f;
     synth->bd_fast_freq = 216.0f;
@@ -406,7 +406,7 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                             voice->phase_offset = voice->noise_env;
                         }
 
-                        // Use accumulated phase with offset to start at 0.0 (positive SAW section)
+                        // Use accumulated phase with offset - same offset for both fast and slow
                         // Use fmodf to properly wrap phase to [0, 1) range
                         float u = fmodf(voice->noise_env - voice->phase_offset + 10.0f, 1.0f);
 

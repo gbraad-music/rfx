@@ -80,9 +80,9 @@ RG909Synth* rg909_synth_create(void) {
     synth->master_volume = 0.6f;
 
     // Initialize BD Sweep-Shape parameters (user-optimized defaults)
-    synth->bd_squiggly_end_ms = 1.5f;
+    synth->bd_squiggly_end_ms = 1.5f;  // Gradual + steep rise within same duration
     synth->bd_fast_end_ms = 10.1f;
-    synth->bd_slow_end_ms = 31.6f;
+    synth->bd_slow_end_ms = 31.65f;
     synth->bd_tail_slow_start_ms = 74.0f;
     synth->bd_squiggly_freq = 230.0f;
     synth->bd_fast_freq = 216.0f;
@@ -339,15 +339,9 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
 
                     // Convert timing parameters from ms to seconds
                     float squiggly_end = synth->bd_squiggly_end_ms / 1000.0f;
-
-                    // Add rise phase duration (based on real TR-909 analysis: ~1.3ms steep rise)
-                    float rise_duration = 0.0013f;  // 1.3ms
-                    float rise_end = squiggly_end + rise_duration;
-
-                    // Propagate timing shift to all subsequent phases
-                    float fast_end = synth->bd_fast_end_ms / 1000.0f + rise_duration;
-                    float slow_end = synth->bd_slow_end_ms / 1000.0f + rise_duration;
-                    float tail_slow_start = synth->bd_tail_slow_start_ms / 1000.0f + rise_duration;
+                    float fast_end = synth->bd_fast_end_ms / 1000.0f;
+                    float slow_end = synth->bd_slow_end_ms / 1000.0f;
+                    float tail_slow_start = synth->bd_tail_slow_start_ms / 1000.0f;
 
                     // Calculate phase increment based on current phase
                     float phase_inc;
@@ -384,25 +378,35 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                     // Phase 4 (74ms+): Tail slow at 53 Hz (PHASE INVERTED)
 
                     if (voice->sweep_pos < squiggly_end) {
-                        // Phase 1: Gradual squiggly rise - SINE with envelope
-                        float sine_val = sinf(2.0f * M_PI * voice->noise_env);
-                        sample = sine_val;
+                        // Phase 1: Two-stage squiggly within 1.5ms
+                        // Stage 1: Gradual rise (67%)
+                        // Stage 2: Steep rise (33%) with rectified sine
+                        float gradual_phase_end = squiggly_end * 0.67f;  // 67% of squiggly duration
 
-                        float t = voice->sweep_pos / squiggly_end;
-                        float amp_env = 0.18f * powf(t, 0.8f);
-                        sample = sample * amp_env;
+                        if (voice->sweep_pos < gradual_phase_end) {
+                            // Stage 1: Gradual squiggly rise - SINE with envelope
+                            float sine_val = sinf(2.0f * M_PI * voice->noise_env);
+                            sample = sine_val;
 
-                    } else if (voice->sweep_pos < rise_end) {
-                        // Phase 2: Steep rise/punch - from 0.18 to 0.97
-                        // Use rectified sine to keep harmonic content but stay positive
-                        float sine_val = sinf(2.0f * M_PI * voice->noise_env);
-                        sample = fabsf(sine_val);  // Full-wave rectification - always positive
+                            float t = voice->sweep_pos / gradual_phase_end;
+                            float amp_env = 0.18f * powf(t, 0.8f);
+                            sample = sample * amp_env;
+                        } else {
+                            // Stage 2: Steep rise/punch - from 0.18 to 0.97
+                            // Use rectified sine with saturation for analog character
+                            float sine_val = sinf(2.0f * M_PI * voice->noise_env);
+                            sample = fabsf(sine_val);  // Full-wave rectification - always positive
 
-                        float t = (voice->sweep_pos - squiggly_end) / rise_duration;
+                            // Add soft saturation for warmth/character
+                            sample = tanhf(sample * 1.3f);
 
-                        // Exponential rising envelope (starts gradual, finishes steep)
-                        float amp_env = 0.18f + (0.97f - 0.18f) * powf(t, 2.5f);
-                        sample = sample * amp_env;
+                            float rise_duration = squiggly_end - gradual_phase_end;
+                            float t = (voice->sweep_pos - gradual_phase_end) / rise_duration;
+
+                            // Exponential rising envelope (starts gradual, finishes steep)
+                            float amp_env = 0.18f + (0.97f - 0.18f) * powf(t, 2.5f);
+                            sample = sample * amp_env;
+                        }
 
                     } else if (voice->sweep_pos < slow_end) {
                         // Phase 2: Two-stage sweep-shape

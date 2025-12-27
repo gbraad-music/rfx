@@ -14,6 +14,7 @@ typedef struct {
     float a1, a2;     // feedback coefficients
     float b0;         // input gain
     float z1, z2;     // state
+    float excitation; // pending impulse to apply
 } SynthResonator;
 
 SynthResonator* synth_resonator_create(void);

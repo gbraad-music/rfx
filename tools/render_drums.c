@@ -82,12 +82,22 @@ void render_drum(RG909Synth* synth, uint8_t note, const char* name, float durati
         mono[i] = (buffer[i * 2] + buffer[i * 2 + 1]) * 0.5f;
     }
 
+    // Calculate peak and RMS of float samples (before clipping)
+    float peak = 0.0f;
+    float sum_sq = 0.0f;
+    for (int i = 0; i < num_frames; i++) {
+        float abs_val = mono[i] < 0.0f ? -mono[i] : mono[i];
+        if (abs_val > peak) peak = abs_val;
+        sum_sq += mono[i] * mono[i];
+    }
+    float rms = sqrtf(sum_sq / num_frames);
+
     // Write to file
     char filename[256];
     snprintf(filename, sizeof(filename), "RG909_%s.wav", name);
     write_wav_file(filename, mono, num_frames, sample_rate);
 
-    printf("✓ Rendered: %s\n", filename);
+    printf("✓ Rendered: %s (peak: %.6f, RMS: %.6f)\n", filename, peak, rms);
 
     free(buffer);
     free(mono);

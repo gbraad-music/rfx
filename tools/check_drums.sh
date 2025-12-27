@@ -1,5 +1,5 @@
 #!/bin/bash
-# Bass drum analysis script - compares rendered output to real TR-909 samples
+# Snare drum analysis script - compares rendered output to real TR-909 samples
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -10,16 +10,18 @@ echo "=== WAVEFORM SHAPE ANALYSIS ===" && \
 python3 tools/check_drums.py && \
 python3 tools/compare_attack.py && \
 echo "" && \
+python3 tools/compare_snare_text.py && \
+echo "" && \
 python3 << 'EOF'
 import wave
 import numpy as np
 
-with wave.open('RG909_BD_BassDrum.wav', 'rb') as wav:
+with wave.open('RG909_SD_Snare.wav', 'rb') as wav:
     sr = wav.getframerate()
     frames = wav.readframes(wav.getnframes())
     rendered = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
-with wave.open('/mnt/e/Samples/TR909/909 Kick_long.wav', 'rb') as wav:
+with wave.open('/mnt/e/Samples/TR909/909 Snare2_3.wav', 'rb') as wav:
     frames = wav.readframes(wav.getnframes())
     real = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
@@ -41,12 +43,12 @@ real_rms = np.sqrt(np.mean(real[real_start:real_start+samples_500ms]**2))
 rendered_peak_time = (rendered_peak_idx - rendered_start) / sr * 1000
 real_peak_time = (real_peak_idx - real_start) / sr * 1000
 
-print(f"\n=== TR-909 BASS DRUM ANALYSIS ===")
+print(f"\n=== TR-909 SNARE DRUM ANALYSIS ===")
 print(f"Rendered: RMS={rendered_rms:.3f}, peak={rendered_peak_time:.1f}ms, max={np.max(np.abs(rendered)):.3f}")
 print(f"Real 909: RMS={real_rms:.3f}, peak={real_peak_time:.1f}ms, max={np.max(np.abs(real)):.3f}")
 print(f"\nRMS match: {rendered_rms/real_rms:.2f}x ({'✓ GOOD' if abs(rendered_rms/real_rms - 1.0) < 0.10 else '⚠ ADJUST'})")
 print(f"Peak timing: {'✓ GOOD' if abs(rendered_peak_time - real_peak_time) < 2.5 else '⚠ OFF'} ({abs(rendered_peak_time - real_peak_time):.1f}ms diff)")
-print(f"\nWaveform: Sine + 2nd/3rd harmonics for analog warmth")
+print(f"\nWaveform: Twin-T resonators + filtered noise")
 
 # Triangle character check (from aligned start)
 cycle_start = rendered_start + int(0.020 * sr)

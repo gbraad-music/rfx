@@ -250,6 +250,27 @@
                     Synth: <span>Not Initialized</span>
                 </div>
             </div>
+
+            <!-- WebRTC MIDI Configuration (collapsible) -->
+            <div id="webrtc-config" style="display: none; margin-top: 15px; padding: 15px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 4px;">
+                <div style="padding: 10px; border-radius: 4px; margin-bottom: 15px; background: #0a0a0a; border: 1px solid #2a2a2a; font-size: 12px;" id="webrtc-status">
+                    ⚪ Not Connected
+                </div>
+
+                <div id="webrtc-setup">
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase; display: block; margin-bottom: 5px;">Step 1: Paste Offer from MIDI Bridge</label>
+                    <textarea id="webrtc-offer-input" placeholder="Paste the offer from midi-bridge here..." style="width: 100%; height: 120px; background: #0a0a0a; color: #fff; border: 1px solid #2a2a2a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; margin-bottom: 10px; resize: vertical;"></textarea>
+
+                    <button id="btnGenerateAnswer" style="width: 100%; padding: 10px; background: #0066FF; border: 1px solid #0088FF; border-radius: 4px; color: white; font-weight: bold; cursor: pointer; margin-bottom: 15px;">Generate Answer</button>
+
+                    <label style="font-size: 11px; color: #888; text-transform: uppercase; display: block; margin-bottom: 5px;">Step 2: Copy Answer and Paste in MIDI Bridge</label>
+                    <textarea id="webrtc-answer-output" readonly placeholder="Answer will appear here..." style="width: 100%; height: 120px; background: #0a0a0a; color: #0f0; border: 1px solid #2a2a2a; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; margin-bottom: 10px; resize: vertical;"></textarea>
+
+                    <button id="btnCopyAnswer" style="width: 100%; padding: 10px; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 4px; color: white; cursor: pointer; margin-bottom: 15px;">Copy Answer to Clipboard</button>
+                </div>
+
+                <button id="btnDisconnectWebRTC" style="width: 100%; padding: 10px; background: #cc0000; border: 1px solid #ff0000; border-radius: 4px; color: white; cursor: pointer;">Disconnect</button>
+            </div>
         </div>
 
         <!-- Synth Engine Selection -->
@@ -379,8 +400,11 @@
                 }
             });
 
-            // WebRTC MIDI button
-            document.getElementById('webrtcBtn').addEventListener('click', initWebRTCMIDI);
+            // WebRTC MIDI buttons
+            document.getElementById('webrtcBtn').addEventListener('click', toggleWebRTCConfig);
+            document.getElementById('btnGenerateAnswer').addEventListener('click', generateWebRTCAnswer);
+            document.getElementById('btnCopyAnswer').addEventListener('click', copyAnswerToClipboard);
+            document.getElementById('btnDisconnectWebRTC').addEventListener('click', disconnectWebRTCMIDI);
 
             // Setup MIDI handlers (always listen to MIDI manager)
             setupMIDIHandlers();
@@ -540,10 +564,105 @@
             document.getElementById('btnRenderDrums').disabled = false;
         }
 
-        async function initWebRTCMIDI() {
-            alert('WebRTC MIDI is temporarily disabled - module import needs fixing');
-            console.warn('[Synth Test] WebRTC MIDI disabled - module import not working');
-            // TODO: Fix module import for BrowserMIDIRTC
+        function toggleWebRTCConfig() {
+            const config = document.getElementById('webrtc-config');
+            config.style.display = config.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function generateWebRTCAnswer() {
+            try {
+                const offerInput = document.getElementById('webrtc-offer-input');
+                const answerOutput = document.getElementById('webrtc-answer-output');
+                const statusEl = document.getElementById('webrtc-status');
+
+                const offerText = offerInput.value.trim();
+                if (!offerText) {
+                    statusEl.textContent = '❌ Please paste an offer first';
+                    statusEl.style.color = '#ff0000';
+                    return;
+                }
+
+                // Check if BrowserMIDIRTC is available
+                if (!window.BrowserMIDIRTC) {
+                    throw new Error('BrowserMIDIRTC not loaded yet - please wait');
+                }
+
+                console.log('[WebRTC MIDI] Creating receiver...');
+                statusEl.textContent = '🔄 Connecting...';
+                statusEl.style.color = '#ffaa00';
+
+                // Create WebRTC MIDI receiver
+                webrtcMidi = new window.BrowserMIDIRTC('receiver');
+                await webrtcMidi.initialize();
+                console.log('[WebRTC MIDI] Receiver initialized');
+
+                // Handle incoming MIDI messages
+                webrtcMidi.onMIDIMessage = (message) => {
+                    console.log('[WebRTC MIDI] Received:', message);
+                    // Forward to MIDI manager
+                    if (midiManager && message.data) {
+                        const midiData = new Uint8Array(message.data);
+                        const event = { data: midiData, timeStamp: message.timestamp || performance.now() };
+                        midiManager._handleMIDIMessage(event);
+                    }
+                };
+
+                // Handle connection state changes
+                webrtcMidi.onConnectionStateChange = (state) => {
+                    console.log('[WebRTC MIDI] Connection state:', state);
+                    if (state === 'connected') {
+                        statusEl.textContent = '✅ Connected - MIDI is flowing!';
+                        statusEl.style.color = '#00ff00';
+                        midiStatus.querySelector('span').textContent = 'WebRTC Connected';
+                        midiStatus.style.color = '#00ff00';
+                    } else if (state === 'disconnected' || state === 'failed') {
+                        statusEl.textContent = '❌ Connection failed or disconnected';
+                        statusEl.style.color = '#ff0000';
+                        midiStatus.querySelector('span').textContent = 'WebRTC Disconnected';
+                        midiStatus.style.color = '#ff0000';
+                    }
+                };
+
+                // Handle offer and get answer
+                const answer = await webrtcMidi.handleOffer(offerText);
+
+                // Display answer
+                answerOutput.value = answer;
+                statusEl.textContent = '🔵 Waiting for bridge to connect...';
+                statusEl.style.color = '#0066FF';
+                console.log('[WebRTC MIDI] Answer generated');
+
+            } catch (error) {
+                console.error('[WebRTC MIDI] Error:', error);
+                const statusEl = document.getElementById('webrtc-status');
+                statusEl.textContent = '❌ Error: ' + error.message;
+                statusEl.style.color = '#ff0000';
+            }
+        }
+
+        function copyAnswerToClipboard() {
+            const answerOutput = document.getElementById('webrtc-answer-output');
+            answerOutput.select();
+            navigator.clipboard.writeText(answerOutput.value).then(() => {
+                console.log('[WebRTC MIDI] Answer copied to clipboard');
+            }).catch(err => {
+                console.error('[WebRTC MIDI] Failed to copy:', err);
+            });
+        }
+
+        function disconnectWebRTCMIDI() {
+            if (webrtcMidi) {
+                webrtcMidi.close();
+                webrtcMidi = null;
+            }
+            const statusEl = document.getElementById('webrtc-status');
+            statusEl.textContent = '⚪ Not Connected';
+            statusEl.style.color = '#666';
+            document.getElementById('webrtc-offer-input').value = '';
+            document.getElementById('webrtc-answer-output').value = '';
+            midiStatus.querySelector('span').textContent = 'Not Connected';
+            midiStatus.style.color = '';
+            console.log('[WebRTC MIDI] Disconnected');
         }
 
         function setupMIDIHandlers() {

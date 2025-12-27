@@ -339,9 +339,15 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
 
                     // Convert timing parameters from ms to seconds
                     float squiggly_end = synth->bd_squiggly_end_ms / 1000.0f;
-                    float fast_end = synth->bd_fast_end_ms / 1000.0f;
-                    float slow_end = synth->bd_slow_end_ms / 1000.0f;
-                    float tail_slow_start = synth->bd_tail_slow_start_ms / 1000.0f;
+
+                    // Add rise phase duration (based on real TR-909 analysis: ~1.3ms steep rise)
+                    float rise_duration = 0.0013f;  // 1.3ms
+                    float rise_end = squiggly_end + rise_duration;
+
+                    // Propagate timing shift to all subsequent phases
+                    float fast_end = synth->bd_fast_end_ms / 1000.0f + rise_duration;
+                    float slow_end = synth->bd_slow_end_ms / 1000.0f + rise_duration;
+                    float tail_slow_start = synth->bd_tail_slow_start_ms / 1000.0f + rise_duration;
 
                     // Calculate phase increment based on current phase
                     float phase_inc;
@@ -378,14 +384,21 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                     // Phase 4 (74ms+): Tail slow at 53 Hz (PHASE INVERTED)
 
                     if (voice->sweep_pos < squiggly_end) {
-                        // Phase 1: Initial squiggly attack - SINE with envelope
-                        // Use SINE wave (not triangle) for smooth positive start
+                        // Phase 1: Gradual squiggly rise - SINE with envelope
                         float sine_val = sinf(2.0f * M_PI * voice->noise_env);
                         sample = sine_val;
 
                         float t = voice->sweep_pos / squiggly_end;
                         float amp_env = 0.18f * powf(t, 0.8f);
                         sample = sample * amp_env;
+
+                    } else if (voice->sweep_pos < rise_end) {
+                        // Phase 2: Steep rise/punch - from 0.18 to 0.97
+                        // Use exponential rise (no oscillator, pure envelope)
+                        float t = (voice->sweep_pos - squiggly_end) / rise_duration;
+
+                        // Exponential rising -> steady and sudden rise (starts gradual, finishes steep)
+                        sample = 0.18f + (0.97f - 0.18f) * powf(t, 2.5f);
 
                     } else if (voice->sweep_pos < slow_end) {
                         // Phase 2: Two-stage sweep-shape

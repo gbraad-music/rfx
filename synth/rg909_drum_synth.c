@@ -394,11 +394,15 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
 
                     } else if (voice->sweep_pos < rise_end) {
                         // Phase 2: Steep rise/punch - from 0.18 to 0.97
-                        // Use exponential rise (no oscillator, pure envelope)
+                        // Use rectified sine to keep harmonic content but stay positive
+                        float sine_val = sinf(2.0f * M_PI * voice->noise_env);
+                        sample = fabsf(sine_val);  // Full-wave rectification - always positive
+
                         float t = (voice->sweep_pos - squiggly_end) / rise_duration;
 
-                        // Exponential rising -> steady and sudden rise (starts gradual, finishes steep)
-                        sample = 0.18f + (0.97f - 0.18f) * powf(t, 2.5f);
+                        // Exponential rising envelope (starts gradual, finishes steep)
+                        float amp_env = 0.18f + (0.97f - 0.18f) * powf(t, 2.5f);
+                        sample = sample * amp_env;
 
                     } else if (voice->sweep_pos < slow_end) {
                         // Phase 2: Two-stage sweep-shape

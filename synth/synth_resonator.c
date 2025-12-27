@@ -26,6 +26,7 @@ void synth_resonator_reset(SynthResonator* r)
     if (!r) return;
     r->z1 = 0.0f;
     r->z2 = 0.0f;
+    r->excitation = 0.0f;
 }
 
 void synth_resonator_set_params(SynthResonator* r, float f0, float decay, float fs)
@@ -50,18 +51,20 @@ void synth_resonator_strike(SynthResonator* r, float strength)
 {
     if (!r) return;
 
-    // Excite the resonator by setting initial state
-    // This creates an impulse that will ring at the resonant frequency
-    r->z1 = strength;
-    r->z2 = 0.0f;
+    // Store the impulse to be applied on next process() call
+    r->excitation = strength;
 }
 
 float synth_resonator_process(SynthResonator* r, float x)
 {
     if (!r) return 0.0f;
 
+    // Apply any pending excitation impulse
+    float input = x + r->excitation;
+    r->excitation = 0.0f;  // Clear after applying
+
     // Standard 2-pole resonator with input
-    float y = r->b0 * x + r->a1 * r->z1 + r->a2 * r->z2;
+    float y = r->b0 * input + r->a1 * r->z1 + r->a2 * r->z2;
 
     r->z2 = r->z1;
     r->z1 = y;

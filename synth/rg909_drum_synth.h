@@ -67,6 +67,11 @@ typedef struct {
     // Parameters (0.0 - 1.0 range, except bd_level which can exceed 1.0)
     float bd_level, bd_tune, bd_decay, bd_attack;
     float sd_level, sd_tone, sd_snappy, sd_tuning;
+    float sd_freq1, sd_freq2, sd_noise_level, sd_lp_noise_cutoff;
+    float sd_res1_decay, sd_res2_decay, sd_noise_decay;
+    float sd_res1_level, sd_res2_level;
+    float sd_noise_attack, sd_noise_fade_time, sd_noise_fade_curve;
+    float sd_tone_gain;
     float lt_level, lt_tuning, lt_decay;
     float mt_level, mt_tuning, mt_decay;
     float ht_level, ht_tuning, ht_decay;

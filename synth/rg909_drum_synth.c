@@ -37,6 +37,20 @@ enum {
     PARAM_HC_LEVEL,
     PARAM_HC_TONE,
     PARAM_MASTER_VOLUME,
+    // Extended SD Parameters (for advanced snare control)
+    PARAM_SD_TONE_GAIN,
+    PARAM_SD_FREQ1,
+    PARAM_SD_FREQ2,
+    PARAM_SD_RES1_LEVEL,
+    PARAM_SD_RES2_LEVEL,
+    PARAM_SD_NOISE_LEVEL,
+    PARAM_SD_LP_NOISE_CUTOFF,
+    PARAM_SD_RES1_DECAY,
+    PARAM_SD_RES2_DECAY,
+    PARAM_SD_NOISE_DECAY,
+    PARAM_SD_NOISE_ATTACK,
+    PARAM_SD_NOISE_FADE_TIME,
+    PARAM_SD_NOISE_FADE_CURVE,
     // BD Sweep-Shape Parameters
     PARAM_BD_SQUIGGLY_END_MS,
     PARAM_BD_FAST_END_MS,
@@ -60,10 +74,30 @@ RG909Synth* rg909_synth_create(void) {
     synth->bd_tune = 0.5f;
     synth->bd_decay = 0.13f;
     synth->bd_attack = 0.0f;
-    synth->sd_level = 2.5f;  // Pure tone output (10x/8x strikes)
-    synth->sd_tone = 0.5f;
-    synth->sd_snappy = 0.5f;
+    synth->sd_level = 44.0f;  // Master output level (user-tweaked)
+    synth->sd_tone = 0.01f;    // High-pass filter cutoff for "snappy" noise (VERY LOW)
+    synth->sd_snappy = 0.0115f;  // WALDORF: High-pass noise level (user-tweaked)
     synth->sd_tuning = 0.5f;
+    synth->sd_tone_gain = 0.5f;  // Resonator output gain (user-tweaked)
+
+    // Extended snare parameters (user-tweaked for real TR-909 sound)
+    // Key finding: frequencies are VERY CLOSE together (120Hz/122Hz - only 2Hz apart!)
+    // res2 (swept) contributes very little compared to res1 (constant)
+    // Noise path 1: Low-pass filtered, always on
+    // Noise path 2: High-pass filtered, envelope controlled by sd_snappy
+    synth->sd_freq1 = 120.0f;  // Osc 1: Constant frequency (Hz) - DOMINANT oscillator
+    synth->sd_freq2 = 122.0f;  // Osc 2: Base frequency for pitch sweep (Hz) - MINIMAL contribution
+    synth->sd_res1_level = 8.5f;  // Osc 1 strike level (STRONG - main tone source)
+    synth->sd_res2_level = 1.5f;  // Osc 2 strike level (WEAK - barely contributes)
+    synth->sd_noise_level = 0.0f;  // Low-pass noise level (TODO: user said "always on" - need value)
+    synth->sd_lp_noise_cutoff = 0.15f;  // LP noise filter cutoff (lower = darker noise)
+    synth->sd_res1_decay = 0.46f;  // Osc 1 decay time (seconds) - LONG sustain
+    synth->sd_res2_decay = 0.05f;  // Osc 2 decay time (seconds) - VERY SHORT (maybe shouldn't exist)
+    synth->sd_noise_decay = 0.180f;  // High-pass noise decay time (seconds)
+    synth->sd_noise_attack = 5.0f;  // [NOT USED in Waldorf architecture]
+    synth->sd_noise_fade_time = 250.0f;  // [NOT USED in Waldorf architecture]
+    synth->sd_noise_fade_curve = 0.18f;  // [NOT USED in Waldorf architecture]
+
     synth->lt_level = 0.7f;
     synth->lt_tuning = 0.5f;
     synth->lt_decay = 0.5f;
@@ -170,8 +204,6 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
     RG909DrumType type = note_to_drum_type(note);
     float vel = velocity / 127.0f;
 
-    fprintf(stderr, "DEBUG TRIGGER: note=%d, type=%d, vel=%.2f\n", note, type, vel);
-
     // Find voice for this drum type
     RG909DrumVoice* v = NULL;
     for (int i = 0; i < RG909_MAX_VOICES; i++) {
@@ -215,45 +247,51 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
         }
 
         case RG909_DRUM_SD: {
-            // Snare: Twin-T resonators (corrected for 44.1kHz vs 48kHz)
-            // Resonator 1: 185 Hz, 120ms decay
-            // Resonator 2: 330 Hz, 80ms decay (higher!)
-            float freq1 = 152.0f + synth->sd_tuning * 37.0f;  // 152-189Hz (was 165-205Hz)
-            float freq2 = 285.0f + synth->sd_tuning * 37.0f;  // 285-322Hz (was 310-350Hz)
+            // Snare: Waldorf TR-909 architecture
+            // - Osc 1 (res1): Constant pitch, slightly detuned
+            // - Osc 2 (res2): Pitch envelope modulation
+            // - Noise path 1: Low-pass filtered, always present (texture)
+            // - Noise path 2: High-pass filtered, controlled by "Snappy"
 
-            float decay1 = 0.12f;  // 120ms
-            float decay2 = 0.08f;  // 80ms
+            fprintf(stderr, "DEBUG: Snare trigger! vel=%.2f\n", vel);
+
+            // Pitch sweep parameters (now applied to BOTH resonators)
+            v->sweep_amount = 1.8f;          // Pitch multiplier at start (lower for less "tinny" sound)
+            v->sweep_time = 0.012f;          // 12ms fast pitch envelope for snap
+            v->sweep_pos = 0.0f;
+
+            // Use configurable resonator frequencies
+            float freq1 = synth->sd_freq1;  // Oscillator 1: constant pitch
+            float freq2 = synth->sd_freq2;  // Oscillator 2: pitch modulated
 
             synth_resonator_reset(v->res1);
             synth_resonator_reset(v->res2);
-            synth_resonator_set_params(v->res1, freq1, decay1, sample_rate);
-            synth_resonator_set_params(v->res2, freq2, decay2, sample_rate);
 
-            fprintf(stderr, "DEBUG SNARE: freq1=%.1f Hz, freq2=%.1f Hz, decay1=%.3f s, decay2=%.3f s, sr=%.0f\n",
-                    freq1, freq2, decay1, decay2, sample_rate);
+            // BOTH resonators start at swept-up frequency for characteristic attack peaks
+            synth_resonator_set_params(v->res1, freq1 * v->sweep_amount, synth->sd_res1_decay, sample_rate);
+            synth_resonator_set_params(v->res2, freq2 * v->sweep_amount, synth->sd_res2_decay, sample_rate);
 
-            // VERY STRONG strikes for visible tone oscillation
-            synth_resonator_strike(v->res1, vel * 10.0f);  // Very strong
-            synth_resonator_strike(v->res2, vel * 8.0f);   // Very strong
-            fprintf(stderr, "DEBUG SNARE: struck res1 with %.2f, res2 with %.2f\n",
-                    vel * 10.0f, vel * 8.0f);
+            // Use configurable resonator strikes
+            synth_resonator_strike(v->res1, vel * synth->sd_res1_level);
+            synth_resonator_strike(v->res2, vel * synth->sd_res2_level);
 
-            v->sweep_pos = 0.0f;
+            // High-pass noise envelope (controlled by sd_snappy)
+            v->noise_env = vel * synth->sd_snappy;  // HP noise level
+            v->noise_decay = synth->sd_noise_decay;
 
-            // Exponential noise envelope (fast 5-20ms based on snappy)
-            v->noise_env = vel * 3.0f;
-            v->noise_decay = 0.005f + synth->sd_snappy * 0.015f;  // 5-20ms
-
-            // Noise filter (1-3kHz emphasis)
-            synth_filter_set_type(v->filter, SYNTH_FILTER_BPF);
-            synth_filter_set_cutoff(v->filter, 0.35f + synth->sd_tone * 0.3f);
+            // High-pass filter for "snappy" noise (Waldorf architecture)
+            synth_filter_set_type(v->filter, SYNTH_FILTER_HPF);
+            synth_filter_set_cutoff(v->filter, 0.4f + synth->sd_tone * 0.3f);  // High-pass for snap
             synth_filter_set_resonance(v->filter, 0.5f);
+
+            // Initialize LP noise filter state (simple one-pole)
+            v->decay_env = 0.0f;  // Reuse as LP filter state
             break;
         }
 
         case RG909_DRUM_LT: {
-            // Low Tom: Exponential pitch sweep (corrected for 44.1kHz vs 48kHz)
-            float base_freq = 73.5f + synth->lt_tuning * 55.0f;  // 73-129Hz (was 80-140Hz)
+            // Low Tom: Resonator-dominant with strong pitch sweep
+            float base_freq = 73.5f + synth->lt_tuning * 55.0f;  // 73-129Hz
             v->base_freq = base_freq;
             v->sweep_pos = 0.0f;
             v->sweep_time = 0.15f;   // 150ms sweep
@@ -262,13 +300,13 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
             float decay = 0.3f + synth->lt_decay * 0.3f;
             synth_resonator_reset(v->res1);
             synth_resonator_set_params(v->res1, base_freq, decay, sample_rate);
-            synth_resonator_strike(v->res1, vel * 0.3f);
+            synth_resonator_strike(v->res1, vel * 8.0f);  // Strong strike for punchy tom
             break;
         }
 
         case RG909_DRUM_MT: {
-            // Mid Tom: Exponential pitch sweep (corrected for 44.1kHz vs 48kHz)
-            float base_freq = 92.0f + synth->mt_tuning * 73.5f;  // 92-165Hz (was 100-180Hz)
+            // Mid Tom: Resonator-dominant with strong pitch sweep
+            float base_freq = 92.0f + synth->mt_tuning * 73.5f;  // 92-165Hz
             v->base_freq = base_freq;
             v->sweep_pos = 0.0f;
             v->sweep_time = 0.15f;   // 150ms sweep
@@ -277,13 +315,13 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
             float decay = 0.3f + synth->mt_decay * 0.3f;
             synth_resonator_reset(v->res1);
             synth_resonator_set_params(v->res1, base_freq, decay, sample_rate);
-            synth_resonator_strike(v->res1, vel * 0.3f);
+            synth_resonator_strike(v->res1, vel * 8.0f);  // Strong strike for punchy tom
             break;
         }
 
         case RG909_DRUM_HT: {
-            // High Tom: Exponential pitch sweep (corrected for 44.1kHz vs 48kHz)
-            float base_freq = 129.0f + synth->ht_tuning * 92.0f;  // 129-221Hz (was 140-240Hz)
+            // High Tom: Resonator-dominant with strong pitch sweep
+            float base_freq = 129.0f + synth->ht_tuning * 92.0f;  // 129-221Hz
             v->base_freq = base_freq;
             v->sweep_pos = 0.0f;
             v->sweep_time = 0.12f;   // 120ms sweep
@@ -292,7 +330,7 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
             float decay = 0.25f + synth->ht_decay * 0.25f;
             synth_resonator_reset(v->res1);
             synth_resonator_set_params(v->res1, base_freq, decay, sample_rate);
-            synth_resonator_strike(v->res1, vel * 0.3f);
+            synth_resonator_strike(v->res1, vel * 8.0f);  // Strong strike for punchy tom
             break;
         }
 
@@ -544,21 +582,63 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
                 }
 
                 case RG909_DRUM_SD: {
-                    // Tone: Two free-running resonators (185Hz + 330Hz)
+                    // Waldorf TR-909 Snare Architecture:
+                    // - Res1: Constant pitch (180Hz)
+                    // - Res2: Pitch envelope modulation (330Hz → swept)
+                    // - LP noise: Always present (subtle texture)
+                    // - HP noise: Snappy-controlled envelope
+
+                    // Pitch envelope for ONLY res2 (Waldorf: one oscillator modulated)
+                    float pitch_env = 1.0f;
+                    if (voice->sweep_pos < voice->sweep_time) {
+                        float t = voice->sweep_pos / voice->sweep_time;
+                        // Linear sweep from sweep_amount (2.5x) down to 1.0x
+                        pitch_env = voice->sweep_amount - (voice->sweep_amount - 1.0f) * t;
+                    }
+
+                    // Update BOTH resonator frequencies with pitch envelope for characteristic peaks
+                    float freq1 = synth->sd_freq1 * pitch_env;
+                    float freq2 = synth->sd_freq2 * pitch_env;
+                    synth_resonator_set_params(voice->res1, freq1, synth->sd_res1_decay, sample_rate);
+                    synth_resonator_set_params(voice->res2, freq2, synth->sd_res2_decay, sample_rate);
+
+                    // Get tone from BOTH resonators (both swept together)
                     float t1 = synth_resonator_process(voice->res1, 0.0f);
                     float t2 = synth_resonator_process(voice->res2, 0.0f);
-                    float tone = (t1 + t2) * 0.5f;
+                    float tone = (t1 + t2) * 0.5f * synth->sd_tone_gain;
 
-                    // PURE TONE ONLY - no noise to see oscillation clearly
-                    sample = tone;
+                    // Generate raw noise once
+                    float noise_raw = synth_noise_process(voice->noise);
 
-                    sample *= synth->sd_level;
+                    // NOISE PATH 1: Low-pass filtered, always present (Waldorf texture)
+                    // Simple one-pole lowpass: y[n] = y[n-1] + k*(x[n] - y[n-1])
+                    float lp_cutoff = synth->sd_lp_noise_cutoff;  // User-controllable cutoff (lower = darker)
+                    voice->decay_env = voice->decay_env + lp_cutoff * (noise_raw - voice->decay_env);
+                    float noise_lp = voice->decay_env * synth->sd_noise_level;  // Direct control (removed 0.03 multiplier)
+
+                    // NOISE PATH 2: High-pass filtered, envelope controlled (Waldorf "Snappy")
+                    // HP noise envelope with exponential decay
+                    voice->noise_env -= voice->noise_env * (1.0f / (voice->noise_decay * sample_rate));
+                    if (voice->noise_env < 0.0001f) voice->noise_env = 0.0f;
+
+                    float noise_hp = synth_filter_process(voice->filter, noise_raw, sample_rate);
+                    noise_hp *= voice->noise_env;  // Envelope controlled by sd_snappy
+
+                    // Combine: Tone + LP noise (always) + HP noise (snappy)
+                    sample = tone + noise_lp + noise_hp;
+
+                    // MASTER AMPLITUDE DECAY ENVELOPE (fixed decay, not controlled by snappy)
+                    // Instant attack, exponential decay for overall snare envelope
+                    float decay_time = 0.120f;  // Fixed 120ms master decay
+                    float amp_env = expf(-3.0f * voice->sweep_pos / decay_time);
+
+                    sample *= amp_env * synth->sd_level;
 
                     // Update time
                     voice->sweep_pos += 1.0f / sample_rate;
 
-                    // Deactivate when both resonators and noise decay
-                    if (fabsf(t1) < 0.001f && fabsf(t2) < 0.001f && voice->noise_env < 0.001f) {
+                    // Deactivate when amplitude envelope has decayed
+                    if (voice->sweep_pos > 0.300f || amp_env < 0.001f) {
                         voice->active = 0;
                     }
                     break;
@@ -655,16 +735,17 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
 void rg909_synth_set_parameter(RG909Synth* synth, int param_index, float value) {
     if (!synth) return;
 
-    // Clamp normalized parameters [0-1], but not sweep-shape parameters (which are in ms/Hz)
-    if (param_index < PARAM_BD_SQUIGGLY_END_MS) {
+    // Clamp normalized parameters [0-1] only for basic parameters
+    // Skip: PARAM_BD_LEVEL, extended SD params (PARAM_SD_TONE_GAIN onwards), and BD sweep-shape params
+    if (param_index <= PARAM_MASTER_VOLUME) {
         // Standard parameters (0-1 range)
-        if (param_index != PARAM_BD_LEVEL) {
+        if (param_index != PARAM_BD_LEVEL && param_index != PARAM_SD_LEVEL) {
             value = (value < 0.0f) ? 0.0f : (value > 1.0f) ? 1.0f : value;
         } else {
-            value = (value < 0.0f) ? 0.0f : value;  // bd_level: only clamp minimum
+            value = (value < 0.0f) ? 0.0f : value;  // bd_level/sd_level: only clamp minimum
         }
     }
-    // Sweep-shape parameters (ms/Hz): no clamping needed
+    // Extended SD parameters and sweep-shape parameters: no clamping needed
 
     switch (param_index) {
         case PARAM_BD_LEVEL: synth->bd_level = value; break;
@@ -689,6 +770,20 @@ void rg909_synth_set_parameter(RG909Synth* synth, int param_index, float value) 
         case PARAM_HC_LEVEL: synth->hc_level = value; break;
         case PARAM_HC_TONE: synth->hc_tone = value; break;
         case PARAM_MASTER_VOLUME: synth->master_volume = value; break;
+        // Extended SD Parameters
+        case PARAM_SD_TONE_GAIN: synth->sd_tone_gain = value; break;
+        case PARAM_SD_FREQ1: synth->sd_freq1 = value; break;
+        case PARAM_SD_FREQ2: synth->sd_freq2 = value; break;
+        case PARAM_SD_RES1_LEVEL: synth->sd_res1_level = value; break;
+        case PARAM_SD_RES2_LEVEL: synth->sd_res2_level = value; break;
+        case PARAM_SD_NOISE_LEVEL: synth->sd_noise_level = value; break;
+        case PARAM_SD_LP_NOISE_CUTOFF: synth->sd_lp_noise_cutoff = value; break;
+        case PARAM_SD_RES1_DECAY: synth->sd_res1_decay = value; break;
+        case PARAM_SD_RES2_DECAY: synth->sd_res2_decay = value; break;
+        case PARAM_SD_NOISE_DECAY: synth->sd_noise_decay = value; break;
+        case PARAM_SD_NOISE_ATTACK: synth->sd_noise_attack = value; break;
+        case PARAM_SD_NOISE_FADE_TIME: synth->sd_noise_fade_time = value; break;
+        case PARAM_SD_NOISE_FADE_CURVE: synth->sd_noise_fade_curve = value; break;
         // BD Sweep-Shape Parameters (no clamping needed - these are specific values)
         case PARAM_BD_SQUIGGLY_END_MS: synth->bd_squiggly_end_ms = value; break;
         case PARAM_BD_FAST_END_MS: synth->bd_fast_end_ms = value; break;
@@ -730,6 +825,20 @@ float rg909_synth_get_parameter(RG909Synth* synth, int param_index) {
         case PARAM_HC_LEVEL: return synth->hc_level;
         case PARAM_HC_TONE: return synth->hc_tone;
         case PARAM_MASTER_VOLUME: return synth->master_volume;
+        // Extended SD Parameters
+        case PARAM_SD_TONE_GAIN: return synth->sd_tone_gain;
+        case PARAM_SD_FREQ1: return synth->sd_freq1;
+        case PARAM_SD_FREQ2: return synth->sd_freq2;
+        case PARAM_SD_RES1_LEVEL: return synth->sd_res1_level;
+        case PARAM_SD_RES2_LEVEL: return synth->sd_res2_level;
+        case PARAM_SD_NOISE_LEVEL: return synth->sd_noise_level;
+        case PARAM_SD_LP_NOISE_CUTOFF: return synth->sd_lp_noise_cutoff;
+        case PARAM_SD_RES1_DECAY: return synth->sd_res1_decay;
+        case PARAM_SD_RES2_DECAY: return synth->sd_res2_decay;
+        case PARAM_SD_NOISE_DECAY: return synth->sd_noise_decay;
+        case PARAM_SD_NOISE_ATTACK: return synth->sd_noise_attack;
+        case PARAM_SD_NOISE_FADE_TIME: return synth->sd_noise_fade_time;
+        case PARAM_SD_NOISE_FADE_CURVE: return synth->sd_noise_fade_curve;
         // BD Sweep-Shape Parameters
         case PARAM_BD_SQUIGGLY_END_MS: return synth->bd_squiggly_end_ms;
         case PARAM_BD_FAST_END_MS: return synth->bd_fast_end_ms;

@@ -1,0 +1,26 @@
+{
+  "slug": "RFX_EQ",
+  "name": "RFX EQ",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "RFX",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RFX_EQ",
+      "name": "RFX EQ",
+      "description": "3-Band DJ-style EQ with kill switches",
+      "tags": [
+        "Equalizer",
+        "Mixer"
+      ]
+    }
+  ]
+}

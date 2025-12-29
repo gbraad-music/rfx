@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="30.48mm" height="128.5mm" version="1.1" viewBox="0 0 30.48 128.5" xmlns="http://www.w3.org/2000/svg">
+ <!-- Background -->
+ <rect width="30.48" height="128.5" fill="#1a1a1a"/>
+
+ <!-- Top stripe -->
+ <rect width="30.48" height="15" fill="#CF1A37"/>
+
+ <!-- Screw holes -->
+ <circle cx="7.62" cy="3.81" r="1.5" fill="#333333"/>
+ <circle cx="22.86" cy="3.81" r="1.5" fill="#333333"/>
+ <circle cx="7.62" cy="124.69" r="1.5" fill="#333333"/>
+ <circle cx="22.86" cy="124.69" r="1.5" fill="#333333"/>
+</svg>

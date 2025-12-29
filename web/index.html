@@ -303,14 +303,70 @@
             h1 {
                 font-size: 1.5em;
             }
-            
+
             .controls-grid {
                 grid-template-columns: 1fr;
             }
-            
+
             .effects-grid {
                 grid-template-columns: 1fr;
             }
+        }
+
+        /* Fullscreen scope styles */
+        .visualizer-container {
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .visualizer-container:hover {
+            border-color: var(--accent);
+        }
+
+        .visualizer-container:fullscreen {
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .visualizer-container:fullscreen canvas {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        .visualizer-container::after {
+            content: '⛶ Click for fullscreen';
+            position: absolute;
+            top: 5px;
+            right: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            opacity: 0.8;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 3px 6px;
+            border-radius: 2px;
+        }
+
+        .visualizer-container:hover::after {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .visualizer-container:fullscreen::after {
+            content: 'ESC or click to exit';
+            font-size: 14px;
+            top: 20px;
+            right: 20px;
+            opacity: 1;
+            background: rgba(207, 26, 55, 0.9);
+            color: white;
+            padding: 8px 12px;
         }
     </style>
 </head>
@@ -444,6 +500,79 @@
                 });
             });
         }
+    </script>
+
+    <!-- Fullscreen Scope Functionality -->
+    <script>
+        // Enable fullscreen for all visualizer containers - run immediately
+        function setupFullscreen() {
+            const containers = document.querySelectorAll('.visualizer-container');
+            console.log('Setting up fullscreen for', containers.length, 'containers');
+
+            containers.forEach((container, idx) => {
+                // Single click to toggle fullscreen (double-click is confusing)
+                container.addEventListener('click', (e) => {
+                    // Ignore if clicking on canvas during animation
+                    if (e.target !== container && e.target.tagName !== 'CANVAS') return;
+
+                    if (document.fullscreenElement === container) {
+                        // Exit fullscreen
+                        document.exitFullscreen();
+                    } else {
+                        // Enter fullscreen
+                        if (container.requestFullscreen) {
+                            container.requestFullscreen();
+                        } else if (container.webkitRequestFullscreen) {
+                            container.webkitRequestFullscreen(); // Safari
+                        } else if (container.msRequestFullscreen) {
+                            container.msRequestFullscreen(); // IE11
+                        }
+                    }
+                });
+
+                // Add title for user hint
+                container.title = 'Click for fullscreen';
+                console.log('Attached fullscreen to container', idx);
+            });
+
+            // Handle resize when entering/exiting fullscreen
+            let previousFullscreenElement = null;
+
+            document.addEventListener('fullscreenchange', () => {
+                // Resize canvas when ENTERING fullscreen
+                if (document.fullscreenElement) {
+                    previousFullscreenElement = document.fullscreenElement;
+                    const canvas = document.fullscreenElement.querySelector('canvas');
+                    if (canvas) {
+                        setTimeout(() => {
+                            canvas.width = canvas.offsetWidth;
+                            canvas.height = canvas.offsetHeight;
+                        }, 100);
+                    }
+                }
+                // Resize canvas when EXITING fullscreen
+                else if (previousFullscreenElement) {
+                    const canvas = previousFullscreenElement.querySelector('canvas');
+                    if (canvas) {
+                        setTimeout(() => {
+                            canvas.width = canvas.offsetWidth;
+                            canvas.height = canvas.offsetHeight;
+                        }, 100);
+                    }
+                    previousFullscreenElement = null;
+                }
+            });
+        }
+
+        // Run after effects.js loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupFullscreen);
+        } else {
+            setupFullscreen();
+        }
+
+        // Also try after a delay to ensure canvases are created
+        setTimeout(setupFullscreen, 1000);
     </script>
 </body>
 </html>

@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # List of modules to build
-MODULES=("RFX_EQ" "RM1" "RFX_Distortion" "RFX_Compressor" "RFX_Filter" "RFX_Delay" "RFX_Reverb" "RFX_StereoWiden")
+MODULES=("RFX_EQ" "RM1" "RFX_Distortion" "RFX_Compressor" "RFX_Filter" "RFX_Delay" "RFX_Reverb" "RFX_StereoWiden" "RDJ_Fader" "RDJ_XFader")
 
 # If a module name is provided as argument, build only that module
 if [ $# -gt 0 ]; then
@@ -69,17 +69,22 @@ echo "========================================="
 echo "All builds complete!"
 echo "========================================="
 
-# Copy all .vcvplugin files to central bin directory
+# Copy .vcvplugin files to central bin directory
 echo ""
 echo "Copying plugins to ../bin/ ..."
 mkdir -p ../bin
 
+COPIED_COUNT=0
 for MODULE in "${MODULES[@]}"; do
     if [ -f "$MODULE/dist/$MODULE"-*.vcvplugin ]; then
         cp -v "$MODULE/dist/$MODULE"-*.vcvplugin ../bin/
+        COPIED_COUNT=$((COPIED_COUNT + 1))
     fi
 done
 
 echo ""
-echo "Plugins copied to: $(cd .. && pwd)/bin/"
-ls -lh ../bin/*.vcvplugin 2>/dev/null || echo "No plugins found"
+if [ $COPIED_COUNT -eq 0 ]; then
+    echo "No plugins copied."
+else
+    echo "$COPIED_COUNT plugin(s) copied to: $(cd .. && pwd)/bin/"
+fi

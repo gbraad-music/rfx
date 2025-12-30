@@ -1,0 +1,26 @@
+{
+  "slug": "RDJ_XFader",
+  "name": "Regroove DJ Crossfader",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RDJ_XFader",
+      "name": "RDJ Crossfader",
+      "description": "DJ-style crossfader to blend between two stereo inputs",
+      "tags": [
+        "Mixer",
+        "Utility"
+      ]
+    }
+  ]
+}

@@ -119,6 +119,7 @@ struct RegrooveKnob : app::SvgKnob {
  * - Red thumb (#CF1A37)
  * - Slim DJ fader design
  * - Default: 12mm wide x 80mm tall
+ * - Supports both vertical and horizontal orientation
  */
 struct RegrooveSlider : app::SliderKnob {
 	RegrooveSlider() {
@@ -142,16 +143,29 @@ struct RegrooveSlider : app::SliderKnob {
 			value = getParamQuantity()->getScaledValue();
 		}
 
-		// Thumb is small and slim
-		float thumbHeight = mm2px(8);  // 8mm tall thumb
-		float thumbWidth = trackWidth - 4;  // 2px margin on each side
-		float thumbY = (1.0 - value) * (trackHeight - thumbHeight);
+		if (horizontal) {
+			// Horizontal slider
+			float thumbWidth = mm2px(8);  // 8mm wide thumb
+			float thumbHeight = trackHeight - 4;  // 2px margin on each side
+			float thumbX = value * (trackWidth - thumbWidth);
 
-		// Draw thumb (slightly inset from track)
-		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 2, thumbY, thumbWidth, thumbHeight, 2);
-		nvgFillColor(args.vg, REGROOVE_RED);
-		nvgFill(args.vg);
+			// Draw thumb (slightly inset from track)
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, thumbX, 2, thumbWidth, thumbHeight, 2);
+			nvgFillColor(args.vg, REGROOVE_RED);
+			nvgFill(args.vg);
+		} else {
+			// Vertical slider
+			float thumbHeight = mm2px(8);  // 8mm tall thumb
+			float thumbWidth = trackWidth - 4;  // 2px margin on each side
+			float thumbY = (1.0 - value) * (trackHeight - thumbHeight);
+
+			// Draw thumb (slightly inset from track)
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, 2, thumbY, thumbWidth, thumbHeight, 2);
+			nvgFillColor(args.vg, REGROOVE_RED);
+			nvgFill(args.vg);
+		}
 
 		Widget::draw(args);
 	}

@@ -8,4 +8,5 @@ void init(Plugin* p) {
 	// Add DJ modules to this plugin
 	p->addModel(modelRDJ_Fader);
 	p->addModel(modelRDJ_XFader);
+	p->addModel(modelRDJ_Mixer);
 }

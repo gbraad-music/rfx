@@ -10,3 +10,4 @@ extern Plugin* pluginInstance;
 extern Model* modelRDJ_Fader;
 extern Model* modelRDJ_XFader;
 extern Model* modelRDJ_Mixer;
+extern Model* modelRDJ_Deck;

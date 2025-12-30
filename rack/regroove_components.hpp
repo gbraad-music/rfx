@@ -404,3 +404,96 @@ struct RegrooveLabel : widget::Widget {
 		Widget::draw(args);
 	}
 };
+
+/**
+ * Regroove Pad - Square DJ-style pad button
+ * Matches web/synth.html behavior: darker edge, pressed state removes edge
+ * States: GREY (inactive), RED (stopped), GREEN (playing)
+ */
+struct RegroovePad : app::ParamWidget {
+	NVGcolor padColor;
+	bool active;
+	bool pressed;
+	std::string label;
+
+	RegroovePad() {
+		box.size = math::Vec(49, 49);  // ~13mm pads
+		padColor = nvgRGB(0x3a, 0x3a, 0x3a);  // Grey by default
+		active = false;
+		pressed = false;
+		label = "";
+	}
+
+	void setPadState(int state) {
+		// 0 = grey (inactive), 1 = red, 2 = green, 3 = yellow
+		if (state == 0) {
+			padColor = nvgRGB(0x3a, 0x3a, 0x3a);  // Dark grey
+			active = false;
+		} else if (state == 1) {
+			padColor = REGROOVE_RED;  // Red
+			active = true;
+		} else if (state == 2) {
+			padColor = nvgRGB(0x00, 0xCC, 0x00);  // Green
+			active = true;
+		} else if (state == 3) {
+			padColor = nvgRGB(0xFF, 0xCC, 0x00);  // Yellow/Gold
+			active = true;
+		}
+	}
+
+	void draw(const DrawArgs& args) override {
+		float width = box.size.x;
+		float height = box.size.y;
+
+		// When pressed, draw smaller (remove edge)
+		float inset = pressed ? 3.0f : 0.0f;
+		float pad_x = inset;
+		float pad_y = inset;
+		float pad_w = width - (inset * 2);
+		float pad_h = height - (inset * 2);
+
+		// Draw darker edge (only when not pressed)
+		if (!pressed) {
+			nvgBeginPath(args.vg);
+			nvgRoundedRect(args.vg, 0, 0, width, height, 4);
+			NVGcolor darkEdge = nvgRGB(
+				std::max(0, (int)(padColor.r * 255) - 40),
+				std::max(0, (int)(padColor.g * 255) - 40),
+				std::max(0, (int)(padColor.b * 255) - 40)
+			);
+			nvgFillColor(args.vg, darkEdge);
+			nvgFill(args.vg);
+		}
+
+		// Draw pad
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, pad_x, pad_y, pad_w, pad_h, 3);
+		nvgFillColor(args.vg, padColor);
+		nvgFill(args.vg);
+
+		// Draw label if present
+		if (!label.empty()) {
+			nvgFontSize(args.vg, 12);
+			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgFillColor(args.vg, active ? nvgRGB(0xff, 0xff, 0xff) : nvgRGB(0x88, 0x88, 0x88));
+			nvgText(args.vg, width / 2, height / 2, label.c_str(), NULL);
+		}
+
+		Widget::draw(args);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			pressed = true;
+			ParamQuantity* pq = getParamQuantity();
+			if (pq) {
+				pq->setValue(1.0f);
+			}
+		}
+		else if (e.action == GLFW_RELEASE && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			pressed = false;
+		}
+		ParamWidget::onButton(e);
+	}
+};

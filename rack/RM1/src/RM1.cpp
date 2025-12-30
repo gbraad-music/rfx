@@ -122,7 +122,7 @@ struct RM1Widget : ModuleWidget {
 
 		// Title label
 		RegrooveLabel* titleLabel = new RegrooveLabel();
-		titleLabel->box.pos = mm2px(Vec(0, 8));
+		titleLabel->box.pos = mm2px(Vec(0, 6.5));
 		titleLabel->box.size = mm2px(Vec(30.48, 5));
 		titleLabel->text = "M1";
 		titleLabel->fontSize = 18.0;
@@ -132,21 +132,21 @@ struct RM1Widget : ModuleWidget {
 
 		// Trim label - positioned WELL ABOVE the knob
 		RegrooveLabel* trimLabel = new RegrooveLabel();
-		trimLabel->box.pos = mm2px(Vec(0, 16.5));
+		trimLabel->box.pos = mm2px(Vec(0, 14.5));
 		trimLabel->box.size = mm2px(Vec(30.48, 4));
 		trimLabel->text = "Trim";
 		trimLabel->fontSize = 8.0;
 		addChild(trimLabel);
 
 		// Trim knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 27.0)), module, RM1::TRIM_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 25.0)), module, RM1::TRIM_PARAM));
 
 		// Drive LED (next to Trim knob)
-		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(25.0, 23.0)), module, RM1::DRIVE_LIGHT));
+		addChild(createLightCentered<SmallLight<RedLight>>(mm2px(Vec(25.0, 21.0)), module, RM1::DRIVE_LIGHT));
 
 		// Drive label (next to LED)
 		RegrooveLabel* driveLabel = new RegrooveLabel();
-		driveLabel->box.pos = mm2px(Vec(19.5, 18.5));
+		driveLabel->box.pos = mm2px(Vec(19.5, 16.5));
 		driveLabel->box.size = mm2px(Vec(12, 3));
 		driveLabel->text = "Drive";
 		driveLabel->fontSize = 6.0;
@@ -154,51 +154,51 @@ struct RM1Widget : ModuleWidget {
 
 		// Contour Hi label - positioned WELL ABOVE the knob
 		RegrooveLabel* contHiLabel = new RegrooveLabel();
-		contHiLabel->box.pos = mm2px(Vec(0, 34.5));
+		contHiLabel->box.pos = mm2px(Vec(0, 32.5));
 		contHiLabel->box.size = mm2px(Vec(30.48, 4));
 		contHiLabel->text = "Contour (Hi)";
 		contHiLabel->fontSize = 7.0;
 		addChild(contHiLabel);
 
 		// Contour Hi knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 45.0)), module, RM1::CONTOUR_HI_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 43.0)), module, RM1::CONTOUR_HI_PARAM));
 
 		// Sculpt Freq label - positioned WELL ABOVE the knob
 		RegrooveLabel* freqLabel = new RegrooveLabel();
-		freqLabel->box.pos = mm2px(Vec(0, 52.5));
+		freqLabel->box.pos = mm2px(Vec(0, 50.5));
 		freqLabel->box.size = mm2px(Vec(30.48, 4));
 		freqLabel->text = "Sculpt Freq";
 		freqLabel->fontSize = 7.5;
 		addChild(freqLabel);
 
 		// Sculpt Freq knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 63.0)), module, RM1::SCULPT_FREQ_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 61.0)), module, RM1::SCULPT_FREQ_PARAM));
 
 		// Boost label - positioned WELL ABOVE the knob
 		RegrooveLabel* boostLabel = new RegrooveLabel();
-		boostLabel->box.pos = mm2px(Vec(0, 70.5));
+		boostLabel->box.pos = mm2px(Vec(0, 68.5));
 		boostLabel->box.size = mm2px(Vec(30.48, 4));
 		boostLabel->text = "Boost";
 		boostLabel->fontSize = 8.0;
 		addChild(boostLabel);
 
 		// Boost knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 81.0)), module, RM1::SCULPT_BOOST_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 79.0)), module, RM1::SCULPT_BOOST_PARAM));
 
 		// Contour Lo label - positioned WELL ABOVE the knob
 		RegrooveLabel* contLoLabel = new RegrooveLabel();
-		contLoLabel->box.pos = mm2px(Vec(0, 88.5));
+		contLoLabel->box.pos = mm2px(Vec(0, 86.5));
 		contLoLabel->box.size = mm2px(Vec(30.48, 4));
 		contLoLabel->text = "Contour (Lo)";
 		contLoLabel->fontSize = 7.0;
 		addChild(contLoLabel);
 
 		// Contour Lo knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 99.0)), module, RM1::CONTOUR_LO_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 97.0)), module, RM1::CONTOUR_LO_PARAM));
 
 		// STANDARD POSITION: IN label (left of ports)
 		RegrooveLabel* inLabel = new RegrooveLabel();
-		inLabel->box.pos = mm2px(Vec(2, 108.5));
+		inLabel->box.pos = mm2px(Vec(2, 106.5));
 		inLabel->box.size = mm2px(Vec(8, 4));
 		inLabel->text = "In";
 		inLabel->fontSize = 8.0;
@@ -206,12 +206,12 @@ struct RM1Widget : ModuleWidget {
 		addChild(inLabel);
 
 		// STANDARD POSITION: Inputs (horizontal pair with label on left)
-		addInput(createInputCentered<RegroovePort>(mm2px(Vec(13.5, 111.0)), module, RM1::AUDIO_L_INPUT));
-		addInput(createInputCentered<RegroovePort>(mm2px(Vec(23.5, 111.0)), module, RM1::AUDIO_R_INPUT));
+		addInput(createInputCentered<RegroovePort>(mm2px(Vec(13.5, 109.0)), module, RM1::AUDIO_L_INPUT));
+		addInput(createInputCentered<RegroovePort>(mm2px(Vec(23.5, 109.0)), module, RM1::AUDIO_R_INPUT));
 
 		// STANDARD POSITION: OUT label (left of ports)
 		RegrooveLabel* outLabel = new RegrooveLabel();
-		outLabel->box.pos = mm2px(Vec(2, 116.5));
+		outLabel->box.pos = mm2px(Vec(2, 115.5));
 		outLabel->box.size = mm2px(Vec(8, 4));
 		outLabel->text = "Out";
 		outLabel->fontSize = 8.0;
@@ -219,8 +219,8 @@ struct RM1Widget : ModuleWidget {
 		addChild(outLabel);
 
 		// STANDARD POSITION: Outputs (horizontal pair with label on left)
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(13.5, 119.0)), module, RM1::AUDIO_L_OUTPUT));
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(23.5, 119.0)), module, RM1::AUDIO_R_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(13.5, 118.0)), module, RM1::AUDIO_L_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(23.5, 118.0)), module, RM1::AUDIO_R_OUTPUT));
 	}
 };
 

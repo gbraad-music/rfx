@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # List of modules to build
-MODULES=("RFX_EQ" "RM1")
+MODULES=("RFX_EQ" "RM1" "RFX_Distortion" "RFX_Compressor" "RFX_Filter" "RFX_Delay" "RFX_Reverb" "RFX_StereoWiden")
 
 # If a module name is provided as argument, build only that module
 if [ $# -gt 0 ]; then
@@ -15,6 +15,15 @@ if [ $# -gt 0 ]; then
 fi
 
 echo "Building modules: ${MODULES[@]}"
+
+# Clean shared effect object files BEFORE building any module
+echo ""
+echo "Cleaning shared effect object files..."
+find "$SCRIPT_DIR/../effects" -name "*.o" -delete 2>/dev/null || true
+find "$SCRIPT_DIR/../effects" -name "*.d" -delete 2>/dev/null || true
+# Also clean rack/effects if it exists (created by local builds)
+rm -rf "$SCRIPT_DIR/effects" 2>/dev/null || true
+echo "Shared effects cleaned."
 
 for MODULE in "${MODULES[@]}"; do
     echo ""

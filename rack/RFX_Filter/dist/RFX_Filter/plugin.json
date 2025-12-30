@@ -1,0 +1,26 @@
+{
+  "slug": "RFX_Filter",
+  "name": "Regroove Filter",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RFX_Filter",
+      "name": "RFX Filter",
+      "description": "Resonant filter with cutoff and resonance controls",
+      "tags": [
+        "Filter",
+        "Effect"
+      ]
+    }
+  ]
+}

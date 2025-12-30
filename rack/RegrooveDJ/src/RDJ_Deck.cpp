@@ -3,13 +3,18 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <cstring>
 #include <osdialog.h>
 
 #define DR_WAV_IMPLEMENTATION
 #include "../dep/dr_wav.h"
 
-// WAV file loader using dr_wav library
-struct WavFile {
+#define MINIMP3_IMPLEMENTATION
+#define MINIMP3_FLOAT_OUTPUT
+#include "../dep/minimp3_ex.h"
+
+// Audio file loader (WAV and MP3)
+struct AudioFile {
 	std::vector<float> dataL;
 	std::vector<float> dataR;
 	int sampleRate = 44100;
@@ -17,6 +22,18 @@ struct WavFile {
 	std::string fileName;
 
 	bool load(const std::string& path) {
+		// Detect file type by extension
+		std::string ext = path.substr(path.find_last_of(".") + 1);
+		std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+		if (ext == "mp3") {
+			return loadMP3(path);
+		} else {
+			return loadWAV(path);
+		}
+	}
+
+	bool loadWAV(const std::string& path) {
 		unsigned int channels;
 		unsigned int loadSampleRate;
 		drwav_uint64 totalFrameCount;
@@ -59,6 +76,51 @@ struct WavFile {
 
 		return true;
 	}
+
+	bool loadMP3(const std::string& path) {
+		mp3dec_t mp3d;
+		mp3dec_file_info_t info;
+
+		mp3dec_init(&mp3d);
+		memset(&info, 0, sizeof(info));
+
+		// Load MP3 file using minimp3
+		if (mp3dec_load(&mp3d, path.c_str(), &info, NULL, NULL)) {
+			WARN("Failed to load MP3 file: %s", path.c_str());
+			return false;
+		}
+
+		if (!info.buffer || info.samples == 0) {
+			WARN("MP3 file has no data: %s", path.c_str());
+			return false;
+		}
+
+		sampleRate = info.hz;
+		size_t totalFrames = info.samples / info.channels;
+		duration = (float)totalFrames / sampleRate;
+
+		INFO("Loaded MP3: %d Hz, %d ch, %zu frames, %.2f sec",
+		     sampleRate, info.channels, totalFrames, duration);
+
+		// Deinterleave samples into left and right channels
+		dataL.resize(totalFrames);
+		dataR.resize(totalFrames);
+
+		// Convert from mp3d_sample_t (float with MINIMP3_FLOAT_OUTPUT) to our format
+		for (size_t i = 0; i < totalFrames; i++) {
+			dataL[i] = info.buffer[i * info.channels];
+			dataR[i] = (info.channels > 1) ? info.buffer[i * info.channels + 1] : info.buffer[i * info.channels];
+		}
+
+		// Free the loaded data
+		free(info.buffer);
+
+		// Extract filename
+		size_t lastSlash = path.find_last_of("/\\");
+		fileName = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+
+		return true;
+	}
 };
 
 struct RDJ_Deck : Module {
@@ -84,7 +146,7 @@ struct RDJ_Deck : Module {
 		LIGHTS_LEN
 	};
 
-	WavFile audio;
+	AudioFile audio;
 	double playPosition = 0.0;
 	std::atomic<bool> playing{false};
 	std::atomic<bool> fileLoaded{false};
@@ -114,7 +176,7 @@ struct RDJ_Deck : Module {
 			loading = true;
 			playing = false;  // Stop playback before loading
 
-			WavFile newAudio;
+			AudioFile newAudio;
 			if (newAudio.load(path)) {
 				// Lock ONLY for the swap operation
 				{

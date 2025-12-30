@@ -117,19 +117,22 @@ struct RegrooveKnob : app::SvgKnob {
  * Regroove Vertical Slider - Matches svg-slider.js
  * - Dark track (#2a2a2a)
  * - Red thumb (#CF1A37)
- * - Touch-friendly design
- * - Default: 60x380
+ * - Slim DJ fader design
+ * - Default: 12mm wide x 80mm tall
  */
 struct RegrooveSlider : app::SliderKnob {
 	RegrooveSlider() {
-		box.size = math::Vec(60, 380);
+		box.size = mm2px(math::Vec(12, 80));
 		horizontal = false;
 	}
 
 	void draw(const DrawArgs& args) override {
+		float trackWidth = box.size.x;
+		float trackHeight = box.size.y;
+
 		// Draw track
 		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0, 0, box.size.x, box.size.y, 4);
+		nvgRoundedRect(args.vg, 0, 0, trackWidth, trackHeight, 2);
 		nvgFillColor(args.vg, REGROOVE_TRACK);
 		nvgFill(args.vg);
 
@@ -138,12 +141,15 @@ struct RegrooveSlider : app::SliderKnob {
 		if (getParamQuantity()) {
 			value = getParamQuantity()->getScaledValue();
 		}
-		float thumbHeight = 100;
-		float thumbY = (1.0 - value) * (box.size.y - thumbHeight);
 
-		// Draw thumb
+		// Thumb is small and slim
+		float thumbHeight = mm2px(8);  // 8mm tall thumb
+		float thumbWidth = trackWidth - 4;  // 2px margin on each side
+		float thumbY = (1.0 - value) * (trackHeight - thumbHeight);
+
+		// Draw thumb (slightly inset from track)
 		nvgBeginPath(args.vg);
-		nvgRoundedRect(args.vg, 0, thumbY, box.size.x, thumbHeight, 2);
+		nvgRoundedRect(args.vg, 2, thumbY, thumbWidth, thumbHeight, 2);
 		nvgFillColor(args.vg, REGROOVE_RED);
 		nvgFill(args.vg);
 
@@ -286,6 +292,62 @@ struct RegroovePort : app::SvgPort {
 
 		SvgPort::draw(args);
 	}
+};
+
+/**
+ * Regroove Toggle Switch - Horizontal slider switch
+ * - Dark track with red sliding element
+ * - Matches switch.png from web UI
+ * - 30mm wide x 10mm tall
+ */
+struct RegrooveSwitch : app::SvgSwitch {
+	RegrooveSwitch() {
+		box.size = mm2px(math::Vec(20, 8));
+		shadow = new CircularShadow;
+		shadow->box.size = box.size;
+		shadow->opacity = 0.0f;
+		addChild(shadow);
+	}
+
+	void draw(const DrawArgs& args) override {
+		float trackWidth = box.size.x;
+		float trackHeight = box.size.y;
+
+		// Draw track background (dark)
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0, 0, trackWidth, trackHeight, trackHeight / 2);
+		nvgFillColor(args.vg, nvgRGB(0x0a, 0x0a, 0x0a));
+		nvgFill(args.vg);
+
+		// Draw track border
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, 0, 0, trackWidth, trackHeight, trackHeight / 2);
+		nvgStrokeColor(args.vg, nvgRGB(0x55, 0x55, 0x55));
+		nvgStrokeWidth(args.vg, 1.0f);
+		nvgStroke(args.vg);
+
+		// Get switch state
+		float value = 0.0f;
+		if (getParamQuantity()) {
+			value = getParamQuantity()->getValue();
+		}
+
+		// Calculate thumb position (left when 0, right when 1)
+		float thumbWidth = trackWidth / 2;
+		float thumbHeight = trackHeight - 2;
+		float thumbX = value * (trackWidth - thumbWidth - 2) + 1;
+		float thumbY = 1;
+
+		// Draw red sliding thumb
+		nvgBeginPath(args.vg);
+		nvgRoundedRect(args.vg, thumbX, thumbY, thumbWidth, thumbHeight, thumbHeight / 2);
+		nvgFillColor(args.vg, REGROOVE_RED);
+		nvgFill(args.vg);
+
+		Widget::draw(args);
+	}
+
+	CircularShadow* shadow;
 };
 
 /**

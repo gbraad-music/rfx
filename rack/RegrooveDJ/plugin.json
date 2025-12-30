@@ -30,6 +30,12 @@
       "name": "DJ Mixer",
       "description": "2-channel DJ mixer with channel faders, crossfader, and curve control",
       "tags": ["Mixer", "Utility"]
+    },
+    {
+      "slug": "RDJ_Deck",
+      "name": "DJ Deck",
+      "description": "DJ-style audio file player with tempo control and waveform scrubbing",
+      "tags": ["Sampler", "Utility"]
     }
   ]
 }

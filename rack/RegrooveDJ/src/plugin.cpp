@@ -9,4 +9,5 @@ void init(Plugin* p) {
 	p->addModel(modelRDJ_Fader);
 	p->addModel(modelRDJ_XFader);
 	p->addModel(modelRDJ_Mixer);
+	p->addModel(modelRDJ_Deck);
 }

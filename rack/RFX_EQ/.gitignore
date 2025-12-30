@@ -1,8 +1,0 @@
-/build
-/dist
-/plugin.dylib
-/plugin.so
-/plugin.dll
-*.o
-*.d
-.DS_Store

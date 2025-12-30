@@ -1,0 +1,59 @@
+{
+  "slug": "RegrooveFX",
+  "name": "Regroove FX",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RFX_EQ",
+      "name": "EQ",
+      "description": "3-band equalizer",
+      "tags": ["Equalizer", "Effect"]
+    },
+    {
+      "slug": "RFX_Distortion",
+      "name": "Distortion",
+      "description": "Distortion effect",
+      "tags": ["Distortion", "Effect"]
+    },
+    {
+      "slug": "RFX_Compressor",
+      "name": "Compressor",
+      "description": "Dynamic range compressor",
+      "tags": ["Compressor", "Dynamics", "Effect"]
+    },
+    {
+      "slug": "RFX_Filter",
+      "name": "Filter",
+      "description": "Resonant filter",
+      "tags": ["Filter", "Effect"]
+    },
+    {
+      "slug": "RFX_Delay",
+      "name": "Delay",
+      "description": "Delay/echo effect",
+      "tags": ["Delay", "Effect"]
+    },
+    {
+      "slug": "RFX_Reverb",
+      "name": "Reverb",
+      "description": "Reverb effect",
+      "tags": ["Reverb", "Effect"]
+    },
+    {
+      "slug": "RFX_StereoWiden",
+      "name": "Stereo Widen",
+      "description": "Stereo width enhancement",
+      "tags": ["Stereo", "Effect"]
+    }
+  ]
+}

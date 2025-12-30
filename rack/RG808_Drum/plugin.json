@@ -1,0 +1,26 @@
+{
+  "slug": "RG808_Drum",
+  "name": "Regroove 808 Drums",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RG808_Drum",
+      "name": "RG808 Drums",
+      "description": "TR-808 style drum synthesizer with BD and SD",
+      "tags": [
+        "Drum",
+        "Synth"
+      ]
+    }
+  ]
+}

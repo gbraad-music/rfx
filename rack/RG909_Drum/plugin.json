@@ -1,0 +1,26 @@
+{
+  "slug": "RG909_Drum",
+  "name": "Regroove 909 Drums",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RG909_Drum",
+      "name": "RG909 Drums",
+      "description": "TR-909 style drum synthesizer with BD and SD",
+      "tags": [
+        "Drum",
+        "Synth"
+      ]
+    }
+  ]
+}

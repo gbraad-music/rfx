@@ -24,6 +24,12 @@
       "name": "Crossfader",
       "description": "DJ-style crossfader with curve control",
       "tags": ["Mixer", "Utility"]
+    },
+    {
+      "slug": "RDJ_Mixer",
+      "name": "DJ Mixer",
+      "description": "2-channel DJ mixer with channel faders, crossfader, and curve control",
+      "tags": ["Mixer", "Utility"]
     }
   ]
 }

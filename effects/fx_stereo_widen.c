@@ -140,6 +140,33 @@ void fx_stereo_widen_process_f32(FXStereoWiden* fx, const float* inL, const floa
     }
 }
 
+void fx_stereo_widen_process_frame(FXStereoWiden* fx, float* left, float* right, int sample_rate)
+{
+    (void)sample_rate;
+    if (!fx || !left || !right) return;
+
+    if (!fx->enabled) {
+        return; // pass-through, values already in place
+    }
+
+    const float inL = *left;
+    const float inR = *right;
+
+    const float sideGain = 4.0f * fx->width; // stronger widening
+    const float midAtten = 1.0f - 0.25f * fx->width; // slightly reduce mid
+    const float wet = fx->mix;
+    const float dry = 1.0f - wet;
+
+    float m, s, l, r;
+    ms_encode(inL, inR, &m, &s);
+    m *= midAtten;
+    s *= sideGain;
+    ms_decode(m, s, &l, &r);
+
+    *left = dry * inL + wet * l;
+    *right = dry * inR + wet * r;
+}
+
 void fx_stereo_widen_process_interleaved(FXStereoWiden* fx, float* interleavedLR,
                                          int frames, int sample_rate)
 {

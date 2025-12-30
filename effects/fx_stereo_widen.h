@@ -25,6 +25,9 @@ float fx_stereo_widen_get_mix(FXStereoWiden* fx);
 void fx_stereo_widen_process_f32(FXStereoWiden* fx, const float* inL, const float* inR,
                                  float* outL, float* outR, int frames, int sample_rate);
 
+// Process single stereo frame (for optimized embedded use)
+void fx_stereo_widen_process_frame(FXStereoWiden* fx, float* left, float* right, int sample_rate);
+
 // Interleaved in-place processor for DPF helper
 void fx_stereo_widen_process_interleaved(FXStereoWiden* fx, float* interleavedLR,
                                          int frames, int sample_rate);

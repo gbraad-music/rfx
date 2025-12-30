@@ -1,6 +1,6 @@
 {
-  "slug": "RFX_EQ",
-  "name": "Regroove EQ",
+  "slug": "RM1",
+  "name": "RegrooveM1",
   "version": "2.0.0",
   "license": "MIT",
   "brand": "Regroove",
@@ -14,11 +14,13 @@
   "changelogUrl": "",
   "modules": [
     {
-      "slug": "RFX_EQ",
-      "name": "RFX EQ",
-      "description": "3-Band DJ-style EQ with kill switches",
+      "slug": "RM1",
+      "name": "RM1",
+      "description": "Model 1 Channel Strip - Trim, Contour, Sculpt",
       "tags": [
+        "Filter",
         "Equalizer",
+        "Distortion",
         "Mixer"
       ]
     }

@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # List of modules to build
-MODULES=("RFX_EQ" "RM1" "RFX_Distortion" "RFX_Compressor" "RFX_Filter" "RFX_Delay" "RFX_Reverb" "RFX_StereoWiden" "RDJ_Fader" "RDJ_XFader")
+MODULES=("RegrooveFX" "RegrooveM1" "RegrooveDJ" "RG909_Drum" "RG303_Synth" "RG808_Drum")
 
 # If a module name is provided as argument, build only that module
 if [ $# -gt 0 ]; then
@@ -16,14 +16,17 @@ fi
 
 echo "Building modules: ${MODULES[@]}"
 
-# Clean shared effect object files BEFORE building any module
+# Clean shared effect and synth object files BEFORE building any module
 echo ""
-echo "Cleaning shared effect object files..."
+echo "Cleaning shared object files..."
 find "$SCRIPT_DIR/../effects" -name "*.o" -delete 2>/dev/null || true
 find "$SCRIPT_DIR/../effects" -name "*.d" -delete 2>/dev/null || true
-# Also clean rack/effects if it exists (created by local builds)
+find "$SCRIPT_DIR/../synth" -name "*.o" -delete 2>/dev/null || true
+find "$SCRIPT_DIR/../synth" -name "*.d" -delete 2>/dev/null || true
+# Also clean rack/effects and rack/synth if they exist (created by local builds)
 rm -rf "$SCRIPT_DIR/effects" 2>/dev/null || true
-echo "Shared effects cleaned."
+rm -rf "$SCRIPT_DIR/synth" 2>/dev/null || true
+echo "Shared files cleaned."
 
 for MODULE in "${MODULES[@]}"; do
     echo ""
@@ -49,9 +52,11 @@ for MODULE in "${MODULES[@]}"; do
         echo 'Cleaning previous build...'
         make clean
 
-        echo 'Cleaning shared effect files...'
+        echo 'Cleaning shared effect and synth files...'
         rm -f /home/build/rfx/effects/*.o
         rm -f /home/build/rfx/effects/*.d
+        rm -f /home/build/rfx/synth/*.o
+        rm -f /home/build/rfx/synth/*.d
 
         echo 'Building plugin...'
         make dist

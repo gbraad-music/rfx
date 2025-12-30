@@ -1,0 +1,29 @@
+{
+  "slug": "RegrooveDJ",
+  "name": "Regroove DJ",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RDJ_Fader",
+      "name": "Fader",
+      "description": "DJ-style vertical fader for volume control",
+      "tags": ["Mixer", "Utility"]
+    },
+    {
+      "slug": "RDJ_XFader",
+      "name": "Crossfader",
+      "description": "DJ-style crossfader with curve control",
+      "tags": ["Mixer", "Utility"]
+    }
+  ]
+}

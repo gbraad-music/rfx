@@ -1,0 +1,26 @@
+{
+  "slug": "RG303_Synth",
+  "name": "Regroove 303 Bass Synth",
+  "version": "2.0.0",
+  "license": "MIT",
+  "brand": "Regroove",
+  "author": "gbraad",
+  "authorEmail": "",
+  "authorUrl": "",
+  "pluginUrl": "",
+  "manualUrl": "",
+  "sourceUrl": "https://github.com/gbraad/rfx",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "RG303_Synth",
+      "name": "RG303 Bass Synth",
+      "description": "TB-303 style bass synthesizer with MIDI input",
+      "tags": [
+        "Synth",
+        "Bass"
+      ]
+    }
+  ]
+}

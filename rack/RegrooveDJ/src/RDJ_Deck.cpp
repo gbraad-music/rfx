@@ -1,11 +1,12 @@
 #include "plugin.hpp"
 #include "../../regroove_components.hpp"
 #include <thread>
+#include <atomic>
 #include <mutex>
 #include <osdialog.h>
 
 #define DR_WAV_IMPLEMENTATION
-#include "dr_wav.h"
+#include "../dep/dr_wav.h"
 
 // WAV file loader using dr_wav library
 struct WavFile {
@@ -85,12 +86,13 @@ struct RDJ_Deck : Module {
 
 	WavFile audio;
 	double playPosition = 0.0;
-	bool playing = false;
-	bool fileLoaded = false;
-	bool muted = false;
-	bool looping = true;  // Loop enabled by default
+	std::atomic<bool> playing{false};
+	std::atomic<bool> fileLoaded{false};
+	std::atomic<bool> muted{false};
+	std::atomic<bool> looping{true};  // Loop enabled by default
 	float smoothTempo = 1.0f;
-	std::mutex audioMutex;  // Protect audio data from race conditions
+	std::atomic<bool> loading{false};  // Track if currently loading
+	std::mutex swapMutex;  // ONLY for protecting audio data swap
 
 	RDJ_Deck() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -109,15 +111,21 @@ struct RDJ_Deck : Module {
 
 	void loadFile(const std::string& path) {
 		std::thread([this, path]() {
+			loading = true;
+			playing = false;  // Stop playback before loading
+
 			WavFile newAudio;
 			if (newAudio.load(path)) {
-				// Lock mutex before modifying shared data
-				std::lock_guard<std::mutex> lock(audioMutex);
-				playing = false;  // Stop playback first
-				playPosition = 0.0;
-				audio = std::move(newAudio);
-				fileLoaded = true;
+				// Lock ONLY for the swap operation
+				{
+					std::lock_guard<std::mutex> lock(swapMutex);
+					playPosition = 0.0;
+					audio = std::move(newAudio);
+					fileLoaded = true;
+				}
 			}
+
+			loading = false;
 		}).detach();
 	}
 
@@ -145,42 +153,58 @@ struct RDJ_Deck : Module {
 			params[PAD5_PARAM].setValue(0.f);
 		}
 
-		// Playback - use try_lock to avoid blocking audio thread
-		if (audioMutex.try_lock()) {
-			if (playing && fileLoaded && audio.dataL.size() > 0) {
-				float tempo = params[TEMPO_PARAM].getValue();
-				smoothTempo += (tempo - smoothTempo) * 0.001f;
-
-				size_t pos = (size_t)playPosition;
-
-				if (pos < audio.dataL.size()) {
-					float gain = muted ? 0.f : 5.f;
-					outputs[AUDIO_L_OUTPUT].setVoltage(audio.dataL[pos] * gain);
-					outputs[AUDIO_R_OUTPUT].setVoltage(audio.dataR[pos] * gain);
-
-					// Advance playback
-					double sampleRateRatio = (double)audio.sampleRate / args.sampleRate;
-					playPosition += sampleRateRatio * smoothTempo;
-
-					// Loop or stop at end
-					if (playPosition >= audio.dataL.size()) {
-						if (looping) {
-							playPosition = 0.0;  // Loop back to start
-						} else {
-							playing = false;  // Stop playback
-							playPosition = 0.0;
-						}
-					}
-				}
-			} else {
-				outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
-				outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
-			}
-			audioMutex.unlock();
-		} else {
-			// Mutex locked - skip this frame
+		// Playback - skip if loading
+		if (loading || !playing || !fileLoaded || audio.dataL.size() == 0) {
 			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
 			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
+			return;
+		}
+
+		float tempo = params[TEMPO_PARAM].getValue();
+		smoothTempo += (tempo - smoothTempo) * 0.001f;
+
+		size_t pos = (size_t)playPosition;
+
+		// Lock for audio access
+		float leftSample = 0.f;
+		float rightSample = 0.f;
+		size_t dataSize = 0;
+		int sampleRate = 44100;
+
+		{
+			std::lock_guard<std::mutex> lock(swapMutex);
+			dataSize = audio.dataL.size();
+
+			if (dataSize > 0 && pos < dataSize) {
+				leftSample = audio.dataL[pos];
+				rightSample = audio.dataR[pos];
+				sampleRate = audio.sampleRate;
+			}
+		}
+
+		// Output audio (outside lock)
+		if (dataSize > 0 && pos < dataSize) {
+			float gain = muted ? 0.f : 5.f;
+			outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
+			outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
+
+			// Advance playback
+			double sampleRateRatio = (double)sampleRate / args.sampleRate;
+			playPosition += sampleRateRatio * smoothTempo;
+
+			// Loop or stop at end
+			if (playPosition >= dataSize) {
+				if (looping) {
+					playPosition = 0.0;  // Loop back to start
+				} else {
+					playing = false;  // Stop playback
+					playPosition = 0.0;
+				}
+			}
+		} else {
+			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
+			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
+			playPosition = 0.0;
 		}
 	}
 
@@ -211,18 +235,23 @@ struct WaveformDisplay : TransparentWidget {
 		nvgStrokeWidth(args.vg, 2);
 		nvgStroke(args.vg);
 
-		if (!module || !module->fileLoaded || module->audio.dataL.empty()) {
+		if (!module || module->loading || !module->fileLoaded || module->audio.dataL.empty()) {
 			nvgFontSize(args.vg, 10);
 			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 			nvgFillColor(args.vg, nvgRGB(0x55, 0x55, 0x55));
-			nvgText(args.vg, box.size.x / 2, box.size.y / 2, "Right-click to load file", NULL);
+			const char* text = (!module || !module->fileLoaded) ? "Right-click to load file" : "Loading...";
+			nvgText(args.vg, box.size.x / 2, box.size.y / 2, text, NULL);
 			Widget::draw(args);
 			return;
 		}
 
 		// Draw waveform - EACH LINE SEPARATE to avoid solid block
 		const size_t dataSize = module->audio.dataL.size();
+		if (dataSize == 0) {
+			Widget::draw(args);
+			return;
+		}
 		const float samplesPerPixel = (float)dataSize / box.size.x;
 		const float centerY = box.size.y / 2;
 		const float scale = box.size.y * 0.4f;
@@ -264,7 +293,7 @@ struct WaveformDisplay : TransparentWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module && module->fileLoaded) {
+			if (module && !module->loading && module->fileLoaded) {
 				float newPos = e.pos.x / box.size.x;
 				newPos = clamp(newPos, 0.f, 1.f);
 				module->playPosition = newPos * module->audio.dataL.size();
@@ -275,7 +304,7 @@ struct WaveformDisplay : TransparentWidget {
 	}
 
 	void onDragMove(const DragMoveEvent& e) override {
-		if (module && module->fileLoaded) {
+		if (module && !module->loading && module->fileLoaded) {
 			float deltaPos = e.mouseDelta.x / box.size.x;
 			module->playPosition += deltaPos * module->audio.dataL.size();
 			if (module->playPosition < 0.0) module->playPosition = 0.0;
@@ -378,7 +407,7 @@ struct RDJ_DeckWidget : ModuleWidget {
 		DeckPad* pad4 = createParam<DeckPad>(mm2px(Vec(padStartX + padSize + padSpacing, padStartY + padSize + padSpacing)), module, RDJ_Deck::PAD4_PARAM);
 		pad4->module = module;
 		pad4->padIndex = 3;
-		pad4->label = "";  // No label
+		pad4->label = "LOOP";
 		addParam(pad4);
 
 		// Row 3

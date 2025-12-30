@@ -271,13 +271,13 @@ struct RG303_SynthWidget : ModuleWidget {
 		// Row 4: Volume (centered)
 		addParam(createParamCentered<RegrooveKnob>(mm2px(Vec(15.24, 97)), module, RG303_Synth::VOLUME_PARAM));
 
-		// MIDI indicator
-		MidiWidget* midiWidget = createWidget<MidiWidget>(mm2px(Vec(3, 103)));
-		midiWidget->box.size = mm2px(Vec(24.48, 7));
-		if (module) {
-			midiWidget->setMidiPort(&module->midiInput);
-		}
-		addChild(midiWidget);
+		// MIDI label
+		RegrooveLabel* midiLabel = new RegrooveLabel();
+		midiLabel->box.pos = mm2px(Vec(0, 105));
+		midiLabel->box.size = mm2px(Vec(30.48, 4));
+		midiLabel->text = "MIDI";
+		midiLabel->fontSize = 8.0;
+		addChild(midiLabel);
 
 		// OUT label
 		RegrooveLabel* outLabel = new RegrooveLabel();
@@ -291,6 +291,20 @@ struct RG303_SynthWidget : ModuleWidget {
 		// Outputs
 		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(13.5, 118.0)), module, RG303_Synth::AUDIO_L_OUTPUT));
 		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(23.5, 118.0)), module, RG303_Synth::AUDIO_R_OUTPUT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		RG303_Synth* module = dynamic_cast<RG303_Synth*>(this->module);
+		if (!module)
+			return;
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("MIDI Settings"));
+		menu->addChild(createSubmenuItem("MIDI driver", "",
+			[=](Menu* menu) {
+				appendMidiMenu(menu, &module->midiInput);
+			}
+		));
 	}
 };
 

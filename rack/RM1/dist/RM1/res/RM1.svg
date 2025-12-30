@@ -4,10 +4,10 @@
  <rect width="30.48" height="128.5" fill="#1a1a1a"/>
 
  <!-- Top stripe -->
- <rect width="30.48" height="15" fill="#CF1A37"/>
+ <rect width="30.48" height="13" fill="#CF1A37"/>
 
  <!-- Section separator lines -->
- <line x1="3" y1="107" x2="27.48" y2="107" stroke="#555555" stroke-width="0.5"/>
+ <line x1="3" y1="106" x2="27.48" y2="106" stroke="#555555" stroke-width="0.5"/>
  <line x1="3" y1="115" x2="27.48" y2="115" stroke="#555555" stroke-width="0.5"/>
 
  <!-- Screw holes -->

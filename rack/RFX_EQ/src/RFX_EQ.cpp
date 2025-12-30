@@ -91,7 +91,7 @@ struct RFX_EQWidget : ModuleWidget {
 
 		// Title label
 		RegrooveLabel* titleLabel = new RegrooveLabel();
-		titleLabel->box.pos = mm2px(Vec(0, 8));
+		titleLabel->box.pos = mm2px(Vec(0, 6.5));
 		titleLabel->box.size = mm2px(Vec(30.48, 5));
 		titleLabel->text = "EQ";
 		titleLabel->fontSize = 18.0;
@@ -101,40 +101,40 @@ struct RFX_EQWidget : ModuleWidget {
 
 		// Hi label - positioned WELL ABOVE the knob
 		RegrooveLabel* hiLabel = new RegrooveLabel();
-		hiLabel->box.pos = mm2px(Vec(0, 34.5));
+		hiLabel->box.pos = mm2px(Vec(0, 32.5));
 		hiLabel->box.size = mm2px(Vec(30.48, 4));
 		hiLabel->text = "Hi";
 		hiLabel->fontSize = 9.0;
 		addChild(hiLabel);
 
 		// Hi knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 45.0)), module, RFX_EQ::HIGH_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 43.0)), module, RFX_EQ::HIGH_PARAM));
 
 		// Mid label - positioned WELL ABOVE the knob
 		RegrooveLabel* midLabel = new RegrooveLabel();
-		midLabel->box.pos = mm2px(Vec(0, 52.5));
+		midLabel->box.pos = mm2px(Vec(0, 50.5));
 		midLabel->box.size = mm2px(Vec(30.48, 4));
 		midLabel->text = "Mid";
 		midLabel->fontSize = 9.0;
 		addChild(midLabel);
 
 		// Mid knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 63.0)), module, RFX_EQ::MID_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 61.0)), module, RFX_EQ::MID_PARAM));
 
 		// Low label - positioned WELL ABOVE the knob
 		RegrooveLabel* lowLabel = new RegrooveLabel();
-		lowLabel->box.pos = mm2px(Vec(0, 70.5));
+		lowLabel->box.pos = mm2px(Vec(0, 68.5));
 		lowLabel->box.size = mm2px(Vec(30.48, 4));
 		lowLabel->text = "Low";
 		lowLabel->fontSize = 9.0;
 		addChild(lowLabel);
 
 		// Low knob
-		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 81.0)), module, RFX_EQ::LOW_PARAM));
+		addParam(createParamCentered<RegrooveMediumKnob>(mm2px(Vec(15.24, 79.0)), module, RFX_EQ::LOW_PARAM));
 
 		// STANDARD POSITION: IN label (left of ports)
 		RegrooveLabel* inLabel = new RegrooveLabel();
-		inLabel->box.pos = mm2px(Vec(2, 108.5));
+		inLabel->box.pos = mm2px(Vec(2, 106.5));
 		inLabel->box.size = mm2px(Vec(8, 4));
 		inLabel->text = "In";
 		inLabel->fontSize = 8.0;
@@ -142,12 +142,12 @@ struct RFX_EQWidget : ModuleWidget {
 		addChild(inLabel);
 
 		// STANDARD POSITION: Inputs (horizontal pair with label on left)
-		addInput(createInputCentered<RegroovePort>(mm2px(Vec(13.5, 111.0)), module, RFX_EQ::AUDIO_L_INPUT));
-		addInput(createInputCentered<RegroovePort>(mm2px(Vec(23.5, 111.0)), module, RFX_EQ::AUDIO_R_INPUT));
+		addInput(createInputCentered<RegroovePort>(mm2px(Vec(13.5, 109.0)), module, RFX_EQ::AUDIO_L_INPUT));
+		addInput(createInputCentered<RegroovePort>(mm2px(Vec(23.5, 109.0)), module, RFX_EQ::AUDIO_R_INPUT));
 
 		// STANDARD POSITION: OUT label (left of ports)
 		RegrooveLabel* outLabel = new RegrooveLabel();
-		outLabel->box.pos = mm2px(Vec(2, 116.5));
+		outLabel->box.pos = mm2px(Vec(2, 115.5));
 		outLabel->box.size = mm2px(Vec(8, 4));
 		outLabel->text = "Out";
 		outLabel->fontSize = 8.0;
@@ -155,8 +155,8 @@ struct RFX_EQWidget : ModuleWidget {
 		addChild(outLabel);
 
 		// STANDARD POSITION: Outputs (horizontal pair with label on left)
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(13.5, 119.0)), module, RFX_EQ::AUDIO_L_OUTPUT));
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(23.5, 119.0)), module, RFX_EQ::AUDIO_R_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(13.5, 118.0)), module, RFX_EQ::AUDIO_L_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(23.5, 118.0)), module, RFX_EQ::AUDIO_R_OUTPUT));
 	}
 };
 

@@ -114,15 +114,17 @@ class AudioEffectsProcessor {
         try {
             const devices = await navigator.mediaDevices.enumerateDevices();
             const audioInputs = devices.filter(d => d.kind === 'audioinput');
+            const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
 
-            const selector = document.getElementById('micDeviceList');
-            selector.innerHTML = '<option value="">Default Microphone</option>';
+            // Populate input device selector
+            const inputSelector = document.getElementById('micDeviceList');
+            inputSelector.innerHTML = '<option value="">Default Microphone</option>';
 
             audioInputs.forEach(device => {
                 const option = document.createElement('option');
                 option.value = device.deviceId;
-                option.textContent = device.label || `Microphone ${selector.options.length}`;
-                selector.appendChild(option);
+                option.textContent = device.label || `Microphone ${inputSelector.options.length}`;
+                inputSelector.appendChild(option);
             });
 
             if (audioInputs.length > 0) {
@@ -132,12 +134,48 @@ class AudioEffectsProcessor {
                 document.getElementById('currentFileName').style.display = 'none';
             }
 
-            selector.onchange = () => {
-                this.selectedMicDeviceId = selector.value || null;
-                console.log('🎤 Selected device:', selector.options[selector.selectedIndex].text);
+            inputSelector.onchange = () => {
+                this.selectedMicDeviceId = inputSelector.value || null;
+                console.log('🎤 Selected input device:', inputSelector.options[inputSelector.selectedIndex].text);
             };
+
+            // Populate output device selector
+            const outputSelector = document.getElementById('outputDeviceList');
+            outputSelector.innerHTML = '<option value="">Default Output Device</option>';
+
+            audioOutputs.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.deviceId;
+                option.textContent = device.label || `Speaker ${outputSelector.options.length}`;
+                outputSelector.appendChild(option);
+            });
+
+            outputSelector.onchange = async () => {
+                const deviceId = outputSelector.value || '';
+                await this.setOutputDevice(deviceId);
+                console.log('🔊 Selected output device:', outputSelector.options[outputSelector.selectedIndex].text);
+            };
+
         } catch (error) {
             console.warn('Could not enumerate devices:', error);
+        }
+    }
+
+    async setOutputDevice(deviceId) {
+        try {
+            // setSinkId is supported on AudioContext.destination in modern browsers
+            if (typeof this.audioContext.setSinkId === 'function') {
+                await this.audioContext.setSinkId(deviceId);
+                console.log(`✅ Output routed to: ${deviceId || 'default'}`);
+            } else if (this.audioElement && typeof this.audioElement.setSinkId === 'function') {
+                // Fallback: set sink on audio element for streaming playback
+                await this.audioElement.setSinkId(deviceId);
+                console.log(`✅ Audio element output routed to: ${deviceId || 'default'}`);
+            } else {
+                console.warn('⚠️ setSinkId not supported in this browser');
+            }
+        } catch (error) {
+            console.error('❌ Failed to set output device:', error);
         }
     }
 

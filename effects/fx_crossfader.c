@@ -89,21 +89,26 @@ void fx_crossfader_process_frame(FXCrossfader* fx,
 
 	float pos = fx->smooth_pos;
 
-	// Apply crossfade curve
-	// Linear: gain_a = 1-pos, gain_b = pos
-	// Sharp: apply power function to make center cut sharper
+	// MIX MODE crossfade:
+	// Full left (0.0): 100% A, 0% B
+	// Center (0.5): 100% A, 100% B (both channels at full volume)
+	// Full right (1.0): 0% A, 100% B
 	float gain_a, gain_b;
 
 	if (fx->curve > 0.0f) {
-		// Apply curve (power function)
-		// At curve=1.0, use x^3 for sharp transition
+		// Sharp curve: faster transition, less mixing in center
+		// At curve=1.0, channels cut off sharply before center
 		float power = 1.0f + fx->curve * 2.0f;  // 1.0 to 3.0
-		gain_a = powf(1.0f - pos, power);
-		gain_b = powf(pos, power);
+		float a_fade = fminf(1.0f, (1.0f - pos) * 2.0f);
+		float b_fade = fminf(1.0f, pos * 2.0f);
+		gain_a = powf(a_fade, power);
+		gain_b = powf(b_fade, power);
 	} else {
-		// Linear crossfade
-		gain_a = 1.0f - pos;
-		gain_b = pos;
+		// Linear mix mode
+		// A fades out only in right half (pos > 0.5)
+		// B fades out only in left half (pos < 0.5)
+		gain_a = fminf(1.0f, (1.0f - pos) * 2.0f);
+		gain_b = fminf(1.0f, pos * 2.0f);
 	}
 
 	// Mix the signals

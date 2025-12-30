@@ -152,6 +152,61 @@ struct RegrooveSlider : app::SliderKnob {
 };
 
 /**
+ * Regroove Medium Knob - Medium-sized knob (50x50)
+ */
+struct RegrooveMediumKnob : RegrooveKnob {
+	RegrooveMediumKnob() {
+		box.size = math::Vec(46, 46);
+		shadow->box.size = box.size;
+		shadow->opacity = 0.15f;
+	}
+
+	void draw(const DrawArgs& args) override {
+		float radius = box.size.x / 2;
+		float cx = box.size.x / 2;
+		float cy = box.size.y / 2;
+
+		// OUTER BODY - Dark gray #2A2A2A (larger, less ring)
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, cx, cy, 0.90f * radius);
+		nvgFillColor(args.vg, REGROOVE_TRACK);
+		nvgFill(args.vg);
+
+		// CENTER CAP - Gray #555555
+		nvgBeginPath(args.vg);
+		nvgCircle(args.vg, cx, cy, 0.42f * radius);
+		nvgFillColor(args.vg, REGROOVE_CAP);
+		nvgFill(args.vg);
+
+		// RED TICK LINE - #CF1A37
+		float angle = 0.0;
+		if (getParamQuantity()) {
+			angle = math::rescale(getParamQuantity()->getValue(),
+			                      getParamQuantity()->getMinValue(),
+			                      getParamQuantity()->getMaxValue(),
+			                      minAngle, maxAngle);
+		}
+
+		float tick_start = 0.44f * radius;
+		float tick_end = 0.90f * radius;
+		float tick_width = 0.08f * radius;
+
+		nvgSave(args.vg);
+		nvgTranslate(args.vg, cx, cy);
+		nvgRotate(args.vg, angle);
+
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, -tick_width / 2, -tick_end, tick_width, tick_end - tick_start);
+		nvgFillColor(args.vg, REGROOVE_RED);
+		nvgFill(args.vg);
+
+		nvgRestore(args.vg);
+
+		Widget::draw(args);
+	}
+};
+
+/**
  * Regroove Small Knob - For compact controls
  * Smaller version of RegrooveKnob (40x40)
  */
@@ -241,28 +296,34 @@ struct RegrooveLabel : widget::Widget {
 	float fontSize;
 	NVGcolor color;
 	bool bold;
+	int align; // NVG_ALIGN_CENTER, NVG_ALIGN_LEFT, NVG_ALIGN_RIGHT
 
 	RegrooveLabel() {
 		fontSize = 12.0;
 		color = REGROOVE_TEXT;
 		bold = false;
+		align = NVG_ALIGN_CENTER;
 	}
 
 	void draw(const DrawArgs& args) override {
 		nvgFontSize(args.vg, fontSize);
 		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 		nvgTextLetterSpacing(args.vg, 0.5);
-		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+		nvgTextAlign(args.vg, align | NVG_ALIGN_MIDDLE);
 		nvgFillColor(args.vg, color);
+
+		float x = box.size.x / 2;
+		if (align == NVG_ALIGN_LEFT) x = 0;
+		if (align == NVG_ALIGN_RIGHT) x = box.size.x;
 
 		if (bold) {
 			// Simulate bold by rendering text multiple times with slight offsets
-			nvgText(args.vg, box.size.x / 2 - 0.5, box.size.y / 2, text.c_str(), NULL);
-			nvgText(args.vg, box.size.x / 2 + 0.5, box.size.y / 2, text.c_str(), NULL);
-			nvgText(args.vg, box.size.x / 2, box.size.y / 2 - 0.5, text.c_str(), NULL);
-			nvgText(args.vg, box.size.x / 2, box.size.y / 2 + 0.5, text.c_str(), NULL);
+			nvgText(args.vg, x - 0.5, box.size.y / 2, text.c_str(), NULL);
+			nvgText(args.vg, x + 0.5, box.size.y / 2, text.c_str(), NULL);
+			nvgText(args.vg, x, box.size.y / 2 - 0.5, text.c_str(), NULL);
+			nvgText(args.vg, x, box.size.y / 2 + 0.5, text.c_str(), NULL);
 		}
-		nvgText(args.vg, box.size.x / 2, box.size.y / 2, text.c_str(), NULL);
+		nvgText(args.vg, x, box.size.y / 2, text.c_str(), NULL);
 
 		Widget::draw(args);
 	}

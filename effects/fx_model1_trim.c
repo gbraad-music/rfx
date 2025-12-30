@@ -65,6 +65,19 @@ void fx_model1_trim_process_frame(FXModel1Trim* fx, float* left, float* right, i
 
     *left = apply_trim_drive(*left, fx->drive);
     *right = apply_trim_drive(*right, fx->drive);
+
+    // Track peak output level for LED display
+    float absL = fabsf(*left);
+    float absR = fabsf(*right);
+    float sample_peak = (absL > absR) ? absL : absR;
+
+    // Peak hold with decay
+    const float decay_rate = 0.95f;
+    if (sample_peak > fx->peak_level) {
+        fx->peak_level = sample_peak;
+    } else {
+        fx->peak_level *= decay_rate;
+    }
 }
 
 void fx_model1_trim_process_interleaved(FXModel1Trim* fx, float* buffer, int frames, int sample_rate) {

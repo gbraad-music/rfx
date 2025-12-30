@@ -22,13 +22,13 @@ dpf/build/
 dpf/
 
 # logue SDK build artifacts
-logue-sdk-effects/*/.dep/
-logue-sdk-effects/*/build/
-logue-sdk-effects/*/*.d
-logue-sdk-effects/*/*.ntkdigunit
-logue-sdk-effects/*/*.bin
-logue-sdk-effects/*/*.list
-logue-sdk-effects/*/*.map
+logue/*/.dep/
+logue/*/build/
+logue/*/*.d
+logue/*/*.ntkdigunit
+logue/*/*.bin
+logue/*/*.list
+logue/*/*.map
 
 # Object files and related
 *.d
@@ -41,12 +41,16 @@ logue-sdk-effects/*/*.map
 *.vst
 *.vst3
 *.component
+*.vcvplugin
 
 # OS
 .DS_Store
 Thumbs.db
 
 # Test output
-/*.sfk
+*.sfk
 /*.wav
 /*.png
+/tools/*.wav
+/tools/*.png
+

@@ -335,6 +335,12 @@ struct RDJ_Deck : Module {
 	}
 
 	void loadFile(const std::string& path) {
+		// CRITICAL: Don't allow loading before module is fully initialized
+		if (!initialized) {
+			WARN("Attempted to load file before module initialization complete - ignoring");
+			return;
+		}
+
 		// Stop any existing loading thread
 		shouldStopLoading = true;
 		if (loadingThread.joinable()) {

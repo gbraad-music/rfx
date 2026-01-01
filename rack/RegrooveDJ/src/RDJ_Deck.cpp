@@ -13,6 +13,12 @@
 #define MINIMP3_FLOAT_OUTPUT
 #include "../dep/minimp3_ex.h"
 
+// Audio analysis and caching
+extern "C" {
+#include "audio_analysis.h"
+#include "audio_cache.h"
+}
+
 // Audio file loader (WAV and MP3)
 struct AudioFile {
 	std::vector<float> dataL;
@@ -20,6 +26,10 @@ struct AudioFile {
 	int sampleRate = 44100;
 	float duration = 0.0f;
 	std::string fileName;
+
+	// Cached waveform data for visualization and analysis
+	std::vector<WaveformFrame> waveformFrames;
+	float bpm = 0.0f;  // Detected BPM (0 if not detected)
 
 	bool load(const std::string& path) {
 		// Detect file type by extension
@@ -182,6 +192,78 @@ struct AudioFile {
 
 		return true;
 	}
+
+	bool loadOrGenerateCache(const std::string& path) {
+		// Try to load from cache
+		if (audio_cache_is_valid(path.c_str(), dataL.size(), sampleRate)) {
+			AudioCache cache;
+			if (audio_cache_load(path.c_str(), &cache)) {
+				// Successfully loaded cache
+				waveformFrames.resize(cache.metadata.num_frames);
+				for (size_t i = 0; i < cache.metadata.num_frames; i++) {
+					waveformFrames[i] = cache.frames[i];
+				}
+				bpm = cache.metadata.bpm;
+				audio_cache_free(&cache);
+				INFO("Loaded cached waveform data: %zu frames, BPM %.1f",
+				     waveformFrames.size(), bpm);
+				return true;
+			}
+		}
+
+		// Cache doesn't exist or is invalid - generate it
+#ifdef USE_AUBIO
+		INFO("Generating waveform cache with aubio spectral analysis for %s...", fileName.c_str());
+#else
+		INFO("Generating waveform cache (amplitude-only, no aubio) for %s...", fileName.c_str());
+#endif
+
+		// Calculate number of frames
+		size_t num_frames = (dataL.size() + WAVEFORM_DOWNSAMPLE - 1) / WAVEFORM_DOWNSAMPLE;
+		waveformFrames.resize(num_frames);
+
+		// Analyze audio to generate waveform
+		bool success = analyze_audio_waveform(
+			dataL.data(),
+			dataL.size(),
+			sampleRate,
+			waveformFrames.data(),
+			num_frames,
+			nullptr,  // No progress callback
+			nullptr
+		);
+
+		if (!success) {
+			WARN("Failed to generate waveform data");
+			waveformFrames.clear();
+			return false;
+		}
+
+		// Detect BPM
+		bpm = detect_bpm(dataL.data(), dataL.size(), sampleRate);
+		if (bpm > 0.0f) {
+			INFO("Detected BPM: %.1f", bpm);
+		}
+
+		// Save to cache
+		AudioCacheMetadata metadata;
+		snprintf(metadata.original_path, sizeof(metadata.original_path), "%s", path.c_str());
+		metadata.sample_rate = sampleRate;
+		metadata.num_samples = dataL.size();
+		metadata.channels = 2;  // We store both L and R channels
+		metadata.duration = duration;
+		metadata.bpm = bpm;
+		metadata.num_frames = num_frames;
+		metadata.downsample = WAVEFORM_DOWNSAMPLE;
+
+		if (audio_cache_save(path.c_str(), &metadata, waveformFrames.data(), num_frames)) {
+			INFO("Saved waveform cache");
+		} else {
+			WARN("Failed to save waveform cache");
+		}
+
+		return true;
+	}
 };
 
 struct RDJ_Deck : Module {
@@ -222,6 +304,7 @@ struct RDJ_Deck : Module {
 	std::mutex swapMutex;  // ONLY for protecting audio data swap
 	std::thread loadingThread;  // Track the loading thread
 	std::atomic<size_t> audioSize{0};  // Safe to read from any thread
+	std::atomic<bool> initialized{false};  // Module fully initialized and safe to access
 
 	RDJ_Deck() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -238,6 +321,9 @@ struct RDJ_Deck : Module {
 		configOutput(PFL_R_OUTPUT, "PFL Right");
 		configOutput(AUDIO_L_OUTPUT, "Left audio");
 		configOutput(AUDIO_R_OUTPUT, "Right audio");
+
+		// Mark as initialized - safe for displays to access
+		initialized = true;
 	}
 
 	~RDJ_Deck() {
@@ -257,9 +343,11 @@ struct RDJ_Deck : Module {
 		shouldStopLoading = false;
 
 		loadingThread = std::thread([this, path]() {
-			// CRITICAL: Clear fileLoaded FIRST to stop UI from accessing old data
+			// CRITICAL: Set audioSize to 0 FIRST to stop process() from accessing audio
+			// This prevents race condition during swap
 			{
 				std::lock_guard<std::mutex> lock(swapMutex);
+				audioSize = 0;  // Memory fence - process() will see this and return early
 				fileLoaded = false;
 				loading = true;
 				playing = false;
@@ -273,6 +361,11 @@ struct RDJ_Deck : Module {
 				if (!shouldStopLoading) {
 					success = newAudio.load(path);
 				}
+
+				// Load or generate waveform cache after loading audio
+				if (success && !shouldStopLoading) {
+					newAudio.loadOrGenerateCache(path);
+				}
 			} catch (...) {
 				WARN("Exception loading audio file: %s", path.c_str());
 				success = false;
@@ -284,11 +377,14 @@ struct RDJ_Deck : Module {
 				std::lock_guard<std::mutex> lock(swapMutex);
 				playPosition = 0.0;
 				audio = std::move(newAudio);
+				// Set audioSize LAST - this is the memory fence that tells process()
+				// the audio data is now valid and safe to access
 				audioSize = audio.dataL.size();
 				fileLoaded = true;
 				loading = false;
 			} else {
 				std::lock_guard<std::mutex> lock(swapMutex);
+				audioSize = 0;
 				loading = false;
 			}
 		});
@@ -298,14 +394,11 @@ struct RDJ_Deck : Module {
 		// Handle play button
 		if (params[PLAY_PARAM].getValue() > 0.5f) {
 			if (fileLoaded) {
-				// Need to lock to check size
-				if (swapMutex.try_lock()) {
-					size_t dataSize = audio.dataL.size();
-					playing = !playing;
-					if (playing && playPosition >= dataSize) {
-						playPosition = 0.0;
-					}
-					swapMutex.unlock();
+				// Use atomic size - no lock needed
+				size_t dataSize = audioSize;
+				playing = !playing;
+				if (playing && playPosition >= dataSize) {
+					playPosition = 0.0;
 				}
 			}
 			params[PLAY_PARAM].setValue(0.f);
@@ -329,24 +422,17 @@ struct RDJ_Deck : Module {
 			params[PAD6_PARAM].setValue(0.f);
 		}
 
-		// Playback - try to lock, skip if we can't
+		// Playback - NO LOCKING during playback!
+		// Audio data is immutable after loading, only displays lock
 		if (loading || !playing || !fileLoaded) {
 			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
 			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
 			return;
 		}
 
-		if (!swapMutex.try_lock()) {
-			// Can't lock, output silence this frame
-			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
-			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
-			return;
-		}
-
-		// We have the lock now
-		size_t dataSize = audio.dataL.size();
+		// Read atomic size - safe without lock
+		size_t dataSize = audioSize;
 		if (dataSize == 0) {
-			swapMutex.unlock();
 			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
 			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
 			return;
@@ -358,13 +444,12 @@ struct RDJ_Deck : Module {
 		size_t pos = (size_t)playPosition;
 		if (pos >= dataSize) pos = 0;
 
+		// Direct access - no lock needed during playback
 		float leftSample = audio.dataL[pos];
 		float rightSample = audio.dataR[pos];
 		int sampleRate = audio.sampleRate;
 
-		swapMutex.unlock();
-
-		// Output audio (outside lock)
+		// Output audio
 		float gain = muted ? 0.f : 5.f;
 		outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
 		outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
@@ -421,7 +506,7 @@ struct OverviewWaveformDisplay : TransparentWidget {
 		nvgStrokeWidth(args.vg, 2);
 		nvgStroke(args.vg);
 
-		if (!module || module->loading || !module->fileLoaded) {
+		if (!module || !module->initialized || module->loading || !module->fileLoaded) {
 			nvgFontSize(args.vg, 10);
 			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -447,35 +532,82 @@ struct OverviewWaveformDisplay : TransparentWidget {
 			return;
 		}
 
-		// Draw entire waveform WITHOUT holding the lock
-		// This allows audio thread to run freely
-		// Worst case: we might read slightly stale data during file loading
-		const float samplesPerPixel = (float)dataSize / box.size.x;
-		const float centerY = box.size.y / 2;
-		const float scale = box.size.y * 0.4f;
-
-		nvgStrokeColor(args.vg, REGROOVE_RED);
-		nvgStrokeWidth(args.vg, 1);
-
-		for (float x = 0; x < box.size.x; x += 1.0f) {
-			size_t startSample = (size_t)(x * samplesPerPixel);
-			size_t endSample = (size_t)((x + 1) * samplesPerPixel);
-
-			if (startSample >= dataSize) break;
-			if (endSample > dataSize) endSample = dataSize;
-
-			float peak = 0.0f;
-			for (size_t i = startSample; i < endSample; i++) {
-				float absVal = fabs(module->audio.dataL[i]);
-				if (absVal > peak) peak = absVal;
-			}
-
-			float height = peak * scale;
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, x, centerY - height);
-			nvgLineTo(args.vg, x, centerY + height);
-			nvgStroke(args.vg);
+		// Use cached waveform frames for efficient, thread-safe display
+		// Try to lock for safe data access - if we can't get the lock, skip this frame
+		if (!module->swapMutex.try_lock()) {
+			Widget::draw(args);
+			return;
 		}
+
+		// Read size INSIDE the lock!
+		size_t numFrames = module->audio.waveformFrames.size();
+
+		// If no waveform cache yet, use raw audio (slower but works)
+		if (numFrames == 0) {
+			// Draw from raw audio data
+			const float samplesPerPixel = (float)dataSize / box.size.x;
+			const float centerY = box.size.y / 2;
+			const float scale = box.size.y * 0.4f;
+
+			nvgStrokeColor(args.vg, REGROOVE_RED);
+			nvgStrokeWidth(args.vg, 1);
+
+			for (float x = 0; x < box.size.x; x += 1.0f) {
+				size_t startSample = (size_t)(x * samplesPerPixel);
+				size_t endSample = (size_t)((x + 1) * samplesPerPixel);
+
+				if (startSample >= dataSize) break;
+				if (endSample > dataSize) endSample = dataSize;
+
+				float peak = 0.0f;
+				for (size_t i = startSample; i < endSample; i++) {
+					float absVal = fabs(module->audio.dataL[i]);
+					if (absVal > peak) peak = absVal;
+				}
+
+				float height = peak * scale;
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, x, centerY - height);
+				nvgLineTo(args.vg, x, centerY + height);
+				nvgStroke(args.vg);
+			}
+		} else {
+			// Draw from cached waveform frames (much faster and safer!)
+			const float framesPerPixel = (float)numFrames / box.size.x;
+			const float centerY = box.size.y / 2;
+			const float scale = box.size.y * 0.4f;
+
+			nvgStrokeWidth(args.vg, 1);
+
+			for (float x = 0; x < box.size.x; x += 1.0f) {
+				size_t frameIdx = (size_t)(x * framesPerPixel);
+				if (frameIdx >= numFrames) break;
+
+				WaveformFrame& frame = module->audio.waveformFrames[frameIdx];
+				float amplitude = frame.amplitude;
+				float height = amplitude * scale;
+
+				// Spectral coloring (like rescratch/Mixxx)
+				float totalEnergy = frame.bands.low + frame.bands.mid + frame.bands.high;
+
+				// Fallback to red if no spectral data
+				if (totalEnergy < 0.001f) {
+					nvgStrokeColor(args.vg, REGROOVE_RED);
+				} else {
+					int r = (int)(255.0f * frame.bands.low / totalEnergy);
+					int g = (int)(255.0f * frame.bands.mid / totalEnergy);
+					int b = (int)(255.0f * frame.bands.high / totalEnergy);
+					nvgStrokeColor(args.vg, nvgRGB(r, g, b));
+				}
+
+				nvgBeginPath(args.vg);
+				nvgMoveTo(args.vg, x, centerY - height);
+				nvgLineTo(args.vg, x, centerY + height);
+				nvgStroke(args.vg);
+			}
+		}
+
+		module->swapMutex.unlock();
 
 		// Playhead (drawn without lock)
 		if (dataSize > 0 && playPos >= 0 && playPos < dataSize) {
@@ -493,8 +625,8 @@ struct OverviewWaveformDisplay : TransparentWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module && !module->loading && module->fileLoaded) {
-				size_t dataSize = module->audio.dataL.size();
+			if (module && module->initialized && !module->loading && module->fileLoaded) {
+				size_t dataSize = module->audioSize;
 				if (dataSize > 0) {
 					float newPos = e.pos.x / box.size.x;
 					newPos = clamp(newPos, 0.f, 1.f);
@@ -507,8 +639,8 @@ struct OverviewWaveformDisplay : TransparentWidget {
 	}
 
 	void onDragMove(const DragMoveEvent& e) override {
-		if (module && !module->loading && module->fileLoaded) {
-			size_t dataSize = module->audio.dataL.size();
+		if (module && module->initialized && !module->loading && module->fileLoaded) {
+			size_t dataSize = module->audioSize;
 			if (dataSize > 0) {
 				float deltaPos = e.mouseDelta.x / box.size.x;
 				module->playPosition += deltaPos * dataSize;
@@ -535,7 +667,7 @@ struct DetailWaveformDisplay : TransparentWidget {
 		nvgStrokeWidth(args.vg, 2);
 		nvgStroke(args.vg);
 
-		if (!module || module->loading || !module->fileLoaded) {
+		if (!module || !module->initialized || module->loading || !module->fileLoaded) {
 			Widget::draw(args);
 			return;
 		}
@@ -575,8 +707,17 @@ struct DetailWaveformDisplay : TransparentWidget {
 		const float centerY = box.size.y / 2;
 		const float scale = box.size.y * 0.4f;
 
-		nvgStrokeColor(args.vg, REGROOVE_RED);
 		nvgStrokeWidth(args.vg, 1);
+
+		// Try to lock for safe data access
+		if (!module->swapMutex.try_lock()) {
+			Widget::draw(args);
+			return;
+		}
+
+		// Read size INSIDE the lock!
+		size_t numFrames = module->audio.waveformFrames.size();
+		bool hasSpectral = (numFrames > 0);
 
 		// Draw waveform - playhead always at center
 		for (float x = 0; x < box.size.x; x += 1.0f) {
@@ -597,11 +738,40 @@ struct DetailWaveformDisplay : TransparentWidget {
 			}
 
 			float height = peak * scale;
+
+			// Get spectral color if available
+			if (hasSpectral) {
+				// Map sample position to frame index
+				size_t midSample = (sampleStart + sampleEnd) / 2;
+				size_t frameIdx = midSample / WAVEFORM_DOWNSAMPLE;
+
+				if (frameIdx < numFrames) {
+					WaveformFrame& frame = module->audio.waveformFrames[frameIdx];
+					float totalEnergy = frame.bands.low + frame.bands.mid + frame.bands.high;
+
+					// Fallback to red if no spectral data
+					if (totalEnergy < 0.001f) {
+						nvgStrokeColor(args.vg, REGROOVE_RED);
+					} else {
+						int r = (int)(255.0f * frame.bands.low / totalEnergy);
+						int g = (int)(255.0f * frame.bands.mid / totalEnergy);
+						int b = (int)(255.0f * frame.bands.high / totalEnergy);
+						nvgStrokeColor(args.vg, nvgRGB(r, g, b));
+					}
+				} else {
+					nvgStrokeColor(args.vg, REGROOVE_RED);
+				}
+			} else {
+				nvgStrokeColor(args.vg, REGROOVE_RED);
+			}
+
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, x, centerY - height);
 			nvgLineTo(args.vg, x, centerY + height);
 			nvgStroke(args.vg);
 		}
+
+		module->swapMutex.unlock();
 
 		// Playhead ALWAYS at center
 		float playheadX = box.size.x / 2;
@@ -618,8 +788,8 @@ struct DetailWaveformDisplay : TransparentWidget {
 
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module && !module->loading && module->fileLoaded) {
-				const size_t dataSize = module->audio.dataL.size();
+			if (module && module->initialized && !module->loading && module->fileLoaded) {
+				const size_t dataSize = module->audioSize;
 				if (dataSize > 0) {
 					const size_t windowSize = dataSize / zoomFactor;
 					if (windowSize > 0) {
@@ -643,8 +813,8 @@ struct DetailWaveformDisplay : TransparentWidget {
 	}
 
 	void onDragMove(const DragMoveEvent& e) override {
-		if (module && !module->loading && module->fileLoaded) {
-			const size_t dataSize = module->audio.dataL.size();
+		if (module && module->initialized && !module->loading && module->fileLoaded) {
+			const size_t dataSize = module->audioSize;
 			if (dataSize > 0) {
 				const size_t windowSize = dataSize / zoomFactor;
 				if (windowSize > 0) {

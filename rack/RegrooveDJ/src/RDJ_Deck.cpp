@@ -244,19 +244,9 @@ struct AudioFile {
 			return false;
 		}
 
-		// Detect BPM
+		// Detect BPM and first beat position for beat grid alignment
 		bpm = detect_bpm(dataL.data(), dataL.size(), sampleRate);
-		INFO("Beat detection: BPM=%.1f", bpm);
-		if (bpm > 0.0f && bpm < 300.0f) {
-			INFO("  Valid BPM detected: %.1f", bpm);
-		} else {
-			WARN("  Invalid or no BPM detected (%.1f) - looping will not work!", bpm);
-		}
-
-		// Detect first beat position for beat grid alignment
 		firstBeat = detect_first_beat(dataL.data(), dataL.size(), sampleRate);
-		INFO("  First beat offset: sample %zu (%.2f ms)",
-		     firstBeat, (firstBeat * 1000.0f) / sampleRate);
 
 		// Save to cache
 		AudioCacheMetadata metadata;
@@ -928,6 +918,24 @@ struct DetailWaveformDisplay : TransparentWidget {
 		nvgStrokeWidth(args.vg, 2);
 		nvgStroke(args.vg);
 
+		// BPM Display (top-left corner in red accent color)
+		if (bpm > 0.0f && bpm < 300.0f) {
+			nvgFontSize(args.vg, 12);
+			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+			nvgFillColor(args.vg, REGROOVE_RED);
+
+			char bpmText[32];
+			snprintf(bpmText, sizeof(bpmText), "%.1f BPM", bpm);
+			nvgText(args.vg, 5, 5, bpmText, NULL);
+		} else {
+			nvgFontSize(args.vg, 12);
+			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+			nvgFillColor(args.vg, REGROOVE_RED);
+			nvgText(args.vg, 5, 5, "NO BPM", NULL);
+		}
+
 		Widget::draw(args);
 	}
 
@@ -1024,6 +1032,7 @@ struct DeckPad : RegroovePad {
 		RegroovePad::step();
 	}
 };
+
 
 struct RDJ_DeckWidget : ModuleWidget {
 	RDJ_DeckWidget(RDJ_Deck* module) {

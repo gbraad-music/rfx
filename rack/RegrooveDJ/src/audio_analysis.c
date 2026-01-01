@@ -180,9 +180,22 @@ static TempoResult detect_tempo_and_beats(
         return result;
     }
 
-    // Process audio in chunks
-    bool first_beat_found = false;
-    for (size_t pos = 0; pos + AUBIO_HOP_SIZE <= num_samples; pos += AUBIO_HOP_SIZE) {
+    // Collect detected beats for robust analysis
+    // Limit to first 3 minutes of audio to avoid excessive processing on long files
+    const size_t max_samples_to_analyze = (size_t)(3 * 60 * sample_rate);  // 3 minutes
+    const size_t samples_to_analyze = (num_samples < max_samples_to_analyze) ? num_samples : max_samples_to_analyze;
+
+    size_t* beat_positions = malloc(sizeof(size_t) * 1000);  // Max 1000 beats (plenty for 3 minutes)
+    if (!beat_positions) {
+        del_aubio_tempo(tempo);
+        del_fvec(input_buf);
+        del_fvec(output);
+        return result;
+    }
+    size_t num_beats = 0;
+
+    // Process audio in chunks (only analyze first 3 minutes)
+    for (size_t pos = 0; pos + AUBIO_HOP_SIZE <= samples_to_analyze; pos += AUBIO_HOP_SIZE) {
         // Copy samples to aubio buffer
         for (size_t i = 0; i < AUBIO_HOP_SIZE; i++) {
             input_buf->data[i] = audio_data[pos + i];
@@ -191,15 +204,86 @@ static TempoResult detect_tempo_and_beats(
         // Process chunk
         aubio_tempo_do(tempo, input_buf, output);
 
-        // Check if beat detected and record first beat
-        if (!first_beat_found && output->data[0] != 0) {
-            result.first_beat = aubio_tempo_get_last(tempo);
-            first_beat_found = true;
+        // Check if beat detected
+        if (output->data[0] != 0) {
+            size_t beat_pos = aubio_tempo_get_last(tempo);
+            if (num_beats < 1000) {
+                beat_positions[num_beats++] = beat_pos;
+
+                // Early exit: 100 beats is more than enough for good statistics
+                if (num_beats >= 100) {
+                    break;
+                }
+            }
         }
     }
 
-    // Get detected BPM
-    result.bpm = aubio_tempo_get_bpm(tempo);
+    // Robust beat grid alignment using multiple beats
+    if (num_beats >= 4) {
+        // Calculate BPM from median beat spacing (more robust than mean)
+        double* spacings = malloc(sizeof(double) * (num_beats - 1));
+        if (spacings) {
+            for (size_t i = 1; i < num_beats; i++) {
+                spacings[i-1] = (double)(beat_positions[i] - beat_positions[i-1]);
+            }
+
+            // Simple median calculation
+            for (size_t i = 0; i < num_beats - 2; i++) {
+                for (size_t j = i + 1; j < num_beats - 1; j++) {
+                    if (spacings[i] > spacings[j]) {
+                        double temp = spacings[i];
+                        spacings[i] = spacings[j];
+                        spacings[j] = temp;
+                    }
+                }
+            }
+
+            double median_spacing = spacings[(num_beats - 1) / 2];
+            result.bpm = (60.0 * sample_rate) / median_spacing;
+
+            // Find best offset by testing different phases
+            // This finds which offset makes the grid align best with detected beats
+            double best_offset = 0;
+            double best_score = 0;
+            int test_steps = 200;
+
+            for (int step = 0; step < test_steps; step++) {
+                double test_offset = (median_spacing * step) / test_steps;
+                double score = 0;
+
+                // Score based on how close detected beats are to grid positions
+                for (size_t i = 0; i < num_beats; i++) {
+                    double beat_phase = fmod(beat_positions[i] - test_offset + median_spacing, median_spacing);
+                    // Distance to nearest grid line
+                    double distance = fmin(beat_phase, median_spacing - beat_phase);
+                    // Score: closer = higher
+                    score += 1.0 / (1.0 + distance / median_spacing);
+                }
+
+                if (score > best_score) {
+                    best_score = score;
+                    best_offset = test_offset;
+                }
+            }
+
+            result.first_beat = (size_t)best_offset;
+            free(spacings);
+        } else {
+            // Memory allocation failed, fall back
+            result.bpm = aubio_tempo_get_bpm(tempo);
+            result.first_beat = beat_positions[0];
+        }
+    } else if (num_beats >= 1) {
+        // Not enough beats for robust analysis, use aubio's estimate
+        result.bpm = aubio_tempo_get_bpm(tempo);
+        result.first_beat = beat_positions[0];
+    } else {
+        // No beats detected at all
+        result.bpm = aubio_tempo_get_bpm(tempo);
+        result.first_beat = 0;
+    }
+
+    free(beat_positions);
 
     // Cleanup
     del_aubio_tempo(tempo);

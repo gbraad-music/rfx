@@ -443,9 +443,6 @@ struct RDJ_Deck : Module {
 					size_t currentPos = (size_t)playPosition;
 					size_t gridOffset = audio.firstBeat;
 
-					// Find which beat we're closest to
-					long long beatsFromOffset = (long long)((currentPos - gridOffset) / samplesPerBeat);
-
 					// Round to nearest beat
 					double fractionalBeat = (currentPos - gridOffset) / samplesPerBeat;
 					long long nearestBeat = (long long)(fractionalBeat + 0.5);

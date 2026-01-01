@@ -4,7 +4,7 @@
 #include <math.h>
 
 #ifdef USE_AUBIO
-#include <aubio/aubio.h>
+#include <aubio.h>
 #endif
 
 bool analyze_audio_waveform(

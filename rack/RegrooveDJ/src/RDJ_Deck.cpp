@@ -85,26 +85,87 @@ struct AudioFile {
 		memset(&info, 0, sizeof(info));
 
 		// Load MP3 file using minimp3
-		if (mp3dec_load(&mp3d, path.c_str(), &info, NULL, NULL)) {
-			WARN("Failed to load MP3 file: %s", path.c_str());
+		int loadResult;
+
+#ifdef _WIN32
+		// On Windows, try wide-character API first, then fallback
+		// Try UTF-8 conversion first
+		int wideLen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, NULL, 0);
+		if (wideLen > 0) {
+			wchar_t* widePath = new wchar_t[wideLen];
+			MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, widePath, wideLen);
+			loadResult = mp3dec_load_w(&mp3d, widePath, &info, NULL, NULL);
+			delete[] widePath;
+
+			// If that failed, try regular API as fallback
+			if (loadResult != 0) {
+				INFO("Wide-char API failed (error %d), trying regular API", loadResult);
+				loadResult = mp3dec_load(&mp3d, path.c_str(), &info, NULL, NULL);
+			}
+		} else {
+			// Fallback to regular API
+			loadResult = mp3dec_load(&mp3d, path.c_str(), &info, NULL, NULL);
+		}
+#else
+		loadResult = mp3dec_load(&mp3d, path.c_str(), &info, NULL, NULL);
+#endif
+
+		if (loadResult != 0) {
+			const char* errMsg = "Unknown error";
+			switch (loadResult) {
+				case -1: errMsg = "Invalid parameter"; break;
+				case -2: errMsg = "Memory allocation failed"; break;
+				case -3: errMsg = "File I/O error (file not found or can't open)"; break;
+				case -4: errMsg = "File too small or invalid MP3 format"; break;
+				case -5: errMsg = "Decode error (incompatible format)"; break;
+			}
+			WARN("Failed to load MP3 file: %s (error %d: %s)", path.c_str(), loadResult, errMsg);
 			return false;
 		}
 
 		if (!info.buffer || info.samples == 0) {
 			WARN("MP3 file has no data: %s", path.c_str());
+			if (info.buffer) free(info.buffer);
+			return false;
+		}
+
+		// Sanity check the data
+		if (info.channels < 1 || info.channels > 8) {
+			WARN("MP3 has invalid channel count: %d", info.channels);
+			free(info.buffer);
+			return false;
+		}
+
+		if (info.hz < 8000 || info.hz > 192000) {
+			WARN("MP3 has invalid sample rate: %d", info.hz);
+			free(info.buffer);
+			return false;
+		}
+
+		size_t totalFrames = info.samples / info.channels;
+
+		// Sanity check: max 1 billion frames (~6 hours at 48kHz)
+		if (totalFrames == 0 || totalFrames > 1000000000) {
+			WARN("MP3 has invalid frame count: %zu", totalFrames);
+			free(info.buffer);
 			return false;
 		}
 
 		sampleRate = info.hz;
-		size_t totalFrames = info.samples / info.channels;
 		duration = (float)totalFrames / sampleRate;
 
 		INFO("Loaded MP3: %d Hz, %d ch, %zu frames, %.2f sec",
 		     sampleRate, info.channels, totalFrames, duration);
 
 		// Deinterleave samples into left and right channels
-		dataL.resize(totalFrames);
-		dataR.resize(totalFrames);
+		try {
+			dataL.resize(totalFrames);
+			dataR.resize(totalFrames);
+		} catch (const std::exception& e) {
+			WARN("Failed to allocate memory for MP3: %s", e.what());
+			free(info.buffer);
+			return false;
+		}
 
 		// Convert from mp3d_sample_t (float with MINIMP3_FLOAT_OUTPUT) to our format
 		for (size_t i = 0; i < totalFrames; i++) {
@@ -154,7 +215,10 @@ struct RDJ_Deck : Module {
 	std::atomic<bool> looping{true};  // Loop enabled by default
 	float smoothTempo = 1.0f;
 	std::atomic<bool> loading{false};  // Track if currently loading
+	std::atomic<bool> shouldStopLoading{false};  // Signal to stop loading thread
 	std::mutex swapMutex;  // ONLY for protecting audio data swap
+	std::thread loadingThread;  // Track the loading thread
+	std::atomic<size_t> audioSize{0};  // Safe to read from any thread
 
 	RDJ_Deck() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -171,33 +235,72 @@ struct RDJ_Deck : Module {
 		configOutput(AUDIO_R_OUTPUT, "Right audio");
 	}
 
-	void loadFile(const std::string& path) {
-		std::thread([this, path]() {
-			loading = true;
-			playing = false;  // Stop playback before loading
+	~RDJ_Deck() {
+		// Stop any loading thread
+		shouldStopLoading = true;
+		if (loadingThread.joinable()) {
+			loadingThread.join();
+		}
+	}
 
-			AudioFile newAudio;
-			if (newAudio.load(path)) {
-				// Lock ONLY for the swap operation
-				{
-					std::lock_guard<std::mutex> lock(swapMutex);
-					playPosition = 0.0;
-					audio = std::move(newAudio);
-					fileLoaded = true;
-				}
+	void loadFile(const std::string& path) {
+		// Stop any existing loading thread
+		shouldStopLoading = true;
+		if (loadingThread.joinable()) {
+			loadingThread.join();
+		}
+		shouldStopLoading = false;
+
+		loadingThread = std::thread([this, path]() {
+			// CRITICAL: Clear fileLoaded FIRST to stop UI from accessing old data
+			{
+				std::lock_guard<std::mutex> lock(swapMutex);
+				fileLoaded = false;
+				loading = true;
+				playing = false;
 			}
 
-			loading = false;
-		}).detach();
+			AudioFile newAudio;
+			bool success = false;
+
+			try {
+				// Check if we should stop before loading
+				if (!shouldStopLoading) {
+					success = newAudio.load(path);
+				}
+			} catch (...) {
+				WARN("Exception loading audio file: %s", path.c_str());
+				success = false;
+			}
+
+			// Check again before swapping - might have been cancelled
+			if (success && !shouldStopLoading) {
+				// Lock for the swap operation
+				std::lock_guard<std::mutex> lock(swapMutex);
+				playPosition = 0.0;
+				audio = std::move(newAudio);
+				audioSize = audio.dataL.size();
+				fileLoaded = true;
+				loading = false;
+			} else {
+				std::lock_guard<std::mutex> lock(swapMutex);
+				loading = false;
+			}
+		});
 	}
 
 	void process(const ProcessArgs& args) override {
 		// Handle play button
 		if (params[PLAY_PARAM].getValue() > 0.5f) {
 			if (fileLoaded) {
-				playing = !playing;
-				if (playing && playPosition >= audio.dataL.size()) {
-					playPosition = 0.0;
+				// Need to lock to check size
+				if (swapMutex.try_lock()) {
+					size_t dataSize = audio.dataL.size();
+					playing = !playing;
+					if (playing && playPosition >= dataSize) {
+						playPosition = 0.0;
+					}
+					swapMutex.unlock();
 				}
 			}
 			params[PLAY_PARAM].setValue(0.f);
@@ -215,8 +318,24 @@ struct RDJ_Deck : Module {
 			params[PAD5_PARAM].setValue(0.f);
 		}
 
-		// Playback - skip if loading
-		if (loading || !playing || !fileLoaded || audio.dataL.size() == 0) {
+		// Playback - try to lock, skip if we can't
+		if (loading || !playing || !fileLoaded) {
+			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
+			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
+			return;
+		}
+
+		if (!swapMutex.try_lock()) {
+			// Can't lock, output silence this frame
+			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
+			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
+			return;
+		}
+
+		// We have the lock now
+		size_t dataSize = audio.dataL.size();
+		if (dataSize == 0) {
+			swapMutex.unlock();
 			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
 			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
 			return;
@@ -226,47 +345,31 @@ struct RDJ_Deck : Module {
 		smoothTempo += (tempo - smoothTempo) * 0.001f;
 
 		size_t pos = (size_t)playPosition;
+		if (pos >= dataSize) pos = 0;
 
-		// Lock for audio access
-		float leftSample = 0.f;
-		float rightSample = 0.f;
-		size_t dataSize = 0;
-		int sampleRate = 44100;
+		float leftSample = audio.dataL[pos];
+		float rightSample = audio.dataR[pos];
+		int sampleRate = audio.sampleRate;
 
-		{
-			std::lock_guard<std::mutex> lock(swapMutex);
-			dataSize = audio.dataL.size();
-
-			if (dataSize > 0 && pos < dataSize) {
-				leftSample = audio.dataL[pos];
-				rightSample = audio.dataR[pos];
-				sampleRate = audio.sampleRate;
-			}
-		}
+		swapMutex.unlock();
 
 		// Output audio (outside lock)
-		if (dataSize > 0 && pos < dataSize) {
-			float gain = muted ? 0.f : 5.f;
-			outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
-			outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
+		float gain = muted ? 0.f : 5.f;
+		outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
+		outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
 
-			// Advance playback
-			double sampleRateRatio = (double)sampleRate / args.sampleRate;
-			playPosition += sampleRateRatio * smoothTempo;
+		// Advance playback
+		double sampleRateRatio = (double)sampleRate / args.sampleRate;
+		playPosition += sampleRateRatio * smoothTempo;
 
-			// Loop or stop at end
-			if (playPosition >= dataSize) {
-				if (looping) {
-					playPosition = 0.0;  // Loop back to start
-				} else {
-					playing = false;  // Stop playback
-					playPosition = 0.0;
-				}
+		// Loop or stop at end
+		if (playPosition >= dataSize) {
+			if (looping) {
+				playPosition = 0.0;  // Loop back to start
+			} else {
+				playing = false;  // Stop playback
+				playPosition = 0.0;
 			}
-		} else {
-			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
-			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
-			playPosition = 0.0;
 		}
 	}
 
@@ -298,7 +401,7 @@ struct OverviewWaveformDisplay : TransparentWidget {
 		nvgStrokeWidth(args.vg, 2);
 		nvgStroke(args.vg);
 
-		if (!module || module->loading || !module->fileLoaded || module->audio.dataL.empty()) {
+		if (!module || module->loading || !module->fileLoaded) {
 			nvgFontSize(args.vg, 10);
 			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -309,12 +412,24 @@ struct OverviewWaveformDisplay : TransparentWidget {
 			return;
 		}
 
-		// Draw entire waveform
-		const size_t dataSize = module->audio.dataL.size();
-		if (dataSize == 0) {
+		// Read atomic size - safe from any thread
+		size_t dataSize = module->audioSize;
+		double playPos = module->playPosition;
+
+		// Double-check flags haven't changed
+		if (module->loading || !module->fileLoaded || dataSize == 0) {
 			Widget::draw(args);
 			return;
 		}
+
+		if (dataSize == 0 || dataSize > 1000000000) {  // Sanity check
+			Widget::draw(args);
+			return;
+		}
+
+		// Draw entire waveform WITHOUT holding the lock
+		// This allows audio thread to run freely
+		// Worst case: we might read slightly stale data during file loading
 		const float samplesPerPixel = (float)dataSize / box.size.x;
 		const float centerY = box.size.y / 2;
 		const float scale = box.size.y * 0.4f;
@@ -325,6 +440,8 @@ struct OverviewWaveformDisplay : TransparentWidget {
 		for (float x = 0; x < box.size.x; x += 1.0f) {
 			size_t startSample = (size_t)(x * samplesPerPixel);
 			size_t endSample = (size_t)((x + 1) * samplesPerPixel);
+
+			if (startSample >= dataSize) break;
 			if (endSample > dataSize) endSample = dataSize;
 
 			float peak = 0.0f;
@@ -334,21 +451,22 @@ struct OverviewWaveformDisplay : TransparentWidget {
 			}
 
 			float height = peak * scale;
-
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, x, centerY - height);
 			nvgLineTo(args.vg, x, centerY + height);
 			nvgStroke(args.vg);
 		}
 
-		// Playhead
-		float playheadX = (module->playPosition / dataSize) * box.size.x;
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, playheadX, 0);
-		nvgLineTo(args.vg, playheadX, box.size.y);
-		nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 200));
-		nvgStrokeWidth(args.vg, 2);
-		nvgStroke(args.vg);
+		// Playhead (drawn without lock)
+		if (dataSize > 0 && playPos >= 0 && playPos < dataSize) {
+			float playheadX = (playPos / dataSize) * box.size.x;
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, playheadX, 0);
+			nvgLineTo(args.vg, playheadX, box.size.y);
+			nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 200));
+			nvgStrokeWidth(args.vg, 2);
+			nvgStroke(args.vg);
+		}
 
 		Widget::draw(args);
 	}
@@ -356,10 +474,13 @@ struct OverviewWaveformDisplay : TransparentWidget {
 	void onButton(const ButtonEvent& e) override {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			if (module && !module->loading && module->fileLoaded) {
-				float newPos = e.pos.x / box.size.x;
-				newPos = clamp(newPos, 0.f, 1.f);
-				module->playPosition = newPos * module->audio.dataL.size();
-				e.consume(this);
+				size_t dataSize = module->audio.dataL.size();
+				if (dataSize > 0) {
+					float newPos = e.pos.x / box.size.x;
+					newPos = clamp(newPos, 0.f, 1.f);
+					module->playPosition = newPos * dataSize;
+					e.consume(this);
+				}
 			}
 		}
 		TransparentWidget::onButton(e);
@@ -367,11 +488,14 @@ struct OverviewWaveformDisplay : TransparentWidget {
 
 	void onDragMove(const DragMoveEvent& e) override {
 		if (module && !module->loading && module->fileLoaded) {
-			float deltaPos = e.mouseDelta.x / box.size.x;
-			module->playPosition += deltaPos * module->audio.dataL.size();
-			if (module->playPosition < 0.0) module->playPosition = 0.0;
-			if (module->playPosition >= module->audio.dataL.size()) {
-				module->playPosition = module->audio.dataL.size() - 1;
+			size_t dataSize = module->audio.dataL.size();
+			if (dataSize > 0) {
+				float deltaPos = e.mouseDelta.x / box.size.x;
+				module->playPosition += deltaPos * dataSize;
+				if (module->playPosition < 0.0) module->playPosition = 0.0;
+				if (module->playPosition >= dataSize) {
+					module->playPosition = dataSize - 1;
+				}
 			}
 		}
 		TransparentWidget::onDragMove(e);
@@ -391,31 +515,41 @@ struct DetailWaveformDisplay : TransparentWidget {
 		nvgStrokeWidth(args.vg, 2);
 		nvgStroke(args.vg);
 
-		if (!module || module->loading || !module->fileLoaded || module->audio.dataL.empty()) {
+		if (!module || module->loading || !module->fileLoaded) {
 			Widget::draw(args);
 			return;
 		}
 
-		const size_t dataSize = module->audio.dataL.size();
-		if (dataSize == 0) {
+		// Read atomic size - safe from any thread
+		size_t dataSize = module->audioSize;
+		double playPos = module->playPosition;
+
+		// Double-check flags haven't changed
+		if (module->loading || !module->fileLoaded || dataSize == 0) {
 			Widget::draw(args);
 			return;
 		}
 
-		// Calculate visible window centered on playhead
+		if (dataSize == 0 || dataSize > 1000000000) {
+			Widget::draw(args);
+			return;
+		}
+
+		// Calculate visible window - ALWAYS centered on playhead
 		const size_t windowSize = dataSize / zoomFactor;
-		size_t centerPos = (size_t)module->playPosition;
+		if (windowSize == 0) {
+			Widget::draw(args);
+			return;
+		}
 
-		// Calculate start/end of visible window
-		size_t startSample = 0;
-		if (centerPos > windowSize / 2) {
-			startSample = centerPos - windowSize / 2;
-		}
-		size_t endSample = startSample + windowSize;
-		if (endSample > dataSize) {
-			endSample = dataSize;
-			startSample = (endSample > windowSize) ? (endSample - windowSize) : 0;
-		}
+		// Clamp playPos to valid range
+		if (playPos < 0) playPos = 0;
+		if (playPos >= dataSize) playPos = dataSize - 1;
+
+		// Calculate window centered on playhead (may go beyond file boundaries)
+		const double halfWindow = windowSize / 2.0;
+		const long long startSample = (long long)playPos - (long long)halfWindow;
+		const long long endSample = startSample + windowSize;
 
 		const float samplesPerPixel = (float)windowSize / box.size.x;
 		const float centerY = box.size.y / 2;
@@ -424,29 +558,34 @@ struct DetailWaveformDisplay : TransparentWidget {
 		nvgStrokeColor(args.vg, REGROOVE_RED);
 		nvgStrokeWidth(args.vg, 1);
 
-		// Draw zoomed waveform
+		// Draw waveform - playhead always at center
 		for (float x = 0; x < box.size.x; x += 1.0f) {
-			size_t sampleStart = startSample + (size_t)(x * samplesPerPixel);
-			size_t sampleEnd = startSample + (size_t)((x + 1) * samplesPerPixel);
-			if (sampleEnd > endSample) sampleEnd = endSample;
-			if (sampleStart >= dataSize) break;
+			long long sampleStart = startSample + (long long)(x * samplesPerPixel);
+			long long sampleEnd = startSample + (long long)((x + 1) * samplesPerPixel);
+
+			// Skip if completely outside valid range
+			if (sampleEnd < 0 || sampleStart >= (long long)dataSize) continue;
+
+			// Clamp to valid range
+			if (sampleStart < 0) sampleStart = 0;
+			if (sampleEnd > (long long)dataSize) sampleEnd = dataSize;
 
 			float peak = 0.0f;
-			for (size_t i = sampleStart; i < sampleEnd && i < dataSize; i++) {
+			for (long long i = sampleStart; i < sampleEnd; i++) {
 				float absVal = fabs(module->audio.dataL[i]);
 				if (absVal > peak) peak = absVal;
 			}
 
 			float height = peak * scale;
-
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, x, centerY - height);
 			nvgLineTo(args.vg, x, centerY + height);
 			nvgStroke(args.vg);
 		}
 
-		// Playhead at center
+		// Playhead ALWAYS at center
 		float playheadX = box.size.x / 2;
+
 		nvgBeginPath(args.vg);
 		nvgMoveTo(args.vg, playheadX, 0);
 		nvgLineTo(args.vg, playheadX, box.size.y);
@@ -461,15 +600,23 @@ struct DetailWaveformDisplay : TransparentWidget {
 		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
 			if (module && !module->loading && module->fileLoaded) {
 				const size_t dataSize = module->audio.dataL.size();
-				const size_t windowSize = dataSize / zoomFactor;
+				if (dataSize > 0) {
+					const size_t windowSize = dataSize / zoomFactor;
+					if (windowSize > 0) {
+						// Calculate click position relative to window
+						float relativeX = (e.pos.x / box.size.x) - 0.5f;  // -0.5 to 0.5
+						double currentPos = module->playPosition;
+						if (currentPos < 0) currentPos = 0;
+						if (currentPos >= dataSize) currentPos = dataSize - 1;
 
-				// Calculate click position relative to window
-				float relativeX = (e.pos.x / box.size.x) - 0.5f;  // -0.5 to 0.5
-				size_t newPos = (size_t)module->playPosition + (size_t)(relativeX * windowSize);
-
-				if (newPos >= dataSize) newPos = dataSize - 1;
-				module->playPosition = newPos;
-				e.consume(this);
+						double offset = relativeX * (double)windowSize;
+						double newPos = currentPos + offset;
+						if (newPos < 0) newPos = 0;
+						if (newPos >= dataSize) newPos = dataSize - 1;
+						module->playPosition = newPos;
+						e.consume(this);
+					}
+				}
 			}
 		}
 		TransparentWidget::onButton(e);
@@ -478,12 +625,16 @@ struct DetailWaveformDisplay : TransparentWidget {
 	void onDragMove(const DragMoveEvent& e) override {
 		if (module && !module->loading && module->fileLoaded) {
 			const size_t dataSize = module->audio.dataL.size();
-			const size_t windowSize = dataSize / zoomFactor;
-			float deltaPos = e.mouseDelta.x / box.size.x;
-			module->playPosition += deltaPos * windowSize;
-			if (module->playPosition < 0.0) module->playPosition = 0.0;
-			if (module->playPosition >= dataSize) {
-				module->playPosition = dataSize - 1;
+			if (dataSize > 0) {
+				const size_t windowSize = dataSize / zoomFactor;
+				if (windowSize > 0) {
+					float deltaPos = e.mouseDelta.x / box.size.x;
+					module->playPosition += deltaPos * windowSize;
+					if (module->playPosition < 0.0) module->playPosition = 0.0;
+					if (module->playPosition >= dataSize) {
+						module->playPosition = dataSize - 1;
+					}
+				}
 			}
 		}
 		TransparentWidget::onDragMove(e);
@@ -548,14 +699,14 @@ struct RDJ_DeckWidget : ModuleWidget {
 		// Overview waveform display (top)
 		OverviewWaveformDisplay* overview = new OverviewWaveformDisplay();
 		overview->box.pos = mm2px(Vec(3, 16));
-		overview->box.size = mm2px(Vec(54.96, 12));
+		overview->box.size = mm2px(Vec(54.96, 10));
 		overview->module = module;
 		addChild(overview);
 
 		// Detail waveform display (bottom, scrolls with playback)
 		DetailWaveformDisplay* detail = new DetailWaveformDisplay();
-		detail->box.pos = mm2px(Vec(3, 28));
-		detail->box.size = mm2px(Vec(54.96, 23));
+		detail->box.pos = mm2px(Vec(3, 26));
+		detail->box.size = mm2px(Vec(54.96, 25));
 		detail->module = module;
 		addChild(detail);
 

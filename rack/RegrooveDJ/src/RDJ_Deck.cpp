@@ -199,6 +199,8 @@ struct RDJ_Deck : Module {
 		INPUTS_LEN
 	};
 	enum OutputId {
+		PFL_L_OUTPUT,
+		PFL_R_OUTPUT,
 		AUDIO_L_OUTPUT,
 		AUDIO_R_OUTPUT,
 		OUTPUTS_LEN
@@ -213,6 +215,7 @@ struct RDJ_Deck : Module {
 	std::atomic<bool> fileLoaded{false};
 	std::atomic<bool> muted{false};
 	std::atomic<bool> looping{true};  // Loop enabled by default
+	std::atomic<bool> pflActive{false};  // PFL (Pre-Fader Listening) state
 	float smoothTempo = 1.0f;
 	std::atomic<bool> loading{false};  // Track if currently loading
 	std::atomic<bool> shouldStopLoading{false};  // Signal to stop loading thread
@@ -229,8 +232,10 @@ struct RDJ_Deck : Module {
 		configButton(PAD4_PARAM, "Loop");
 		configButton(PAD5_PARAM, "Mute");
 		configButton(PAD6_PARAM, "PFL");
-		configParam(TEMPO_PARAM, 0.5f, 1.5f, 1.0f, "Tempo", "%", 0.f, 100.f);
+		configParam(TEMPO_PARAM, 0.9f, 1.1f, 1.0f, "Tempo", "%", -100.f, 100.f, -100.f);
 
+		configOutput(PFL_L_OUTPUT, "PFL Left");
+		configOutput(PFL_R_OUTPUT, "PFL Right");
 		configOutput(AUDIO_L_OUTPUT, "Left audio");
 		configOutput(AUDIO_R_OUTPUT, "Right audio");
 	}
@@ -318,6 +323,12 @@ struct RDJ_Deck : Module {
 			params[PAD5_PARAM].setValue(0.f);
 		}
 
+		// Handle PFL button (PAD6) - toggle PFL state
+		if (params[PAD6_PARAM].getValue() > 0.5f) {
+			pflActive = !pflActive;
+			params[PAD6_PARAM].setValue(0.f);
+		}
+
 		// Playback - try to lock, skip if we can't
 		if (loading || !playing || !fileLoaded) {
 			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
@@ -357,6 +368,15 @@ struct RDJ_Deck : Module {
 		float gain = muted ? 0.f : 5.f;
 		outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
 		outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
+
+		// PFL output (Pre-Fader Listening - always at full level when active)
+		if (pflActive) {
+			outputs[PFL_L_OUTPUT].setVoltage(leftSample * 5.f);
+			outputs[PFL_R_OUTPUT].setVoltage(rightSample * 5.f);
+		} else {
+			outputs[PFL_L_OUTPUT].setVoltage(0.f);
+			outputs[PFL_R_OUTPUT].setVoltage(0.f);
+		}
 
 		// Advance playback
 		double sampleRateRatio = (double)sampleRate / args.sampleRate;
@@ -669,6 +689,13 @@ struct DeckPad : RegroovePad {
 			} else {
 				setPadState(0);  // GREY = state 0
 			}
+		} else if (module && padIndex == 5) {
+			// PFL pad - show GREEN when active
+			if (module->pflActive) {
+				setPadState(2);  // GREEN = state 2
+			} else {
+				setPadState(0);  // GREY = state 0
+			}
 		} else {
 			setPadState(0);
 		}
@@ -752,7 +779,7 @@ struct RDJ_DeckWidget : ModuleWidget {
 		DeckPad* pad6 = createParam<DeckPad>(mm2px(Vec(padStartX + padSize + padSpacing, padStartY + (padSize + padSpacing) * 2)), module, RDJ_Deck::PAD6_PARAM);
 		pad6->module = module;
 		pad6->padIndex = 5;
-		pad6->label = "";  // No label
+		pad6->label = "PFL";
 		addParam(pad6);
 
 		// Tempo fader - THICKER for visibility
@@ -775,17 +802,29 @@ struct RDJ_DeckWidget : ModuleWidget {
 		tempoLabel->fontSize = 7.0;
 		addChild(tempoLabel);
 
-		// Audio outputs
+		// PFL outputs (left side)
+		RegrooveLabel* pflLabel = new RegrooveLabel();
+		pflLabel->box.pos = mm2px(Vec(7.5, 110));
+		pflLabel->box.size = mm2px(Vec(9, 3));
+		pflLabel->text = "PFL";
+		pflLabel->fontSize = 7.0;
+		pflLabel->align = NVG_ALIGN_CENTER;
+		addChild(pflLabel);
+
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(7.5, 118.0)), module, RDJ_Deck::PFL_L_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(16.5, 118.0)), module, RDJ_Deck::PFL_R_OUTPUT));
+
+		// Audio outputs (right side)
 		RegrooveLabel* outLabel = new RegrooveLabel();
-		outLabel->box.pos = mm2px(Vec(20, 110));
-		outLabel->box.size = mm2px(Vec(20.96, 3));
+		outLabel->box.pos = mm2px(Vec(38, 110));
+		outLabel->box.size = mm2px(Vec(20, 3));
 		outLabel->text = "Out";
 		outLabel->fontSize = 7.0;
 		outLabel->align = NVG_ALIGN_CENTER;
 		addChild(outLabel);
 
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(25.48, 118.0)), module, RDJ_Deck::AUDIO_L_OUTPUT));
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(35.48, 118.0)), module, RDJ_Deck::AUDIO_R_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(43.48, 118.0)), module, RDJ_Deck::AUDIO_L_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(53.48, 118.0)), module, RDJ_Deck::AUDIO_R_OUTPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {

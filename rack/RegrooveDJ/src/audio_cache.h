@@ -26,6 +26,7 @@ typedef struct {
     float bpm;                 // Detected BPM (0 if not detected)
     size_t num_frames;         // Number of waveform frames
     size_t downsample;         // Downsample factor used
+    size_t first_beat;         // First beat position in samples (beat grid offset)
 } AudioCacheMetadata;
 
 // Complete cached audio data
@@ -69,7 +70,7 @@ bool audio_cache_load(
 /**
  * Save waveform data to cache file
  * @param audio_path Path to original audio file
- * @param metadata Cache metadata
+ * @param metadata Cache metadata (includes first_beat offset)
  * @param frames Array of waveform frames
  * @param num_frames Number of frames
  * @return true on success, false on failure

@@ -64,6 +64,20 @@ float detect_bpm(
     int sample_rate
 );
 
+/**
+ * Detect first beat position (beat grid alignment offset)
+ *
+ * @param audio_data     Float array of mono audio samples
+ * @param num_samples    Number of samples in audio_data
+ * @param sample_rate    Sample rate of the audio
+ * @return Position in samples of first detected beat (0 if detection failed)
+ */
+size_t detect_first_beat(
+    const float* audio_data,
+    size_t num_samples,
+    int sample_rate
+);
+
 #ifdef __cplusplus
 }
 #endif

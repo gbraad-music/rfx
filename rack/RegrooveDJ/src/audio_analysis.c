@@ -145,20 +145,28 @@ bool analyze_audio_waveform(
 #endif
 }
 
-float detect_bpm(
+// Shared tempo detector result structure (for BPM and first beat)
+typedef struct {
+    float bpm;
+    size_t first_beat;
+} TempoResult;
+
+static TempoResult detect_tempo_and_beats(
     const float* audio_data,
     size_t num_samples,
     int sample_rate
 ) {
+    TempoResult result = {0.0f, 0};
+
     if (!audio_data || num_samples == 0) {
-        return 0.0f;
+        return result;
     }
 
 #ifdef USE_AUBIO
     // Create aubio tempo detector
     aubio_tempo_t *tempo = new_aubio_tempo("default", AUBIO_WIN_SIZE, AUBIO_HOP_SIZE, sample_rate);
     if (!tempo) {
-        return 0.0f;
+        return result;
     }
 
     // Create input buffer
@@ -169,10 +177,11 @@ float detect_bpm(
         if (tempo) del_aubio_tempo(tempo);
         if (input_buf) del_fvec(input_buf);
         if (output) del_fvec(output);
-        return 0.0f;
+        return result;
     }
 
     // Process audio in chunks
+    bool first_beat_found = false;
     for (size_t pos = 0; pos + AUBIO_HOP_SIZE <= num_samples; pos += AUBIO_HOP_SIZE) {
         // Copy samples to aubio buffer
         for (size_t i = 0; i < AUBIO_HOP_SIZE; i++) {
@@ -181,20 +190,43 @@ float detect_bpm(
 
         // Process chunk
         aubio_tempo_do(tempo, input_buf, output);
+
+        // Check if beat detected and record first beat
+        if (!first_beat_found && output->data[0] != 0) {
+            result.first_beat = aubio_tempo_get_last(tempo);
+            first_beat_found = true;
+        }
     }
 
     // Get detected BPM
-    float bpm = aubio_tempo_get_bpm(tempo);
+    result.bpm = aubio_tempo_get_bpm(tempo);
 
     // Cleanup
     del_aubio_tempo(tempo);
     del_fvec(input_buf);
     del_fvec(output);
 
-    return bpm;
+    return result;
 
 #else
-    // No BPM detection without aubio
-    return 0.0f;
+    return result;
 #endif
+}
+
+float detect_bpm(
+    const float* audio_data,
+    size_t num_samples,
+    int sample_rate
+) {
+    TempoResult result = detect_tempo_and_beats(audio_data, num_samples, sample_rate);
+    return result.bpm;
+}
+
+size_t detect_first_beat(
+    const float* audio_data,
+    size_t num_samples,
+    int sample_rate
+) {
+    TempoResult result = detect_tempo_and_beats(audio_data, num_samples, sample_rate);
+    return result.first_beat;
 }

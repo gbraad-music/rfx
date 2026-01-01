@@ -157,6 +157,8 @@ bool audio_cache_load(
                 cache_out->metadata.downsample = (size_t)atoi(v);
             } else if (strcmp(k, "waveform_length") == 0) {
                 cache_out->metadata.num_frames = (size_t)atoi(v);
+            } else if (strcmp(k, "first_beat") == 0) {
+                cache_out->metadata.first_beat = (size_t)atoll(v);
             }
         }
     }
@@ -242,6 +244,7 @@ bool audio_cache_save(
     fprintf(f, "duration=%.6f\n", metadata->duration);
     fprintf(f, "waveform_downsample=%zu\n", metadata->downsample);
     fprintf(f, "waveform_length=%zu\n", num_frames);
+    fprintf(f, "first_beat=%zu\n", metadata->first_beat);
     fprintf(f, "\n");
 
     fclose(f);

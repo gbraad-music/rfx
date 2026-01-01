@@ -29,7 +29,8 @@ struct AudioFile {
 
 	// Cached waveform data for visualization and analysis
 	std::vector<WaveformFrame> waveformFrames;
-	float bpm = 0.0f;  // Detected BPM (0 if not detected)
+	float bpm = 0.0f;       // Detected BPM (0 if not detected)
+	size_t firstBeat = 0;  // First beat position (beat grid offset)
 
 	bool load(const std::string& path) {
 		// Detect file type by extension
@@ -204,9 +205,13 @@ struct AudioFile {
 					waveformFrames[i] = cache.frames[i];
 				}
 				bpm = cache.metadata.bpm;
+
+				// Load first beat offset
+				firstBeat = cache.metadata.first_beat;
+				INFO("Loaded cached waveform data: %zu frames, BPM %.1f, first beat at %zu samples",
+				     waveformFrames.size(), bpm, firstBeat);
+
 				audio_cache_free(&cache);
-				INFO("Loaded cached waveform data: %zu frames, BPM %.1f",
-				     waveformFrames.size(), bpm);
 				return true;
 			}
 		}
@@ -245,6 +250,11 @@ struct AudioFile {
 			INFO("Detected BPM: %.1f", bpm);
 		}
 
+		// Detect first beat position for beat grid alignment
+		firstBeat = detect_first_beat(dataL.data(), dataL.size(), sampleRate);
+		INFO("First beat detection: sample %zu (%.2f ms)",
+		     firstBeat, (firstBeat * 1000.0f) / sampleRate);
+
 		// Save to cache
 		AudioCacheMetadata metadata;
 		snprintf(metadata.original_path, sizeof(metadata.original_path), "%s", path.c_str());
@@ -255,6 +265,7 @@ struct AudioFile {
 		metadata.bpm = bpm;
 		metadata.num_frames = num_frames;
 		metadata.downsample = WAVEFORM_DOWNSAMPLE;
+		metadata.first_beat = firstBeat;
 
 		if (audio_cache_save(path.c_str(), &metadata, waveformFrames.data(), num_frames)) {
 			INFO("Saved waveform cache");
@@ -296,9 +307,12 @@ struct RDJ_Deck : Module {
 	std::atomic<bool> playing{false};
 	std::atomic<bool> fileLoaded{false};
 	std::atomic<bool> muted{false};
-	std::atomic<bool> looping{true};  // Loop enabled by default
+	std::atomic<bool> looping{false};  // 4-beat loop mode (default off)
+	std::atomic<bool> repeatFile{true};  // Repeat entire file (default on)
 	std::atomic<bool> pflActive{false};  // PFL (Pre-Fader Listening) state
 	float smoothTempo = 1.0f;
+	size_t loopStartSample = 0;  // Loop start position
+	size_t loopEndSample = 0;    // Loop end position
 	std::atomic<bool> loading{false};  // Track if currently loading
 	std::atomic<bool> shouldStopLoading{false};  // Signal to stop loading thread
 	std::mutex swapMutex;  // ONLY for protecting audio data swap
@@ -309,7 +323,7 @@ struct RDJ_Deck : Module {
 	RDJ_Deck() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
-		configButton(PAD1_PARAM, "Sync");
+		configButton(PAD1_PARAM, "RPT");
 		configButton(PLAY_PARAM, "Play/Stop");
 		configButton(PAD3_PARAM, "Cue");
 		configButton(PAD4_PARAM, "Loop");
@@ -411,9 +425,52 @@ struct RDJ_Deck : Module {
 			params[PLAY_PARAM].setValue(0.f);
 		}
 
-		// Handle loop button (PAD4) - toggle loop state
+		// Handle RPT button (PAD1) - toggle repeat file state
+		if (params[PAD1_PARAM].getValue() > 0.5f) {
+			repeatFile = !repeatFile;
+			params[PAD1_PARAM].setValue(0.f);
+		}
+
+		// Handle loop button (PAD4) - toggle 4-beat loop mode
 		if (params[PAD4_PARAM].getValue() > 0.5f) {
 			looping = !looping;
+
+			// When enabling loop, snap to nearest beat and create 4-beat loop
+			if (looping && fileLoaded) {
+				std::lock_guard<std::mutex> lock(swapMutex);
+				if (audio.bpm > 0.0f) {
+					float samplesPerBeat = (60.0f / audio.bpm) * audio.sampleRate;
+					size_t currentPos = (size_t)playPosition;
+					size_t gridOffset = audio.firstBeat;
+
+					// Find which beat we're closest to
+					long long beatsFromOffset = (long long)((currentPos - gridOffset) / samplesPerBeat);
+
+					// Round to nearest beat
+					double fractionalBeat = (currentPos - gridOffset) / samplesPerBeat;
+					long long nearestBeat = (long long)(fractionalBeat + 0.5);
+
+					// Loop starts at the nearest beat position and extends 4 beats
+					loopStartSample = gridOffset + (size_t)(nearestBeat * samplesPerBeat);
+					loopEndSample = gridOffset + (size_t)((nearestBeat + 4) * samplesPerBeat);
+
+					// Clamp to file bounds
+					if (loopStartSample >= audioSize) {
+						loopStartSample = 0;
+					}
+					if (loopEndSample > audioSize) {
+						loopEndSample = audioSize;
+					}
+
+					INFO("Loop enabled: 4 beats from beat %lld (samples %zu-%zu)",
+					     nearestBeat, loopStartSample, loopEndSample);
+				} else {
+					// No BPM - disable loop
+					looping = false;
+					WARN("Cannot enable loop: no BPM detected");
+				}
+			}
+
 			params[PAD4_PARAM].setValue(0.f);
 		}
 
@@ -474,10 +531,16 @@ struct RDJ_Deck : Module {
 		double sampleRateRatio = (double)sampleRate / args.sampleRate;
 		playPosition += sampleRateRatio * smoothTempo;
 
-		// Loop or stop at end
-		if (playPosition >= dataSize) {
-			if (looping) {
-				playPosition = 0.0;  // Loop back to start
+		// Handle looping
+		if (looping && loopEndSample > loopStartSample) {
+			// 4-beat loop mode
+			if (playPosition >= loopEndSample) {
+				playPosition = loopStartSample;
+			}
+		} else if (playPosition >= dataSize) {
+			// End of file
+			if (repeatFile) {
+				playPosition = 0.0;  // Repeat entire file
 			} else {
 				playing = false;  // Stop playback
 				playPosition = 0.0;
@@ -711,7 +774,6 @@ struct DetailWaveformDisplay : TransparentWidget {
 		// Calculate window centered on playhead (may go beyond file boundaries)
 		const double halfWindow = windowSize / 2.0;
 		const long long startSample = (long long)playPos - (long long)halfWindow;
-		const long long endSample = startSample + windowSize;
 
 		const float samplesPerPixel = (float)windowSize / box.size.x;
 		const float centerY = box.size.y / 2;
@@ -782,26 +844,40 @@ struct DetailWaveformDisplay : TransparentWidget {
 			nvgStroke(args.vg);
 		}
 
-		// Get BPM before unlocking
+		// Get beat grid data and loop info before unlocking
 		float bpm = module->audio.bpm;
+		size_t firstBeat = module->audio.firstBeat;
 		int sampleRate = module->audio.sampleRate;
+		bool looping = module->looping;
+		size_t loopStart = module->loopStartSample;
+		size_t loopEnd = module->loopEndSample;
 
 		module->swapMutex.unlock();
 
-		// Draw beat markers if BPM is detected
-		if (bpm > 0.0f && bpm < 300.0f) {  // Sanity check
-			float secondsPerBeat = 60.0f / bpm;
-			float samplesPerBeat = secondsPerBeat * sampleRate;
-
-			// Find first beat marker in visible window
+		// Draw beat grid using BPM and first beat offset
+		if (bpm > 0.0f && bpm < 300.0f) {
+			float samplesPerBeat = (60.0f / bpm) * sampleRate;
 			double windowStartSample = playPos - (windowSize / 2.0);
-			double firstBeatSample = ceil(windowStartSample / samplesPerBeat) * samplesPerBeat;
+			double windowEndSample = windowStartSample + windowSize;
 
-			// Draw beat markers within visible window
+			// Use firstBeat as offset (0 if not detected)
+			// Grid extends backwards and forwards from this point
+			size_t gridOffset = firstBeat;
+
+			// Find first beat marker in visible window (allow negative beat numbers)
+			long long beatNumber = (long long)((windowStartSample - gridOffset) / samplesPerBeat);
+			// Don't clamp to 0 - allow grid to extend before first detected beat
+
 			nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 60));
 			nvgStrokeWidth(args.vg, 1);
 
-			for (double beatSample = firstBeatSample; beatSample < windowStartSample + windowSize; beatSample += samplesPerBeat) {
+			// Draw beat markers within visible window
+			for (long long bn = beatNumber; ; bn++) {
+				double beatSample = gridOffset + bn * samplesPerBeat;
+
+				if (beatSample > windowEndSample) break;
+				if (beatSample < windowStartSample) continue;
+
 				// Convert beat sample position to screen X coordinate
 				double relativePos = beatSample - windowStartSample;
 				float beatX = (float)(relativePos / windowSize * box.size.x);
@@ -815,7 +891,34 @@ struct DetailWaveformDisplay : TransparentWidget {
 			}
 		}
 
-		// Playhead ALWAYS at center (drawn on top of beat markers)
+		// Draw yellow loop region overlay (if looping)
+		if (looping && loopEnd > loopStart) {
+			double windowStartSample = playPos - (windowSize / 2.0);
+			double windowEndSample = windowStartSample + windowSize;
+
+			// Check if loop region is visible in current window
+			if ((double)loopEnd >= windowStartSample && (double)loopStart <= windowEndSample) {
+				// Calculate screen coordinates for loop region
+				double loopStartRelative = (double)loopStart - windowStartSample;
+				double loopEndRelative = (double)loopEnd - windowStartSample;
+
+				// Convert to pixel coordinates
+				float loopStartX = (float)(loopStartRelative / windowSize * box.size.x);
+				float loopEndX = (float)(loopEndRelative / windowSize * box.size.x);
+
+				// Clamp to visible area
+				if (loopStartX < 0) loopStartX = 0;
+				if (loopEndX > box.size.x) loopEndX = box.size.x;
+
+				// Draw yellow overlay with 50% opacity
+				nvgBeginPath(args.vg);
+				nvgRect(args.vg, loopStartX, 0, loopEndX - loopStartX, box.size.y);
+				nvgFillColor(args.vg, nvgRGBA(255, 255, 0, 128));  // Yellow 50% opacity
+				nvgFill(args.vg);
+			}
+		}
+
+		// Playhead ALWAYS at center (drawn on top of beat markers and loop overlay)
 		float playheadX = box.size.x / 2;
 
 		nvgBeginPath(args.vg);
@@ -878,17 +981,24 @@ struct DeckPad : RegroovePad {
 	int padIndex;
 
 	void step() override {
-		if (module && padIndex == 1) {
-			// PLAY pad - show red when playing
-			if (module->playing) {
-				setPadState(2);
-			} else if (module->fileLoaded) {
-				setPadState(1);
+		if (module && padIndex == 0) {
+			// RPT pad - show YELLOW when repeat file is on
+			if (module->repeatFile) {
+				setPadState(3);  // YELLOW = state 3
 			} else {
-				setPadState(0);
+				setPadState(0);  // GREY = state 0
+			}
+		} else if (module && padIndex == 1) {
+			// PLAY pad - show GREEN when playing
+			if (module->playing) {
+				setPadState(2);  // GREEN = state 2
+			} else if (module->fileLoaded) {
+				setPadState(1);  // RED = state 1
+			} else {
+				setPadState(0);  // GREY = state 0
 			}
 		} else if (module && padIndex == 3) {
-			// LOOP pad - show YELLOW when looping enabled
+			// LOOP pad - show YELLOW when 4-beat loop enabled
 			if (module->looping) {
 				setPadState(3);  // YELLOW = state 3
 			} else {
@@ -959,7 +1069,7 @@ struct RDJ_DeckWidget : ModuleWidget {
 		DeckPad* pad1 = createParam<DeckPad>(mm2px(Vec(padStartX, padStartY)), module, RDJ_Deck::PAD1_PARAM);
 		pad1->module = module;
 		pad1->padIndex = 0;
-		pad1->label = "";  // No label
+		pad1->label = "RPT";
 		addParam(pad1);
 
 		DeckPad* playPad = createParam<DeckPad>(mm2px(Vec(padStartX + padSize + padSpacing, padStartY)), module, RDJ_Deck::PLAY_PARAM);

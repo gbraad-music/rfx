@@ -286,11 +286,12 @@ struct RDJ_Deck : Module {
 	}
 };
 
-struct WaveformDisplay : TransparentWidget {
+// Overview waveform - shows entire file with playhead
+struct OverviewWaveformDisplay : TransparentWidget {
 	RDJ_Deck* module;
 
 	void draw(const DrawArgs& args) override {
-		// Red border (NO grey background - transparent)
+		// Red border
 		nvgBeginPath(args.vg);
 		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
 		nvgStrokeColor(args.vg, REGROOVE_RED);
@@ -308,7 +309,7 @@ struct WaveformDisplay : TransparentWidget {
 			return;
 		}
 
-		// Draw waveform - EACH LINE SEPARATE to avoid solid block
+		// Draw entire waveform
 		const size_t dataSize = module->audio.dataL.size();
 		if (dataSize == 0) {
 			Widget::draw(args);
@@ -334,7 +335,6 @@ struct WaveformDisplay : TransparentWidget {
 
 			float height = peak * scale;
 
-			// SEPARATE path for each line
 			nvgBeginPath(args.vg);
 			nvgMoveTo(args.vg, x, centerY - height);
 			nvgLineTo(args.vg, x, centerY + height);
@@ -372,6 +372,118 @@ struct WaveformDisplay : TransparentWidget {
 			if (module->playPosition < 0.0) module->playPosition = 0.0;
 			if (module->playPosition >= module->audio.dataL.size()) {
 				module->playPosition = module->audio.dataL.size() - 1;
+			}
+		}
+		TransparentWidget::onDragMove(e);
+	}
+};
+
+// Detail waveform - shows zoomed view that scrolls with playback
+struct DetailWaveformDisplay : TransparentWidget {
+	RDJ_Deck* module;
+	float zoomFactor = 30.0f;  // Show 1/30th of the file at a time
+
+	void draw(const DrawArgs& args) override {
+		// Red border
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+		nvgStrokeColor(args.vg, REGROOVE_RED);
+		nvgStrokeWidth(args.vg, 2);
+		nvgStroke(args.vg);
+
+		if (!module || module->loading || !module->fileLoaded || module->audio.dataL.empty()) {
+			Widget::draw(args);
+			return;
+		}
+
+		const size_t dataSize = module->audio.dataL.size();
+		if (dataSize == 0) {
+			Widget::draw(args);
+			return;
+		}
+
+		// Calculate visible window centered on playhead
+		const size_t windowSize = dataSize / zoomFactor;
+		size_t centerPos = (size_t)module->playPosition;
+
+		// Calculate start/end of visible window
+		size_t startSample = 0;
+		if (centerPos > windowSize / 2) {
+			startSample = centerPos - windowSize / 2;
+		}
+		size_t endSample = startSample + windowSize;
+		if (endSample > dataSize) {
+			endSample = dataSize;
+			startSample = (endSample > windowSize) ? (endSample - windowSize) : 0;
+		}
+
+		const float samplesPerPixel = (float)windowSize / box.size.x;
+		const float centerY = box.size.y / 2;
+		const float scale = box.size.y * 0.4f;
+
+		nvgStrokeColor(args.vg, REGROOVE_RED);
+		nvgStrokeWidth(args.vg, 1);
+
+		// Draw zoomed waveform
+		for (float x = 0; x < box.size.x; x += 1.0f) {
+			size_t sampleStart = startSample + (size_t)(x * samplesPerPixel);
+			size_t sampleEnd = startSample + (size_t)((x + 1) * samplesPerPixel);
+			if (sampleEnd > endSample) sampleEnd = endSample;
+			if (sampleStart >= dataSize) break;
+
+			float peak = 0.0f;
+			for (size_t i = sampleStart; i < sampleEnd && i < dataSize; i++) {
+				float absVal = fabs(module->audio.dataL[i]);
+				if (absVal > peak) peak = absVal;
+			}
+
+			float height = peak * scale;
+
+			nvgBeginPath(args.vg);
+			nvgMoveTo(args.vg, x, centerY - height);
+			nvgLineTo(args.vg, x, centerY + height);
+			nvgStroke(args.vg);
+		}
+
+		// Playhead at center
+		float playheadX = box.size.x / 2;
+		nvgBeginPath(args.vg);
+		nvgMoveTo(args.vg, playheadX, 0);
+		nvgLineTo(args.vg, playheadX, box.size.y);
+		nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 200));
+		nvgStrokeWidth(args.vg, 2);
+		nvgStroke(args.vg);
+
+		Widget::draw(args);
+	}
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			if (module && !module->loading && module->fileLoaded) {
+				const size_t dataSize = module->audio.dataL.size();
+				const size_t windowSize = dataSize / zoomFactor;
+
+				// Calculate click position relative to window
+				float relativeX = (e.pos.x / box.size.x) - 0.5f;  // -0.5 to 0.5
+				size_t newPos = (size_t)module->playPosition + (size_t)(relativeX * windowSize);
+
+				if (newPos >= dataSize) newPos = dataSize - 1;
+				module->playPosition = newPos;
+				e.consume(this);
+			}
+		}
+		TransparentWidget::onButton(e);
+	}
+
+	void onDragMove(const DragMoveEvent& e) override {
+		if (module && !module->loading && module->fileLoaded) {
+			const size_t dataSize = module->audio.dataL.size();
+			const size_t windowSize = dataSize / zoomFactor;
+			float deltaPos = e.mouseDelta.x / box.size.x;
+			module->playPosition += deltaPos * windowSize;
+			if (module->playPosition < 0.0) module->playPosition = 0.0;
+			if (module->playPosition >= dataSize) {
+				module->playPosition = dataSize - 1;
 			}
 		}
 		TransparentWidget::onDragMove(e);
@@ -433,12 +545,19 @@ struct RDJ_DeckWidget : ModuleWidget {
 		titleLabel->bold = true;
 		addChild(titleLabel);
 
-		// Waveform display
-		WaveformDisplay* waveform = new WaveformDisplay();
-		waveform->box.pos = mm2px(Vec(3, 16));
-		waveform->box.size = mm2px(Vec(54.96, 35));
-		waveform->module = module;
-		addChild(waveform);
+		// Overview waveform display (top)
+		OverviewWaveformDisplay* overview = new OverviewWaveformDisplay();
+		overview->box.pos = mm2px(Vec(3, 16));
+		overview->box.size = mm2px(Vec(54.96, 12));
+		overview->module = module;
+		addChild(overview);
+
+		// Detail waveform display (bottom, scrolls with playback)
+		DetailWaveformDisplay* detail = new DetailWaveformDisplay();
+		detail->box.pos = mm2px(Vec(3, 28));
+		detail->box.size = mm2px(Vec(54.96, 23));
+		detail->module = module;
+		addChild(detail);
 
 		// Pad grid - positioned in red box area with VISIBLE spacing
 		float padStartX = 5;

@@ -246,13 +246,16 @@ struct AudioFile {
 
 		// Detect BPM
 		bpm = detect_bpm(dataL.data(), dataL.size(), sampleRate);
-		if (bpm > 0.0f) {
-			INFO("Detected BPM: %.1f", bpm);
+		INFO("Beat detection: BPM=%.1f", bpm);
+		if (bpm > 0.0f && bpm < 300.0f) {
+			INFO("  Valid BPM detected: %.1f", bpm);
+		} else {
+			WARN("  Invalid or no BPM detected (%.1f) - looping will not work!", bpm);
 		}
 
 		// Detect first beat position for beat grid alignment
 		firstBeat = detect_first_beat(dataL.data(), dataL.size(), sampleRate);
-		INFO("First beat detection: sample %zu (%.2f ms)",
+		INFO("  First beat offset: sample %zu (%.2f ms)",
 		     firstBeat, (firstBeat * 1000.0f) / sampleRate);
 
 		// Save to cache

@@ -218,18 +218,30 @@ static TempoResult detect_tempo_and_beats(
         }
     }
 
+    // Debug: Log how many beats were detected
+    #ifdef USE_AUBIO
+    // Note: This will show in VCV Rack's log.txt
+    if (num_beats == 0) {
+        // No beats detected - this will cause BPM detection to fail
+    }
+    #endif
+
     // Robust beat grid alignment using multiple beats
     if (num_beats >= 4) {
+        // Skip first 1-2 beats - they're often noisy (Mixxx does this too)
+        size_t beats_to_skip = (num_beats > 10) ? 2 : 1;
+        size_t valid_beats = num_beats - beats_to_skip;
+
         // Calculate BPM from median beat spacing (more robust than mean)
-        double* spacings = malloc(sizeof(double) * (num_beats - 1));
+        double* spacings = malloc(sizeof(double) * valid_beats);
         if (spacings) {
-            for (size_t i = 1; i < num_beats; i++) {
-                spacings[i-1] = (double)(beat_positions[i] - beat_positions[i-1]);
+            for (size_t i = beats_to_skip + 1; i < num_beats; i++) {
+                spacings[i - beats_to_skip - 1] = (double)(beat_positions[i] - beat_positions[i-1]);
             }
 
             // Simple median calculation
-            for (size_t i = 0; i < num_beats - 2; i++) {
-                for (size_t j = i + 1; j < num_beats - 1; j++) {
+            for (size_t i = 0; i < valid_beats - 1; i++) {
+                for (size_t j = i + 1; j < valid_beats; j++) {
                     if (spacings[i] > spacings[j]) {
                         double temp = spacings[i];
                         spacings[i] = spacings[j];
@@ -238,26 +250,28 @@ static TempoResult detect_tempo_and_beats(
                 }
             }
 
-            double median_spacing = spacings[(num_beats - 1) / 2];
+            double median_spacing = spacings[valid_beats / 2];
             result.bpm = (60.0 * sample_rate) / median_spacing;
 
             // Find best offset by testing different phases
             // This finds which offset makes the grid align best with detected beats
             double best_offset = 0;
             double best_score = 0;
-            int test_steps = 200;
+            int test_steps = 400;  // Increased resolution for better accuracy
 
             for (int step = 0; step < test_steps; step++) {
                 double test_offset = (median_spacing * step) / test_steps;
                 double score = 0;
 
                 // Score based on how close detected beats are to grid positions
-                for (size_t i = 0; i < num_beats; i++) {
+                // Use beats after skipping the noisy ones
+                for (size_t i = beats_to_skip; i < num_beats; i++) {
                     double beat_phase = fmod(beat_positions[i] - test_offset + median_spacing, median_spacing);
                     // Distance to nearest grid line
                     double distance = fmin(beat_phase, median_spacing - beat_phase);
-                    // Score: closer = higher
-                    score += 1.0 / (1.0 + distance / median_spacing);
+                    // Score: closer = higher (exponential weighting for precision)
+                    double normalized_distance = distance / median_spacing;
+                    score += 1.0 / (1.0 + normalized_distance * normalized_distance * 100.0);
                 }
 
                 if (score > best_score) {
@@ -266,12 +280,31 @@ static TempoResult detect_tempo_and_beats(
                 }
             }
 
+            // CRITICAL FIX (from Mixxx): If track starts very close to 50% between beats,
+            // the actual first beat is likely at that position (common off-by-half-beat error)
+            double first_sample_phase = fmod(best_offset, median_spacing) / median_spacing;
+            if (first_sample_phase > 0.4 && first_sample_phase < 0.6) {
+                // Track starts near halfway between beats - shift grid by half beat
+                best_offset += median_spacing * 0.5;
+                if (best_offset >= median_spacing) {
+                    best_offset -= median_spacing;
+                }
+            }
+
+            // Ensure offset is within one beat period
+            while (best_offset >= median_spacing) {
+                best_offset -= median_spacing;
+            }
+            while (best_offset < 0) {
+                best_offset += median_spacing;
+            }
+
             result.first_beat = (size_t)best_offset;
             free(spacings);
         } else {
             // Memory allocation failed, fall back
             result.bpm = aubio_tempo_get_bpm(tempo);
-            result.first_beat = beat_positions[0];
+            result.first_beat = beat_positions[beats_to_skip];
         }
     } else if (num_beats >= 1) {
         // Not enough beats for robust analysis, use aubio's estimate

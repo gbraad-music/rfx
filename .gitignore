@@ -2,6 +2,7 @@
 build/
 bin/
 plugins/*/bin/
+rack/*/dist/
 
 # CMake
 CMakeCache.txt

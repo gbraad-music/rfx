@@ -49,13 +49,13 @@ bool analyze_audio_waveform(
             frame_end = num_samples;
         }
 
-        // Calculate RMS amplitude for this frame
-        float sum_squares = 0.0f;
+        // Calculate peak amplitude for this frame (better for DJ visualization than RMS)
+        float peak = 0.0f;
         for (size_t i = frame_start; i < frame_end; i++) {
-            sum_squares += audio_data[i] * audio_data[i];
+            float abs_val = fabsf(audio_data[i]);
+            if (abs_val > peak) peak = abs_val;
         }
-        float rms = sqrtf(sum_squares / (frame_end - frame_start));
-        waveform_out[frame].amplitude = rms;
+        waveform_out[frame].amplitude = peak;
 
         // Perform FFT analysis on this frame
         SpectralBands bands = {0.0f, 0.0f, 0.0f};
@@ -121,13 +121,13 @@ bool analyze_audio_waveform(
             frame_end = num_samples;
         }
 
-        // Calculate RMS amplitude for this frame
-        float sum_squares = 0.0f;
+        // Calculate peak amplitude for this frame (better for DJ visualization than RMS)
+        float peak = 0.0f;
         for (size_t i = frame_start; i < frame_end; i++) {
-            sum_squares += audio_data[i] * audio_data[i];
+            float abs_val = fabsf(audio_data[i]);
+            if (abs_val > peak) peak = abs_val;
         }
-        float rms = sqrtf(sum_squares / (frame_end - frame_start));
-        waveform_out[frame].amplitude = rms;
+        waveform_out[frame].amplitude = peak;
 
         // No spectral analysis without aubio
         waveform_out[frame].bands.low = 0.0f;

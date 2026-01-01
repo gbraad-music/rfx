@@ -335,9 +335,10 @@ struct RDJ_Deck : Module {
 	}
 
 	void loadFile(const std::string& path) {
-		// CRITICAL: Don't allow loading before module is fully initialized
-		if (!initialized) {
-			WARN("Attempted to load file before module initialization complete - ignoring");
+		// CRITICAL: Don't allow loading if already loading or not initialized
+		if (!initialized || loading) {
+			WARN("Attempted to load file while not ready (initialized=%d, loading=%d) - ignoring",
+			     initialized.load(), loading.load());
 			return;
 		}
 
@@ -553,7 +554,8 @@ struct OverviewWaveformDisplay : TransparentWidget {
 			// Draw from raw audio data
 			const float samplesPerPixel = (float)dataSize / box.size.x;
 			const float centerY = box.size.y / 2;
-			const float scale = box.size.y * 0.4f;
+			const float borderWidth = 2.0f;  // Border stroke width
+			const float scale = (box.size.y - borderWidth * 2) / 2;  // Leave room for border
 
 			nvgStrokeColor(args.vg, REGROOVE_RED);
 			nvgStrokeWidth(args.vg, 1);
@@ -581,7 +583,8 @@ struct OverviewWaveformDisplay : TransparentWidget {
 			// Draw from cached waveform frames (much faster and safer!)
 			const float framesPerPixel = (float)numFrames / box.size.x;
 			const float centerY = box.size.y / 2;
-			const float scale = box.size.y * 0.4f;
+			const float borderWidth = 2.0f;  // Border stroke width
+			const float scale = (box.size.y - borderWidth * 2) / 2;  // Leave room for border
 
 			nvgStrokeWidth(args.vg, 1);
 
@@ -663,7 +666,7 @@ struct OverviewWaveformDisplay : TransparentWidget {
 // Detail waveform - shows zoomed view that scrolls with playback
 struct DetailWaveformDisplay : TransparentWidget {
 	RDJ_Deck* module;
-	float zoomFactor = 30.0f;  // Show 1/30th of the file at a time
+	float windowTimeSeconds = 4.0f;  // Show fixed 4-second time window (close-up view)
 
 	void draw(const DrawArgs& args) override {
 		// Red border
@@ -694,7 +697,8 @@ struct DetailWaveformDisplay : TransparentWidget {
 		}
 
 		// Calculate visible window - ALWAYS centered on playhead
-		const size_t windowSize = dataSize / zoomFactor;
+		// Fixed time window (like Mixxx) instead of percentage of file
+		const size_t windowSize = (size_t)(windowTimeSeconds * module->audio.sampleRate);
 		if (windowSize == 0) {
 			Widget::draw(args);
 			return;
@@ -711,7 +715,8 @@ struct DetailWaveformDisplay : TransparentWidget {
 
 		const float samplesPerPixel = (float)windowSize / box.size.x;
 		const float centerY = box.size.y / 2;
-		const float scale = box.size.y * 0.4f;
+		const float borderWidth = 2.0f;  // Border stroke width
+		const float scale = (box.size.y - borderWidth * 2) / 2;  // Leave room for border
 
 		nvgStrokeWidth(args.vg, 1);
 
@@ -777,9 +782,40 @@ struct DetailWaveformDisplay : TransparentWidget {
 			nvgStroke(args.vg);
 		}
 
+		// Get BPM before unlocking
+		float bpm = module->audio.bpm;
+		int sampleRate = module->audio.sampleRate;
+
 		module->swapMutex.unlock();
 
-		// Playhead ALWAYS at center
+		// Draw beat markers if BPM is detected
+		if (bpm > 0.0f && bpm < 300.0f) {  // Sanity check
+			float secondsPerBeat = 60.0f / bpm;
+			float samplesPerBeat = secondsPerBeat * sampleRate;
+
+			// Find first beat marker in visible window
+			double windowStartSample = playPos - (windowSize / 2.0);
+			double firstBeatSample = ceil(windowStartSample / samplesPerBeat) * samplesPerBeat;
+
+			// Draw beat markers within visible window
+			nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 60));
+			nvgStrokeWidth(args.vg, 1);
+
+			for (double beatSample = firstBeatSample; beatSample < windowStartSample + windowSize; beatSample += samplesPerBeat) {
+				// Convert beat sample position to screen X coordinate
+				double relativePos = beatSample - windowStartSample;
+				float beatX = (float)(relativePos / windowSize * box.size.x);
+
+				if (beatX >= 0 && beatX <= box.size.x) {
+					nvgBeginPath(args.vg);
+					nvgMoveTo(args.vg, beatX, 0);
+					nvgLineTo(args.vg, beatX, box.size.y);
+					nvgStroke(args.vg);
+				}
+			}
+		}
+
+		// Playhead ALWAYS at center (drawn on top of beat markers)
 		float playheadX = box.size.x / 2;
 
 		nvgBeginPath(args.vg);
@@ -797,7 +833,7 @@ struct DetailWaveformDisplay : TransparentWidget {
 			if (module && module->initialized && !module->loading && module->fileLoaded) {
 				const size_t dataSize = module->audioSize;
 				if (dataSize > 0) {
-					const size_t windowSize = dataSize / zoomFactor;
+					const size_t windowSize = (size_t)(windowTimeSeconds * module->audio.sampleRate);
 					if (windowSize > 0) {
 						// Calculate click position relative to window
 						float relativeX = (e.pos.x / box.size.x) - 0.5f;  // -0.5 to 0.5
@@ -822,7 +858,7 @@ struct DetailWaveformDisplay : TransparentWidget {
 		if (module && module->initialized && !module->loading && module->fileLoaded) {
 			const size_t dataSize = module->audioSize;
 			if (dataSize > 0) {
-				const size_t windowSize = dataSize / zoomFactor;
+				const size_t windowSize = (size_t)(windowTimeSeconds * module->audio.sampleRate);
 				if (windowSize > 0) {
 					float deltaPos = e.mouseDelta.x / box.size.x;
 					module->playPosition += deltaPos * windowSize;
@@ -1014,13 +1050,17 @@ struct RDJ_DeckWidget : ModuleWidget {
 		struct LoadFileItem : MenuItem {
 			RDJ_Deck* module;
 			void onAction(const event::Action& e) override {
-				std::thread([=]() {
-					char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, osdialog_filters_parse("Audio:wav,mp3,flac"));
-					if (path) {
-						module->loadFile(path);
-						free(path);
-					}
-				}).detach();
+				// Don't allow loading if already loading or not initialized
+				if (!module || !module->initialized || module->loading) {
+					return;
+				}
+
+				// Call file dialog directly (it's modal, blocking is fine)
+				char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, osdialog_filters_parse("Audio:wav,mp3,flac"));
+				if (path) {
+					module->loadFile(path);
+					free(path);
+				}
 			}
 		};
 

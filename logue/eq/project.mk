@@ -1,16 +1,15 @@
-# Regroove EQ Effect for logue SDK
+# Regroove Effect for logue SDK (NTS-3 kaoss pad)
 
-PROJECT = regroove_eq
+PROJECT = regroove_$(shell basename $(CURDIR))
 PROJECT_TYPE = modfx
 
-# Include logue SDK
-PLATFORMDIR = $(TOOLSDIR)/logue-sdk/platform/nutekt-digital
+# Use container environment if available, fallback to standalone
+ifndef PLATFORMDIR
+  PLATFORMDIR = $(TOOLSDIR)/logue-sdk/platform/kaoss-3
+endif
 
 # Source files
-UCSRC = regroove_eq.cpp ../../effects/fx_eq.c
-
-# Include effects directory
-BUILD_C_FLAGS += -I../../effects
+UCSRC = $(PROJECT).cpp
 
 # Include the logue build system
 include $(PLATFORMDIR)/modfx.mk

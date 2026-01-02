@@ -11,6 +11,8 @@
 #include "synth_filter.h"
 #include "synth_envelope.h"
 #include "synth_voice_manager.h"
+#include "rg909_bd.h"
+#include "rg909_sd.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,6 +65,10 @@ typedef struct {
 typedef struct {
     SynthVoiceManager* voice_manager;
     RG909DrumVoice voices[RG909_MAX_VOICES];
+
+    // Modular drum voices (used for BD and SD)
+    RG909_BD bd;
+    RG909_SD sd;
 
     // Parameters (0.0 - 1.0 range, except bd_level which can exceed 1.0)
     float bd_level, bd_tune, bd_decay, bd_attack;

@@ -156,6 +156,21 @@ RG909Synth* rg909_synth_create(void) {
         synth->voices[i].tail_slow_offset = -1.0f;   // Not set yet
     }
 
+    // Initialize modular drum voices
+    rg909_bd_init(&synth->bd);
+    rg909_sd_init(&synth->sd);
+
+    // Set initial parameters for modular drums
+    rg909_bd_set_level(&synth->bd, synth->bd_level);
+    rg909_bd_set_tune(&synth->bd, synth->bd_tune);
+    rg909_bd_set_decay(&synth->bd, synth->bd_decay);
+    rg909_bd_set_attack(&synth->bd, synth->bd_attack);
+
+    rg909_sd_set_level(&synth->sd, synth->sd_level);
+    rg909_sd_set_tone(&synth->sd, synth->sd_tone);
+    rg909_sd_set_snappy(&synth->sd, synth->sd_snappy);
+    rg909_sd_set_tuning(&synth->sd, synth->sd_tuning);
+
     return synth;
 }
 
@@ -176,6 +191,10 @@ void rg909_synth_destroy(RG909Synth* synth) {
 
 void rg909_synth_reset(RG909Synth* synth) {
     if (!synth) return;
+
+    // Reset modular drums
+    rg909_bd_reset(&synth->bd);
+    rg909_sd_reset(&synth->sd);
 
     for (int i = 0; i < RG909_MAX_VOICES; i++) {
         synth->voices[i].active = 0;
@@ -204,7 +223,17 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
     RG909DrumType type = note_to_drum_type(note);
     float vel = velocity / 127.0f;
 
-    // Find voice for this drum type
+    // Use modular drums for BD and SD
+    if (type == RG909_DRUM_BD) {
+        rg909_bd_trigger(&synth->bd, velocity, sample_rate);
+        return;
+    }
+    if (type == RG909_DRUM_SD) {
+        rg909_sd_trigger(&synth->sd, velocity, sample_rate);
+        return;
+    }
+
+    // Find voice for other drum types (LT, MT, HT, RS, HC)
     RG909DrumVoice* v = NULL;
     for (int i = 0; i < RG909_MAX_VOICES; i++) {
         if (synth->voices[i].type == type) {
@@ -222,73 +251,8 @@ void rg909_synth_trigger_drum(RG909Synth* synth, uint8_t note, uint8_t velocity,
     v->tail_slow_offset = -1.0f;   // Reset tail slow offset for new trigger
 
     // Configure drum voice based on TR-909 circuit topology
+    // (BD and SD are handled by modular drums and returned early above)
     switch (type) {
-        case RG909_DRUM_BD: {
-            // REAL 909 BD: Swept sine oscillator (corrected for 44.1kHz vs 48kHz ~8% difference)
-            // Original was tuned at wrong sample rate - apply 0.91875 correction (44100/48000)
-            float start_freq = 211.0f + synth->bd_tune * 46.0f;  // 211-257Hz (was 230-280Hz)
-            float end_freq = 46.0f + synth->bd_tune * 9.0f;      // 46-55Hz (was 50-60Hz)
-
-            v->base_freq = start_freq;   // Start frequency
-            v->sweep_amount = end_freq;  // End frequency
-            v->sweep_time = 0.060f;      // 60ms pitch sweep
-            v->sweep_pos = 0.0f;
-
-            // Amplitude envelope - TR-909: Fast attack, balanced decay
-            v->decay_env = 1.0f;
-            // Real 909 decay: 45-130ms (balanced)
-            float decay_time = 0.045f + synth->bd_decay * 0.085f;  // 45-130ms decay
-            v->decay_coeff = decay_time;
-
-            // Phase accumulator for oscillator - start at 0.0 for positive-oriented start
-            // sin(0) = 0, and after increment sin(2π*small) ≈ small (positive, going up)
-            v->noise_env = 0.0f;
-            break;
-        }
-
-        case RG909_DRUM_SD: {
-            // Snare: Waldorf TR-909 architecture
-            // - Osc 1 (res1): Constant pitch, slightly detuned
-            // - Osc 2 (res2): Pitch envelope modulation
-            // - Noise path 1: Low-pass filtered, always present (texture)
-            // - Noise path 2: High-pass filtered, controlled by "Snappy"
-
-            fprintf(stderr, "DEBUG: Snare trigger! vel=%.2f\n", vel);
-
-            // Pitch sweep parameters (now applied to BOTH resonators)
-            v->sweep_amount = 1.8f;          // Pitch multiplier at start (lower for less "tinny" sound)
-            v->sweep_time = 0.012f;          // 12ms fast pitch envelope for snap
-            v->sweep_pos = 0.0f;
-
-            // Use configurable resonator frequencies
-            float freq1 = synth->sd_freq1;  // Oscillator 1: constant pitch
-            float freq2 = synth->sd_freq2;  // Oscillator 2: pitch modulated
-
-            synth_resonator_reset(v->res1);
-            synth_resonator_reset(v->res2);
-
-            // BOTH resonators start at swept-up frequency for characteristic attack peaks
-            synth_resonator_set_params(v->res1, freq1 * v->sweep_amount, synth->sd_res1_decay, sample_rate);
-            synth_resonator_set_params(v->res2, freq2 * v->sweep_amount, synth->sd_res2_decay, sample_rate);
-
-            // Use configurable resonator strikes
-            synth_resonator_strike(v->res1, vel * synth->sd_res1_level);
-            synth_resonator_strike(v->res2, vel * synth->sd_res2_level);
-
-            // High-pass noise envelope (controlled by sd_snappy)
-            v->noise_env = vel * synth->sd_snappy;  // HP noise level
-            v->noise_decay = synth->sd_noise_decay;
-
-            // High-pass filter for "snappy" noise (Waldorf architecture)
-            synth_filter_set_type(v->filter, SYNTH_FILTER_HPF);
-            synth_filter_set_cutoff(v->filter, 0.4f + synth->sd_tone * 0.3f);  // High-pass for snap
-            synth_filter_set_resonance(v->filter, 0.5f);
-
-            // Initialize LP noise filter state (simple one-pole)
-            v->decay_env = 0.0f;  // Reuse as LP filter state
-            break;
-        }
-
         case RG909_DRUM_LT: {
             // Low Tom: Resonator-dominant with strong pitch sweep
             float base_freq = 73.5f + synth->lt_tuning * 55.0f;  // 73-129Hz
@@ -372,6 +336,12 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
         float mix_left = 0.0f;
         float mix_right = 0.0f;
 
+        // Process modular BD and SD
+        float bd_sample = rg909_bd_process(&synth->bd, sample_rate) * synth->master_volume;
+        float sd_sample = rg909_sd_process(&synth->sd, sample_rate) * synth->master_volume;
+        mix_left += bd_sample + sd_sample;
+        mix_right += bd_sample + sd_sample;
+
         for (int i = 0; i < RG909_MAX_VOICES; i++) {
             RG909DrumVoice* voice = &synth->voices[i];
             if (!voice->active) continue;
@@ -379,270 +349,12 @@ void rg909_synth_process_interleaved(RG909Synth* synth, float* buffer, int frame
             float sample = 0.0f;
 
             switch (voice->type) {
-                case RG909_DRUM_BD: {
-                    // REAL 909 BD: Swept sine oscillator with sweep-shape transient
-
-                    // Convert timing parameters from ms to seconds
-                    float squiggly_end = synth->bd_squiggly_end_ms / 1000.0f;
-                    float fast_end = synth->bd_fast_end_ms / 1000.0f;
-                    float slow_end = synth->bd_slow_end_ms / 1000.0f;
-                    float tail_slow_start = synth->bd_tail_slow_start_ms / 1000.0f;
-
-                    // Calculate phase increment based on current phase
-                    float phase_inc;
-                    float freq;
-
-                    if (voice->sweep_pos < squiggly_end) {
-                        // Phase 1: Squiggly
-                        freq = synth->bd_squiggly_freq;
-                    } else if (voice->sweep_pos < fast_end) {
-                        // Phase 2a: Fast sweep-shape
-                        freq = synth->bd_fast_freq;
-                    } else if (voice->sweep_pos < slow_end) {
-                        // Phase 2b: Slow sweep-shape
-                        freq = synth->bd_slow_freq;
-                    } else if (voice->sweep_pos < tail_slow_start) {
-                        // Phase 3: Tail
-                        freq = synth->bd_tail_freq;
-                    } else {
-                        // Phase 4: Tail slow
-                        freq = synth->bd_tail_slow_freq;
-                    }
-
-                    phase_inc = freq / sample_rate;
-
-                    // Continue sine phase accumulator throughout all phases
-                    voice->noise_env += phase_inc;
-                    if (voice->noise_env >= 1.0f) voice->noise_env -= 1.0f;
-
-                    // TR-909 Waveform with Sweep-Shape Transient
-                    // Phase 1 (0-1.5ms): Initial squiggly attack on SINE
-                    // Phase 2a (1.5-10.1ms): Fast sweep-shape at 216 Hz, SAW 14.2%
-                    // Phase 2b (10.1-31.5ms): Slow sweep-shape at 159 Hz, SAW 6.0%
-                    // Phase 3 (31.5-74ms): Tail at 88 Hz with decay
-                    // Phase 4 (74ms+): Tail slow at 53 Hz (PHASE INVERTED)
-
-                    if (voice->sweep_pos < squiggly_end) {
-                        // Phase 1: Two-stage squiggly within 1.5ms
-                        // Stage 1: Gradual rise (67%)
-                        // Stage 2: Steep rise (33%) with rectified sine
-                        float gradual_phase_end = squiggly_end * 0.67f;  // 67% of squiggly duration
-
-                        if (voice->sweep_pos < gradual_phase_end) {
-                            // Stage 1: Gradual squiggly rise - SINE with envelope
-                            float sine_val = sinf(2.0f * M_PI * voice->noise_env);
-                            sample = sine_val;
-
-                            float t = voice->sweep_pos / gradual_phase_end;
-                            float amp_env = 0.18f * powf(t, 0.8f);
-                            sample = sample * amp_env;
-                        } else {
-                            // Stage 2: Steep rise/punch - from 0.18 to 0.97
-                            // Use rectified sine with saturation for analog character
-                            float sine_val = sinf(2.0f * M_PI * voice->noise_env);
-                            sample = fabsf(sine_val);  // Full-wave rectification - always positive
-
-                            // Add soft saturation for warmth/character
-                            sample = tanhf(sample * 1.3f);
-
-                            float rise_duration = squiggly_end - gradual_phase_end;
-                            float t = (voice->sweep_pos - gradual_phase_end) / rise_duration;
-
-                            // Exponential rising envelope (starts gradual, finishes steep)
-                            float amp_env = 0.18f + (0.97f - 0.18f) * powf(t, 2.5f);
-                            sample = sample * amp_env;
-                        }
-
-                    } else if (voice->sweep_pos < slow_end) {
-                        // Phase 2: Two-stage sweep-shape
-                        // Phase 2a: Fast sweep with SAW%
-                        // Phase 2b: Slow sweep with SAW%
-                        int is_slow_sweep = 0;
-
-                        if (voice->sweep_pos < fast_end) {
-                            // Fast sweep
-                            is_slow_sweep = 0;
-                        } else {
-                            // Slow sweep
-                            is_slow_sweep = 1;
-                        }
-
-                        // On first entry to sweep-shape, capture phase offset to ensure positive start
-                        if (voice->phase_offset < 0.0f) {
-                            voice->phase_offset = voice->noise_env;
-                        }
-
-                        // Use accumulated phase with offset - same offset for both fast and slow
-                        // Use fmodf to properly wrap phase to [0, 1) range
-                        float u = fmodf(voice->noise_env - voice->phase_offset + 10.0f, 1.0f);
-
-                        // Sweep-shape waveform (SAW → COSINE down → SAW → COSINE up)
-                        // Use configurable SAW widths
-                        float saw_width = is_slow_sweep ? (synth->bd_slow_saw_pct / 100.0f) : (synth->bd_fast_saw_pct / 100.0f);
-                        float cosine_width = (0.5f - saw_width);
-
-                        // Sweep-shape waveform generation
-                        if (u < saw_width) {
-                            // Quarter 1: SAW fade (top)
-                            float t_quarter = u / saw_width;
-                            sample = 0.90f + (0.85f - 0.90f) * t_quarter;
-                        } else if (u < 0.5f) {
-                            // Quarter 2: COSINE sweep DOWN
-                            float t_quarter = (u - saw_width) / cosine_width;
-                            float c = cosf(t_quarter * M_PI);
-                            sample = 0.5f * (0.85f + (-0.85f)) + 0.5f * (0.85f - (-0.85f)) * c;
-                        } else if (u < 0.5f + saw_width) {
-                            // Quarter 3: SAW fade (bottom)
-                            float t_quarter = (u - 0.5f) / saw_width;
-                            sample = -0.85f + ((-0.80f) - (-0.85f)) * t_quarter;
-                        } else {
-                            // Quarter 4: COSINE sweep UP
-                            float t_quarter = (u - 0.5f - saw_width) / cosine_width;
-                            float c = cosf((1.0f - t_quarter) * M_PI);
-                            sample = 0.5f * ((-0.80f) + 0.90f) + 0.5f * (0.90f - (-0.80f)) * c;
-                        }
-                        // NO decay envelope! Full amplitude sweep-shape
-
-                    } else {
-                        // Phase 3 & 4: Tail continuation with triangular-sine
-                        float tri_phase;
-                        float phase_invert;
-
-                        if (voice->sweep_pos < tail_slow_start) {
-                            // Phase 3: Tail (normal, not inverted)
-                            phase_invert = 1.0f;
-
-                            // On first entry to tail, capture phase offset to start at zero crossing
-                            if (voice->tail_phase_offset < 0.0f) {
-                                // Triangle waveform crosses zero at phase 0.25 (upward slope)
-                                voice->tail_phase_offset = voice->noise_env - 0.25f;
-                                fprintf(stderr, "DEBUG: Captured tail_phase_offset=%.6f at sweep_pos=%.6f\n",
-                                        voice->tail_phase_offset, voice->sweep_pos);
-                            }
-
-                            // Use accumulated phase with offset to start at zero crossing
-                            tri_phase = fmodf(voice->noise_env - voice->tail_phase_offset + 10.0f, 1.0f);
-
-                        } else {
-                            // Phase 4: Tail slow (PHASE AND DIRECTION INVERTED)
-                            // Invert both amplitude AND sweep direction by shifting phase by 0.5
-                            phase_invert = -1.0f;
-
-                            // Debug first entry
-                            static int first_tail_slow_entry = 1;
-                            if (first_tail_slow_entry) {
-                                float current_tri_phase = fmodf(voice->noise_env - voice->tail_phase_offset + 10.0f, 1.0f);
-                                float inverted_tri_phase = fmodf(current_tri_phase + 0.5f, 1.0f);
-                                float current_triangle = 4.0f * fabsf(current_tri_phase - 0.5f) - 1.0f;
-                                float inverted_triangle = 4.0f * fabsf(inverted_tri_phase - 0.5f) - 1.0f;
-                                fprintf(stderr, "DEBUG: tail_slow START at sweep_pos=%.6f\n", voice->sweep_pos);
-                                fprintf(stderr, "       original: tri_phase=%.6f, triangle=%+.6f\n", current_tri_phase, current_triangle);
-                                fprintf(stderr, "       inverted: tri_phase=%.6f, triangle=%+.6f\n", inverted_tri_phase, inverted_triangle);
-                                first_tail_slow_entry = 0;
-                            }
-
-                            // Shift phase by 0.5 (half cycle) to invert sweep direction, then invert amplitude
-                            float base_tri_phase = fmodf(voice->noise_env - voice->tail_phase_offset + 10.0f, 1.0f);
-                            tri_phase = fmodf(base_tri_phase + 0.5f, 1.0f);
-                        }
-
-                        // Generate triangular-sine waveform
-                        float triangle = 4.0f * fabsf(tri_phase - 0.5f) - 1.0f;
-                        float clipped = tanhf(triangle * 1.5f);
-                        sample = (triangle * 0.20f + clipped * 0.80f) * phase_invert;
-
-                        // Two-stage decay envelope
-                        float amp_env;
-                        float sustain_end = slow_end + 0.0085f;  // 8.5ms after sweep end
-                        if (voice->sweep_pos < sustain_end) {
-                            // Sustain phase: 0.98 → 0.88
-                            float t = (voice->sweep_pos - slow_end) / 0.0085f;
-                            if (t < 0.0f) t = 0.0f;
-                            if (t > 1.0f) t = 1.0f;
-                            amp_env = 0.98f - (0.10f * t);  // 0.98 → 0.88 over 8.5ms
-                        } else {
-                            // Slow decay
-                            float t_decay = voice->sweep_pos - sustain_end;
-                            float decay_time = 0.045f + synth->bd_decay * 0.085f;
-                            float k = 0.6f / decay_time;
-                            amp_env = 0.88f * expf(-k * t_decay);
-
-                            if (amp_env < 0.0001f) voice->active = 0;
-                        }
-
-                        sample = sample * amp_env;
-                    }
-
-                    // Output gain - match real 909 RMS level
-                    sample = sample * 2.0f;
-
-                    voice->sweep_pos += 1.0f / sample_rate;
-                    sample *= synth->bd_level;
+                case RG909_DRUM_BD:
+                case RG909_DRUM_SD:
+                    // BD and SD are now handled by modular drums above, skip voice processing
+                    voice->active = 0;  // Deactivate voice
                     break;
-                }
 
-                case RG909_DRUM_SD: {
-                    // Waldorf TR-909 Snare Architecture:
-                    // - Res1: Constant pitch (180Hz)
-                    // - Res2: Pitch envelope modulation (330Hz → swept)
-                    // - LP noise: Always present (subtle texture)
-                    // - HP noise: Snappy-controlled envelope
-
-                    // Pitch envelope for ONLY res2 (Waldorf: one oscillator modulated)
-                    float pitch_env = 1.0f;
-                    if (voice->sweep_pos < voice->sweep_time) {
-                        float t = voice->sweep_pos / voice->sweep_time;
-                        // Linear sweep from sweep_amount (2.5x) down to 1.0x
-                        pitch_env = voice->sweep_amount - (voice->sweep_amount - 1.0f) * t;
-                    }
-
-                    // Update BOTH resonator frequencies with pitch envelope for characteristic peaks
-                    float freq1 = synth->sd_freq1 * pitch_env;
-                    float freq2 = synth->sd_freq2 * pitch_env;
-                    synth_resonator_set_params(voice->res1, freq1, synth->sd_res1_decay, sample_rate);
-                    synth_resonator_set_params(voice->res2, freq2, synth->sd_res2_decay, sample_rate);
-
-                    // Get tone from BOTH resonators (both swept together)
-                    float t1 = synth_resonator_process(voice->res1, 0.0f);
-                    float t2 = synth_resonator_process(voice->res2, 0.0f);
-                    float tone = (t1 + t2) * 0.5f * synth->sd_tone_gain;
-
-                    // Generate raw noise once
-                    float noise_raw = synth_noise_process(voice->noise);
-
-                    // NOISE PATH 1: Low-pass filtered, always present (Waldorf texture)
-                    // Simple one-pole lowpass: y[n] = y[n-1] + k*(x[n] - y[n-1])
-                    float lp_cutoff = synth->sd_lp_noise_cutoff;  // User-controllable cutoff (lower = darker)
-                    voice->decay_env = voice->decay_env + lp_cutoff * (noise_raw - voice->decay_env);
-                    float noise_lp = voice->decay_env * synth->sd_noise_level;  // Direct control (removed 0.03 multiplier)
-
-                    // NOISE PATH 2: High-pass filtered, envelope controlled (Waldorf "Snappy")
-                    // HP noise envelope with exponential decay
-                    voice->noise_env -= voice->noise_env * (1.0f / (voice->noise_decay * sample_rate));
-                    if (voice->noise_env < 0.0001f) voice->noise_env = 0.0f;
-
-                    float noise_hp = synth_filter_process(voice->filter, noise_raw, sample_rate);
-                    noise_hp *= voice->noise_env;  // Envelope controlled by sd_snappy
-
-                    // Combine: Tone + LP noise (always) + HP noise (snappy)
-                    sample = tone + noise_lp + noise_hp;
-
-                    // MASTER AMPLITUDE DECAY ENVELOPE (fixed decay, not controlled by snappy)
-                    // Instant attack, exponential decay for overall snare envelope
-                    float decay_time = 0.120f;  // Fixed 120ms master decay
-                    float amp_env = expf(-3.0f * voice->sweep_pos / decay_time);
-
-                    sample *= amp_env * synth->sd_level;
-
-                    // Update time
-                    voice->sweep_pos += 1.0f / sample_rate;
-
-                    // Deactivate when amplitude envelope has decayed
-                    if (voice->sweep_pos > 0.300f || amp_env < 0.001f) {
-                        voice->active = 0;
-                    }
-                    break;
-                }
 
                 case RG909_DRUM_LT:
                 case RG909_DRUM_MT:
@@ -748,14 +460,38 @@ void rg909_synth_set_parameter(RG909Synth* synth, int param_index, float value) 
     // Extended SD parameters and sweep-shape parameters: no clamping needed
 
     switch (param_index) {
-        case PARAM_BD_LEVEL: synth->bd_level = value; break;
-        case PARAM_BD_TUNE: synth->bd_tune = value; break;
-        case PARAM_BD_DECAY: synth->bd_decay = value; break;
-        case PARAM_BD_ATTACK: synth->bd_attack = value; break;
-        case PARAM_SD_LEVEL: synth->sd_level = value; break;
-        case PARAM_SD_TONE: synth->sd_tone = value; break;
-        case PARAM_SD_SNAPPY: synth->sd_snappy = value; break;
-        case PARAM_SD_TUNING: synth->sd_tuning = value; break;
+        case PARAM_BD_LEVEL:
+            synth->bd_level = value;
+            rg909_bd_set_level(&synth->bd, value);
+            break;
+        case PARAM_BD_TUNE:
+            synth->bd_tune = value;
+            rg909_bd_set_tune(&synth->bd, value);
+            break;
+        case PARAM_BD_DECAY:
+            synth->bd_decay = value;
+            rg909_bd_set_decay(&synth->bd, value);
+            break;
+        case PARAM_BD_ATTACK:
+            synth->bd_attack = value;
+            rg909_bd_set_attack(&synth->bd, value);
+            break;
+        case PARAM_SD_LEVEL:
+            synth->sd_level = value;
+            rg909_sd_set_level(&synth->sd, value / 44.0f);  // Normalize from 44.0 scale
+            break;
+        case PARAM_SD_TONE:
+            synth->sd_tone = value;
+            rg909_sd_set_tone(&synth->sd, value);
+            break;
+        case PARAM_SD_SNAPPY:
+            synth->sd_snappy = value;
+            rg909_sd_set_snappy(&synth->sd, value);
+            break;
+        case PARAM_SD_TUNING:
+            synth->sd_tuning = value;
+            rg909_sd_set_tuning(&synth->sd, value);
+            break;
         case PARAM_LT_LEVEL: synth->lt_level = value; break;
         case PARAM_LT_TUNING: synth->lt_tuning = value; break;
         case PARAM_LT_DECAY: synth->lt_decay = value; break;

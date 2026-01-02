@@ -26,7 +26,7 @@ fi
 mkdir -p "$SCRIPT_DIR/../bin"
 
 # NTS-3 effects - default list
-EFFECTS="distortion filter eq compressor phaser reverb stereo_widen model1_lpf model1_hpf model1_sculpt model1_trim"
+EFFECTS="distortion filter eq compressor phaser reverb stereo_widen model1"
 
 # If arguments provided, build only those effects
 if [ $# -gt 0 ]; then

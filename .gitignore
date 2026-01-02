@@ -30,6 +30,7 @@ logue/*/*.ntkdigunit
 logue/*/*.bin
 logue/*/*.list
 logue/*/*.map
+logue/*/*.nts3unit
 
 # Object files and related
 *.d

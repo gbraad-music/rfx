@@ -1,13 +1,15 @@
-# Regroove Distortion Effect for logue SDK
+# Regroove Effect for logue SDK (NTS-3 kaoss pad)
 
-PROJECT = regroove_distortion
+PROJECT = regroove_$(shell basename $(CURDIR))
 PROJECT_TYPE = modfx
 
-# Include logue SDK
-PLATFORMDIR = $(TOOLSDIR)/logue-sdk/platform/nutekt-digital
+# Use container environment if available, fallback to standalone
+ifndef PLATFORMDIR
+  PLATFORMDIR = $(TOOLSDIR)/logue-sdk/platform/kaoss-3
+endif
 
 # Source files
-UCSRC = regroove_distortion.cpp
+UCSRC = $(PROJECT).cpp
 
 # Include the logue build system
 include $(PLATFORMDIR)/modfx.mk

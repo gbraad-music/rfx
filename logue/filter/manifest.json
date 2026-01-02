@@ -1,6 +1,6 @@
 {
   "header": {
-    "platform": "nutekt-digital",
+    "platform": "kaoss-3",
     "module": "modfx",
     "api": "1.1-0",
     "dev_id": 0,
@@ -9,8 +9,18 @@
     "name": "RFXFilter",
     "num_param": 2,
     "params": [
-      ["Cutoff", 0, 1023, 800],
-      ["Resonance", 0, 1023, 300]
+      [
+        "Cutoff",
+        0,
+        1023,
+        800
+      ],
+      [
+        "Resonance",
+        0,
+        1023,
+        300
+      ]
     ]
   }
 }

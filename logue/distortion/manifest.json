@@ -1,16 +1,26 @@
 {
   "header": {
-    "platform": "nutekt-digital",
+    "platform": "kaoss-3",
     "module": "modfx",
     "api": "1.1-0",
     "dev_id": 0,
-    "prg_id": 0,
+    "prg_id": 1,
     "version": "1.0-0",
-    "name": "RFXDist",
+    "name": "RFXFilter",
     "num_param": 2,
     "params": [
-      ["Drive", 0, 1023, 512],
-      ["Mix", 0, 1023, 512]
+      [
+        "Cutoff",
+        0,
+        1023,
+        800
+      ],
+      [
+        "Resonance",
+        0,
+        1023,
+        300
+      ]
     ]
   }
 }

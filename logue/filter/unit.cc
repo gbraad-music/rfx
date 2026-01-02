@@ -46,6 +46,11 @@ static Effect s_effect_instance; // Note: In this example, actual effect instanc
 
 static int32_t cached_values[UNIT_GENERICFX_MAX_PARAM_COUNT]; // cached parameter values passed from hardware
 
+// Runtime descriptor for background effect support
+// Provides access to get_raw_input() API which returns audio input unaffected by effect on/off state
+// This enables the effect to run continuously without requiring HOLD (XY Freeze) to be pressed
+static unit_runtime_desc_t s_runtime_desc;
+
 // ---- Callbacks exposed to runtime ----------------------------------------------
 
 __unit_callback int8_t unit_init(const unit_runtime_desc_t *desc)
@@ -95,6 +100,11 @@ __unit_callback int8_t unit_init(const unit_runtime_desc_t *desc)
     s_effect_instance.setParameter(id, cached_values[id]);
   }
 
+  // Store runtime descriptor for background effect support
+  // This is needed to access get_raw_input() API in unit_render()
+  // which provides raw audio input bypassing the effect on/off routing
+  s_runtime_desc = *desc;
+
   return k_unit_err_none;
 }
 
@@ -120,7 +130,19 @@ __unit_callback void unit_suspend()
 
 __unit_callback void unit_render(const float *in, float *out, uint32_t frames)
 {
-  s_effect_instance.process(in, out, frames);
+  // Use get_raw_input() instead of 'in' parameter to enable background operation
+  // This allows the effect to run continuously without requiring HOLD (XY Freeze)
+  //
+  // Background vs Normal effects:
+  // - Normal: Uses 'in' parameter, which is affected by effect on/off state
+  //           When pad is not touched (and HOLD is off), input is bypassed
+  // - Background: Uses get_raw_input(), which provides unaffected raw audio input
+  //               Effect runs continuously regardless of touch pad state
+  const unit_runtime_genericfx_context_t *ctxt =
+    static_cast<const unit_runtime_genericfx_context_t *>(s_runtime_desc.hooks.runtime_context);
+
+  const float *raw_input = ctxt->get_raw_input();
+  s_effect_instance.process(raw_input, out, frames);
 }
 
 __unit_callback void unit_set_param_value(uint8_t id, int32_t value)

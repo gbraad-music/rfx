@@ -18,6 +18,8 @@ FILES_DSP = \
 	../../synth/synth_filter.c \
 	../../synth/synth_envelope.c \
 	../../synth/synth_voice_manager.c \
+	../../synth/rg909_bd.c \
+	../../synth/rg909_sd.c \
 	../../synth/rg909_drum_synth.c
 
 FILES_UI = \
@@ -64,6 +66,8 @@ WASM_SOURCES = ../../synth/synth_resonator.c \
                ../../synth/synth_envelope.c \
                ../../synth/synth_voice_manager.c \
                ../../synth/synth_utils.c \
+               ../../synth/rg909_bd.c \
+               ../../synth/rg909_sd.c \
                ../../synth/rg909_drum_synth.c \
                wasm_bindings.c
 
@@ -86,12 +90,10 @@ web: $(WASM_SOURCES)
 	@echo "Building RG909 Drum for WebAssembly..."
 	$(EMCC) $(WASM_CFLAGS) $(WASM_EXPORTED_FUNCTIONS) $(WASM_SOURCES) -o $(WASM_OUTPUT)
 	@echo "Built: $(WASM_OUTPUT) and rg909-drum.wasm"
-	@echo "Copying to revision project synths/ directory..."
-	@if [ -d ~/Projects/revision ]; then \
-		mkdir -p ~/Projects/revision/synths && \
-		cp rg909-drum.wasm rg909-drum.js ~/Projects/revision/synths/ && \
-		echo "   ✅ Copied to ~/Projects/revision/synths/"; \
-	fi
+	@echo "Copying to web/synths/ directory..."
+	@mkdir -p ../../web/synths
+	@cp rg909-drum.wasm rg909-drum.js ../../web/synths/
+	@echo "   ✅ Copied to ../../web/synths/"
 
 clean-web:
 	rm -f $(WASM_OUTPUT) rg909-drum.wasm

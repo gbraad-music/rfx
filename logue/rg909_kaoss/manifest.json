@@ -1,0 +1,24 @@
+{
+  "header": {
+    "platform": "nts-3",
+    "module": "modfx",
+    "api": "1.1-0",
+    "dev_id": 0,
+    "prg_id": 0,
+    "version": "1.0.0",
+    "name": "RG909 Kaoss",
+    "num_param": 10,
+    "params": [
+      ["Level",      0, 100, "%"],
+      ["Tune",       0, 100, "%"],
+      ["Decay",      0, 100, "%"],
+      ["Attack",     0, 100, "%"],
+      ["Dry/Wet",    0, 100, "%"],
+      ["Pattern",    0, 100, "%"],
+      ["Swing",      0, 100, "%"],
+      ["Tone",       0, 100, "%"],
+      ["",           0,   0, ""],
+      ["",           0,   0, ""]
+    ]
+  }
+}

@@ -2,7 +2,7 @@
 /*
  * Regroove Filter - NTS-3 kaoss pad
  * RE-USES existing code from /rfx/effects/fx_filter.c
- * Always-on version (ignores XY touch parameters)
+ * Background effect - runs continuously, XY controls parameters
  */
 
 #include "processor.h"

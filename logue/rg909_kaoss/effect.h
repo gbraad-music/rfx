@@ -1,282 +1,374 @@
 #pragma once
-/**
- * RG909 Kaoss - Touch-based rhythmic kick effect for NTS-3
+/*
+    BSD 3-Clause License
+
+    Copyright (c) 2023, KORG INC.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright notice, this
+      list of conditions and the following disclaimer.
+
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimer in the documentation
+      and/or other materials provided with the distribution.
+
+    * Neither the name of the copyright holder nor the names of its
+      contributors may be used to endorse or promote products derived from
+      this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+    DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+    OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+//*/
+
+/*
+ *  File: effect.h
+ *
+ *  Dummy generic effect template instance.
+ *
  */
 
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <cmath>
+#include <climits>
 
-#include "unit_genericfx.h"
+#include "unit_genericfx.h" // Note: Include base definitions for genericfx units
 
-// Import modular RG909 drums
+#include "utils/buffer_ops.h" // for buf_clr_f32()
+#include "utils/int_math.h"   // for clipminmaxi32()
+
 extern "C" {
 #include "rg909_bd.h"
-#include "rg909_sd.h"
 }
 
-// Parameter indices
-enum {
-  PARAM_LEVEL = 0,
-  PARAM_TUNE,
-  PARAM_DECAY,
-  PARAM_ATTACK,
-  PARAM_DRY_WET,
-  PARAM_PATTERN,
-  PARAM_SWING,
-  PARAM_TONE
-};
-
-class Effect {
+class Effect
+{
 public:
-  Effect(void)
-    : bd_()
-    , sd_()
-    , sample_rate_(48000.0f)
-    , tempo_(120.0f)
-    , ppqn_counter_(0)
-    , beat_counter_(0)
-    , touch_y_(1.0f)
-    , touch_active_(false)
-    , level_(0.8f)
-    , tune_(0.5f)
-    , decay_(0.5f)
-    , attack_(0.1f)
-    , dry_wet_(0.5f)
-    , pattern_(1.0f)
-    , swing_(0.5f)
-    , tone_(0.3f)
+  /*===========================================================================*/
+  /* Public Data Structures/Types/Enums. */
+  /*===========================================================================*/
+
+  enum
   {
-    // Drums will be initialized in Init()
-  }
+    BUFFER_LENGTH = 0x40000
+  };
 
-  ~Effect(void) {
-    // No cleanup needed for static structs
-  }
+  enum
+  {
+    PARAM1 = 0U,
+    PARAM2,
+    DEPTH,
+    PARAM4,
+    NUM_PARAMS
+  };
 
-  inline int8_t Init(const unit_runtime_desc_t * desc) {
+  // Note: Make sure that default param values correspond to declarations in header.c
+  struct Params
+  {
+    float param1{0.f};
+    float param2{0.f};
+    float depth{0.f};
+    uint32_t param4{1};
+
+    void reset()
+    {
+      param1 = 0.f;
+      param2 = 0.f;
+      depth = 0.f;
+      param4 = 1;
+    }
+  };
+
+  enum
+  {
+    PARAM4_VALUE0 = 0,
+    PARAM4_VALUE1,
+    PARAM4_VALUE2,
+    PARAM4_VALUE3,
+    NUM_PARAM4_VALUES,
+  };
+
+  /*===========================================================================*/
+  /* Lifecycle Methods. */
+  /*===========================================================================*/
+
+  Effect(void) {}
+  ~Effect(void) {} // Note: will never actually be called for statically allocated instances
+
+  inline int8_t Init(const unit_runtime_desc_t *desc)
+  {
+    if (!desc)
+      return k_unit_err_undef;
+
+    // Note: make sure the unit is being loaded to the correct platform/module target
+    if (desc->target != unit_header.common.target)
+      return k_unit_err_target;
+
+    // Note: check API compatibility with the one this unit was built against
+    if (!UNIT_API_IS_COMPAT(desc->api))
+      return k_unit_err_api_version;
+
+    // Check compatibility of samplerate with unit, for NTS-3 kaoss pad kit should be 48000
     if (desc->samplerate != 48000)
       return k_unit_err_samplerate;
 
-    if (desc->input_channels != 2 || desc->output_channels != 2)
+    // Check compatibility of frame geometry
+    if (desc->input_channels != 2 || desc->output_channels != 2) // should be stereo input/output
       return k_unit_err_geometry;
 
-    sample_rate_ = desc->samplerate;
+    // If SDRAM buffers are required they must be allocated here
+    if (!desc->hooks.sdram_alloc)
+      return k_unit_err_memory;
+    float *m = (float *)desc->hooks.sdram_alloc(BUFFER_LENGTH * sizeof(float));
+    if (!m)
+      return k_unit_err_memory;
 
-    // Initialize drums
+    // Make sure memory is cleared
+    buf_clr_f32(m, BUFFER_LENGTH);
+
+    allocated_buffer_ = m;
+
+    // Cache the runtime descriptor for later use
+    runtime_desc_ = *desc;
+
+    // Make sure parameters are reset to default values
+    params_.reset();
+
+    // Initialize and pre-render BD sample
     rg909_bd_init(&bd_);
-    rg909_sd_init(&sd_);
+    rg909_bd_set_level(&bd_, 5.0f);
+    rg909_bd_set_tune(&bd_, 0.5f);
+    rg909_bd_set_decay(&bd_, 0.5f);
+    rg909_bd_set_attack(&bd_, 0.0f);
 
-    // Set initial drum parameters
-    rg909_bd_set_level(&bd_, level_);
-    rg909_bd_set_tune(&bd_, tune_);
-    rg909_bd_set_decay(&bd_, decay_);
-    rg909_bd_set_attack(&bd_, attack_);
-
-    rg909_sd_set_level(&sd_, level_);
-    rg909_sd_set_tone(&sd_, tone_);
-    rg909_sd_set_snappy(&sd_, tone_);
-    rg909_sd_set_tuning(&sd_, tune_);
+    rg909_bd_reset(&bd_);
+    for (uint32_t i = 0; i < 4800; i++) {
+      allocated_buffer_[i] = rg909_bd_process(&bd_, 48000.0f);
+    }
 
     return k_unit_err_none;
   }
 
-  inline void Teardown() {
-    // Clean up SD's dynamically allocated components
-    rg909_sd_destroy(&sd_);
+  inline void Teardown()
+  {
+    // Note: buffers allocated via sdram_alloc are automatically freed after unit teardown
+    // Note: cleanup and release resources if any
+    allocated_buffer_ = nullptr;
   }
 
-  inline void Reset() {
-    rg909_bd_reset(&bd_);
-    rg909_sd_reset(&sd_);
-    ppqn_counter_ = 0;
-    beat_counter_ = 0;
+  inline void Reset()
+  {
+    // Note: Reset effect state, excluding exposed parameter values.
   }
 
-  inline void Resume() {}
-  inline void Suspend() {}
+  inline void Resume()
+  {
+    // Note: Effect will resume and exit suspend state. Usually means the synth
+    // was selected and the render callback will be called again
 
-  inline void Render(const float * in, float * out, size_t frames) {
-    // Process drums for each frame
-    for (size_t f = 0; f < frames; f++) {
-      float bd_sample = rg909_bd_process(&bd_, sample_rate_);
-      float sd_sample = rg909_sd_process(&sd_, sample_rate_);
-      float drum_mix = bd_sample + sd_sample;
+    // Note: If it is required to clear large memory buffers, consider setting a flag
+    //       and trigger an asynchronous progressive clear on the audio thread (Process() handler)
+  }
 
-      // Mix with input based on dry/wet (stereo)
-      size_t idx = f * 2;
-      out[idx] = in[idx] * (1.0f - dry_wet_) + drum_mix * dry_wet_;         // Left
-      out[idx + 1] = in[idx + 1] * (1.0f - dry_wet_) + drum_mix * dry_wet_; // Right
+  inline void Suspend()
+  {
+    // Note: Effect will enter suspend state. Usually means another effect was
+    // selected and thus the render callback will not be called
+  }
+
+  /*===========================================================================*/
+  /* Other Public Methods. */
+  /*===========================================================================*/
+
+  fast_inline void Process(const float *in, float *out, size_t frames)
+  {
+    const float *__restrict in_p = in;
+    float *__restrict out_p = out;
+    const float *out_e = out_p + (frames << 1);
+
+    uint32_t readidx = s_readidx;
+    for (; out_p != out_e; in_p += 2, out_p += 2)
+    {
+      float sample = 0.0f;
+
+      if (readidx < s_readidx_end && readidx < BUFFER_LENGTH)
+      {
+        sample = allocated_buffer_[readidx];
+        readidx++;
+      }
+
+      out_p[0] = sample;
+      out_p[1] = sample;
+    }
+    s_readidx = readidx;
+  }
+
+  inline void setParameter(uint8_t index, int32_t value)
+  {
+    switch (index)
+    {
+    case PARAM1:
+      // 10bit 0-1023 parameter
+      value = clipminmaxi32(0, value, 1023);
+      params_.param1 = param_10bit_to_f32(value); // 0 .. 1023 -> 0.0 .. 1.0
+      break;
+
+    case PARAM2:
+      // 10bit 0-1023 parameter
+      value = clipminmaxi32(0, value, 1023);
+      params_.param2 = param_10bit_to_f32(value); // 0 .. 1023 -> 0.0 .. 1.0
+      break;
+
+    case DEPTH:
+      // Single digit base-10 fractional value, bipolar dry/wet
+      value = clipminmaxi32(-1000, value, 1000);
+      params_.depth = value / 1000.f; // -100.0 .. 100.0 -> -1.0 .. 1.0
+      break;
+
+    case PARAM4:
+      // strings type parameter, receiving index value
+      value = clipminmaxi32(PARAM4_VALUE0, value, NUM_PARAM4_VALUES - 1);
+      params_.param4 = value;
+      break;
+
+    default:
+      break;
     }
   }
 
-  inline void setParameter(uint8_t index, int32_t value) {
-    // NTS-3 uses 0-1023 range
-    switch (index) {
-      case PARAM_LEVEL:
-        level_ = value / 1023.0f;
-        rg909_bd_set_level(&bd_, level_);
-        rg909_sd_set_level(&sd_, level_);
-        break;
+  inline int32_t getParameterValue(uint8_t index) const
+  {
+    switch (index)
+    {
+    case PARAM1:
+      // 10bit 0-1023 parameter
+      return param_f32_to_10bit(params_.param1);
+      break;
 
-      case PARAM_TUNE:
-        tune_ = value / 1023.0f;
-        rg909_bd_set_tune(&bd_, tune_);
-        rg909_sd_set_tuning(&sd_, tune_);
-        break;
+    case PARAM2:
+      // 10bit 0-1023 parameter
+      return param_f32_to_10bit(params_.param2);
+      break;
 
-      case PARAM_DECAY:
-        decay_ = value / 1023.0f;
-        rg909_bd_set_decay(&bd_, decay_);
-        break;
+    case DEPTH:
+      // Single digit base-10 fractional value, bipolar dry/wet
+      return (int32_t)(params_.depth * 1000);
+      break;
 
-      case PARAM_ATTACK:
-        attack_ = value / 1023.0f;
-        rg909_bd_set_attack(&bd_, attack_);
-        break;
+    case PARAM4:
+      // strings type parameter, return index value
+      return params_.param4;
 
-      case PARAM_DRY_WET:
-        dry_wet_ = value / 1023.0f;
-        break;
-
-      case PARAM_PATTERN:
-        pattern_ = value / 1023.0f;
-        break;
-
-      case PARAM_SWING:
-        swing_ = value / 1023.0f;
-        break;
-
-      case PARAM_TONE:
-        tone_ = value / 1023.0f;
-        rg909_sd_set_tone(&sd_, tone_);
-        rg909_sd_set_snappy(&sd_, tone_);  // Use tone to control snappiness too
-        break;
-
-      default:
-        break;
+    default:
+      break;
     }
+
+    return INT_MIN; // Note: will be handled as invalid
   }
 
-  inline int32_t getParameterValue(uint8_t index) const {
-    // NTS-3 uses 0-1023 range
-    switch (index) {
-      case PARAM_LEVEL: return (int32_t)(level_ * 1023.0f);
-      case PARAM_TUNE: return (int32_t)(tune_ * 1023.0f);
-      case PARAM_DECAY: return (int32_t)(decay_ * 1023.0f);
-      case PARAM_ATTACK: return (int32_t)(attack_ * 1023.0f);
-      case PARAM_DRY_WET: return (int32_t)(dry_wet_ * 1023.0f);
-      case PARAM_PATTERN: return (int32_t)(pattern_ * 1023.0f);
-      case PARAM_SWING: return (int32_t)(swing_ * 1023.0f);
-      case PARAM_TONE: return (int32_t)(tone_ * 1023.0f);
-      default: return 0;
-    }
-  }
+  inline const char *getParameterStrValue(uint8_t index, int32_t value) const
+  {
+    // Note: String memory must be accessible even after function returned.
+    //       It can be assumed that caller will have copied or used the string
+    //       before the next call to getParameterStrValue
 
-  inline const char * getParameterStrValue(uint8_t index, int32_t value) const {
-    (void)value;
-    (void)index;
+    static const char *param4_strings[NUM_PARAM4_VALUES] = {
+        "VAL 0",
+        "VAL 1",
+        "VAL 2",
+        "VAL 3",
+    };
+
+    switch (index)
+    {
+    case PARAM4:
+      if (value >= PARAM4_VALUE0 && value < NUM_PARAM4_VALUES)
+        return param4_strings[value];
+      break;
+    default:
+      break;
+    }
+
     return nullptr;
   }
 
-  inline const uint8_t * getParameterBmpValue(uint8_t index, int32_t value) const {
-    (void)value;
-    (void)index;
-    return nullptr;
+  inline void setTempo(uint32_t tempo)
+  {
+    // const float bpmf = (tempo >> 16) + (tempo & 0xFFFF) / static_cast<float>(0x10000);
+    (void)tempo;
   }
 
-  inline void setTempo(uint32_t tempo) {
-    // Tempo is in fixed point: high 16 bits = integer, low 16 bits = fraction
-    tempo_ = (tempo >> 16) + (tempo & 0xFFFF) / static_cast<float>(0x10000);
-  }
-
-  inline void tempo4ppqnTick(uint32_t counter) {
-    ppqn_counter_ = counter;
-
-    // Trigger on quarter note boundaries (every 4 ticks)
-    if ((counter % 4) == 0) {
-      uint32_t quarter_note = counter / 4;
-      beat_counter_ = quarter_note % 4; // Beat within bar (0-3)
-
-      // Determine if we should trigger based on pattern density
-      float density = touch_active_ ? touch_y_ : pattern_;
-
-      bool should_trigger = false;
-
-      if (density > 0.875f) {
-        // Four-on-the-floor (all beats)
-        should_trigger = true;
-      } else if (density > 0.625f) {
-        // Beats 1, 2, 3, 4 (full)
-        should_trigger = true;
-      } else if (density > 0.375f) {
-        // Beats 1 and 3
-        should_trigger = (beat_counter_ == 0 || beat_counter_ == 2);
-      } else if (density > 0.125f) {
-        // Beat 1 only
-        should_trigger = (beat_counter_ == 0);
-      }
-      // Below 0.125f = no triggers
-
-      if (should_trigger) {
-        // Trigger bass drum on pattern beats
-        rg909_bd_trigger(&bd_, 100, sample_rate_);
-
-        // Trigger snare on beats 2 and 4 (backbeat)
-        if (beat_counter_ == 1 || beat_counter_ == 3) {
-          rg909_sd_trigger(&sd_, 100, sample_rate_);
-        }
-      }
+  inline void tempo4ppqnTick(uint32_t counter)
+  {
+    // Trigger on every 4th tick (every quarter note = 4-on-the-floor)
+    if (counter % 4 == 0) {
+      s_readidx = 0;
+      s_readidx_end = 4800;
     }
   }
 
-  inline void touchEvent(uint8_t id, uint8_t phase, uint32_t x, uint32_t y) {
+  inline void touchEvent(uint8_t id, uint8_t phase, uint32_t x, uint32_t y)
+  {
+    // Note: Touch x/y events are already mapped to specific parameters so there is usually there no need to set parameters from here.
+    //       Audio source type effects, for instance, may require these events to trigger enveloppes and such.
+
     (void)id;
+    (void)phase;
     (void)x;
+    (void)y;
 
-    // Touch Y position controls pattern density
-    // Y range is 0-1023, convert to 0.0-1.0
-    touch_y_ = y / 1023.0f;
-
-    // Track touch state
-    if (phase == 0) {
-      // Touch began - trigger drums for testing
-      touch_active_ = true;
-      rg909_bd_trigger(&bd_, 100, sample_rate_);
-      rg909_sd_trigger(&sd_, 100, sample_rate_);
-    } else if (phase == 2) {
-      // Touch ended
-      touch_active_ = false;
+    switch (phase)
+    {
+    case k_unit_touch_phase_began:
+      // Trigger playback of pre-rendered BD sample
+      s_readidx = 0;
+      s_readidx_end = 4800;
+      break;
+    default:
+      break;
     }
-    // phase == 1 is touch moved, keeps touch_active_ = true
   }
 
-  inline void LoadPreset(uint8_t idx) { (void)idx; }
-  inline uint8_t getPresetIndex() const { return 0; }
-
-  static inline const char * getPresetName(uint8_t idx) {
-    (void)idx;
-    return nullptr;
-  }
+  /*===========================================================================*/
+  /* Static Members. */
+  /*===========================================================================*/
 
 private:
-  RG909_BD bd_;
-  RG909_SD sd_;
-  float sample_rate_;
-  float tempo_;
-  uint32_t ppqn_counter_;
-  uint32_t beat_counter_;
-  float touch_y_;
-  bool touch_active_;
+  /*===========================================================================*/
+  /* Private Member Variables. */
+  /*===========================================================================*/
 
-  // Parameters
-  float level_;
-  float tune_;
-  float decay_;
-  float attack_;
-  float dry_wet_;
-  float pattern_;
-  float swing_;
-  float tone_;
+  std::atomic_uint_fast32_t flags_;
+
+  unit_runtime_desc_t runtime_desc_;
+
+  Params params_;
+
+  float *allocated_buffer_;
+  uint32_t s_writeidx = BUFFER_LENGTH;
+  uint32_t s_readidx = 0;
+  uint32_t s_readidx_end = 0;
+  float speed = 0.0;
+
+  RG909_BD bd_;
+
+  /*===========================================================================*/
+  /* Private Methods. */
+  /*===========================================================================*/
+
+  /*===========================================================================*/
+  /* Constants. */
+  /*===========================================================================*/
 };

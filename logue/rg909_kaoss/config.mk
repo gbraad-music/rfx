@@ -4,7 +4,7 @@ PROJECT := rg909_kaoss
 PROJECT_TYPE := genericfx
 
 # Sources
-UCSRC = header.c
+UCSRC = header.c rg909_drum.c
 UCSRC += /rfx/synth/rg909_bd.c
 UCSRC += /rfx/synth/synth_resonator.c
 UCSRC += /rfx/synth/synth_noise.c

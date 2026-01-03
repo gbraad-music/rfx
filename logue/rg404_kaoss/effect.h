@@ -1,6 +1,6 @@
 /*
- * RG-404 Background Kick Generator
- * Four-on-the-floor kick using C-based implementation
+ * RG-404 Kaotic Drum Generator
+ * Kick and snare drum machine using C-based implementation
  */
 
 #pragma once
@@ -9,7 +9,7 @@
 #include "unit_genericfx.h"
 
 extern "C" {
-#include "rg404_kick.h"
+#include "rg404_drum.h"
 }
 
 // WORKAROUND for "_ZdlPv", "ELF error: resolve symbol"
@@ -23,32 +23,33 @@ public:
 
   enum
   {
-    PARAM_RHYTHM = 0U,  // Rhythmic variation (syncopation/swing)
-    PARAM_LEVEL,        // Kick mix level (DEPTH)
+    PARAM_KICK = 0U,    // Kick density (X-axis) - 0 = no kick
+    PARAM_SNARE,        // Snare variation (Y-axis) - 0 = no snare
     PARAM_DRIVE,        // Kick overdrive/saturation (unmapped)
     NUM_PARAMS
   };
 
   inline void setParameter(uint8_t index, int32_t value) override final
   {
-    if (!kick_) return;
+    if (!drum_) return;
 
     switch (index)
     {
-    case PARAM_RHYTHM:
-      // Convert 0-1023 to rhythmic variation (0.0 to 1.0)
-      // 0.0 = pure 4-on-floor, 1.0 = maximum syncopation/variation
+    case PARAM_KICK:
+      // Convert 0-1023 to kick density (0.0 to 1.0)
+      // 0.0 = no kick, 1.0 = maximum kick density/variation
       {
-        float rhythm = value / 1023.0f;
-        rg404_kick_set_rhythm(kick_, rhythm);
+        float density = value / 1023.0f;
+        rg404_drum_set_kick_density(drum_, density);
       }
       break;
 
-    case PARAM_LEVEL:
-      // Convert 0-1023 to mix level (0.0 to 1.0)
+    case PARAM_SNARE:
+      // Convert 0-1023 to snare variation (0.0 to 1.0)
+      // 0.0 = no snare, 1.0 = maximum snare variation
       {
-        float mix = value / 1023.0f;
-        rg404_kick_set_mix(kick_, mix);
+        float variation = value / 1023.0f;
+        rg404_drum_set_snare_variation(drum_, variation);
       }
       break;
 
@@ -56,7 +57,7 @@ public:
       // Convert 0-1023 to drive amount (1.0 to 3.0)
       {
         float drive = 1.0f + (value / 1023.0f) * 2.0f;
-        rg404_kick_set_drive(kick_, drive);
+        rg404_drum_set_drive(drum_, drive);
       }
       break;
     }
@@ -72,29 +73,29 @@ public:
   void init(float *allocated_buffer) override final
   {
     (void)allocated_buffer;
-    kick_ = rg404_kick_create();
+    drum_ = rg404_drum_create();
 
     // Set default tempo to 120 BPM
-    if (kick_)
+    if (drum_)
     {
-      rg404_kick_set_tempo(kick_, 120.0f);
+      rg404_drum_set_tempo(drum_, 120.0f);
     }
   }
 
   void teardown() override final
   {
-    if (kick_)
+    if (drum_)
     {
-      rg404_kick_destroy(kick_);
-      kick_ = nullptr;
+      rg404_drum_destroy(drum_);
+      drum_ = nullptr;
     }
   }
 
   void process(const float *__restrict in, float *__restrict out, uint32_t frames) override final
   {
-    if (!kick_)
+    if (!drum_)
     {
-      // Fallback to pass-through if no kick instance
+      // Fallback to pass-through if no drum instance
       for (uint32_t i = 0; i < frames * 2; i++)
       {
         out[i] = in[i];
@@ -102,7 +103,7 @@ public:
       return;
     }
 
-    // Process kick drum and mix with input
+    // Process drum machine and mix with input
     const uint32_t sample_rate = 48000; // NTS-3 sample rate
 
     for (uint32_t i = 0; i < frames; i++)
@@ -111,7 +112,7 @@ public:
       float in_r = in[i * 2 + 1];
       float out_l, out_r;
 
-      rg404_kick_process(kick_, &in_l, &in_r, &out_l, &out_r, sample_rate);
+      rg404_drum_process(drum_, &in_l, &in_r, &out_l, &out_r, sample_rate);
 
       out[i * 2] = out_l;
       out[i * 2 + 1] = out_r;
@@ -128,12 +129,12 @@ public:
 
   inline void setTempo(float bpm) override final
   {
-    if (kick_)
+    if (drum_)
     {
-      rg404_kick_set_tempo(kick_, bpm);
+      rg404_drum_set_tempo(drum_, bpm);
     }
   }
 
 private:
-  RG404Kick* kick_ = nullptr;
+  RG404Drum* drum_ = nullptr;
 };

@@ -17,13 +17,13 @@ const __unit_header genericfx_unit_header_t unit_header = {
     .num_params = 3,
 
     .params = {
-      // RHYTHM - Rhythmic variation/syncopation (X-axis)
-      {0, 1023, 0, 0, k_unit_param_type_none, 0, 0, 0, {"RHYTHM"}},
+      // KICK - Kick density/variation (X-axis)
+      {0, 1023, 0, 512, k_unit_param_type_none, 0, 0, 0, {"KICK"}},
 
-      // LEVEL - Kick mix level (DEPTH control)
-      {0, 1023, 0, 716, k_unit_param_type_none, 0, 0, 0, {"LEVEL"}},
+      // SNARE - Snare variation (Y-axis)
+      {0, 1023, 0, 0, k_unit_param_type_none, 0, 0, 0, {"SNARE"}},
 
-      // DRIVE - Kick overdrive/saturation (unmapped, editor only)
+      // DRIVE - Overdrive/saturation (unmapped, editor only)
       {0, 1023, 0, 0, k_unit_param_type_none, 0, 0, 0, {"DRIVE"}},
 
       {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
@@ -34,11 +34,11 @@ const __unit_header genericfx_unit_header_t unit_header = {
     },
   },
   .default_mappings = {
-    // RHYTHM mapped to X axis
-    {k_genericfx_param_assign_x, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
+    // KICK mapped to X axis
+    {k_genericfx_param_assign_x, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 512},
 
-    // LEVEL mapped to DEPTH
-    {k_genericfx_param_assign_depth, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 716},
+    // SNARE mapped to Y axis
+    {k_genericfx_param_assign_y, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
 
     // DRIVE unmapped (editor only)
     {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},

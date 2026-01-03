@@ -4,7 +4,7 @@ PROJECT := rg404_kaoss
 PROJECT_TYPE := genericfx
 
 # Sources
-UCSRC = header.c rg404_kick.c
+UCSRC = header.c rg404_drum.c
 UCXXSRC = unit.cc
 
 # Libraries

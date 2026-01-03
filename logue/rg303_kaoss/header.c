@@ -23,8 +23,8 @@ const __unit_header genericfx_unit_header_t unit_header = {
       // PATTERN - Pattern variation (Y-axis)
       {0, 1023, 0, 512, k_unit_param_type_none, 0, 0, 0, {"PATTERN"}},
 
-      // ACCENT - Accent amount (unmapped, editor only)
-      {0, 1023, 0, 512, k_unit_param_type_none, 0, 0, 0, {"ACCENT"}},
+      // SLIDE - Slide/portamento amount (unmapped, editor only)
+      {0, 1023, 0, 512, k_unit_param_type_none, 0, 0, 0, {"SLIDE"}},
 
       {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
       {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
@@ -40,7 +40,7 @@ const __unit_header genericfx_unit_header_t unit_header = {
     // PATTERN mapped to Y axis
     {k_genericfx_param_assign_y, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 512},
 
-    // ACCENT unmapped (editor only)
+    // SLIDE unmapped (editor only)
     {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 512},
 
     {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},

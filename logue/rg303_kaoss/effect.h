@@ -25,7 +25,7 @@ public:
   {
     PARAM_FILTER = 0U,  // Filter cutoff/resonance (X-axis)
     PARAM_PATTERN,      // Pattern variation (Y-axis)
-    PARAM_ACCENT,       // Accent amount (unmapped)
+    PARAM_SLIDE,        // Slide/portamento amount (unmapped)
     NUM_PARAMS
   };
 
@@ -53,11 +53,12 @@ public:
       }
       break;
 
-    case PARAM_ACCENT:
-      // Convert 0-1023 to accent amount (0.0 to 1.0)
+    case PARAM_SLIDE:
+      // Convert 0-1023 to slide amount (0.0 to 1.0)
+      // 0.0 = no slide, 1.0 = maximum portamento
       {
-        float accent = value / 1023.0f;
-        rg303_bass_set_accent(bass_, accent);
+        float slide = value / 1023.0f;
+        rg303_bass_set_slide(bass_, slide);
       }
       break;
     }

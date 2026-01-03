@@ -13,7 +13,7 @@ void rg303_bass_destroy(RG303Bass* bass);
 // Parameters
 void rg303_bass_set_filter(RG303Bass* bass, float cutoff);       // 0.0-1.0: filter cutoff/resonance
 void rg303_bass_set_pattern(RG303Bass* bass, float variation);   // 0.0-1.0: pattern variation
-void rg303_bass_set_accent(RG303Bass* bass, float accent);       // 0.0-1.0: accent amount
+void rg303_bass_set_slide(RG303Bass* bass, float slide);         // 0.0-1.0: slide/portamento amount
 void rg303_bass_set_mix(RG303Bass* bass, float mix);
 
 // Processing

@@ -15,7 +15,7 @@ struct RG303Bass {
     float global_tempo_bpm;
     float filter_cutoff;     // 0.0 = closed, 1.0 = open
     float pattern_variation; // 0.0 = no notes, 1.0 = full pattern
-    float accent_amount;     // 0.0 = no accent, 1.0 = max accent
+    float slide_amount;      // 0.0 = no slide, 1.0 = full portamento
     float bass_mix;
     float input_mix;
 
@@ -26,7 +26,9 @@ struct RG303Bass {
     // Oscillator state
     int note_active;
     float osc_phase;         // Sawtooth phase (0 to 1)
-    float current_freq;      // Current note frequency
+    float current_freq;      // Current note frequency (with slide)
+    float target_freq;       // Target frequency for slide
+    float previous_freq;     // Previous note frequency for slide
 
     // Envelope state
     float env_time;
@@ -38,7 +40,9 @@ struct RG303Bass {
 
     // Pattern state
     int current_note;        // MIDI note number
+    int previous_note;       // Previous MIDI note for slide
     int is_accent;           // Whether current note is accented
+    int has_slide;           // Whether current note has slide
 };
 
 // TB-303 style bass pattern - classic acid line
@@ -55,6 +59,14 @@ static const int PATTERN_ACCENTS[16] = {
     0, 0, 1, 0,
     1, 0, 0, 0,
     0, 0, 0, 0
+};
+
+// Slide pattern - which notes should slide from previous note
+static const int PATTERN_SLIDES[16] = {
+    0, 0, 1, 0,   // Slide up to C3
+    0, 0, 1, 0,   // Slide up to C3
+    0, 0, 0, 0,   // No slide
+    0, 0, 1, 0    // Slide up to G2
 };
 
 // Convert MIDI note to frequency
@@ -77,7 +89,7 @@ RG303Bass* rg303_bass_create(void)
     bass->global_tempo_bpm = 120.0f;
     bass->filter_cutoff = 0.3f;       // Moderate filter by default
     bass->pattern_variation = 0.5f;   // Some notes by default
-    bass->accent_amount = 0.5f;       // Moderate accent
+    bass->slide_amount = 0.5f;        // Moderate slide by default
     bass->bass_mix = 0.7f;
     bass->input_mix = 0.3f;
 
@@ -88,6 +100,8 @@ RG303Bass* rg303_bass_create(void)
     bass->note_active = 0;
     bass->osc_phase = 0.0f;
     bass->current_freq = 0.0f;
+    bass->target_freq = 0.0f;
+    bass->previous_freq = 0.0f;
 
     bass->env_time = 0.0f;
     bass->env_value = 0.0f;
@@ -96,7 +110,9 @@ RG303Bass* rg303_bass_create(void)
     bass->filter_z1 = 0.0f;
 
     bass->current_note = 0;
+    bass->previous_note = 0;
     bass->is_accent = 0;
+    bass->has_slide = 0;
 
     // Calculate initial metro increment (16th notes = 4x beat rate)
     float beats_per_second = bass->global_tempo_bpm / 60.0f;
@@ -125,10 +141,10 @@ void rg303_bass_set_pattern(RG303Bass* bass, float variation)
     bass->pattern_variation = variation;
 }
 
-void rg303_bass_set_accent(RG303Bass* bass, float accent)
+void rg303_bass_set_slide(RG303Bass* bass, float slide)
 {
     if (!bass) return;
-    bass->accent_amount = accent;
+    bass->slide_amount = slide;
 }
 
 void rg303_bass_set_mix(RG303Bass* bass, float mix)
@@ -192,9 +208,25 @@ void rg303_bass_process(RG303Bass* bass, const float* in_l, const float* in_r,
         if (should_trigger) {
             bass->note_active = 1;
             bass->env_time = 0.0f;
+
+            // Store previous note for slide
+            bass->previous_note = bass->current_note;
+            bass->previous_freq = bass->target_freq;
+
+            // Set new note
             bass->current_note = PATTERN_NOTES[bass->step_count];
             bass->is_accent = PATTERN_ACCENTS[bass->step_count];
-            bass->current_freq = midi_to_freq(bass->current_note);
+            bass->has_slide = PATTERN_SLIDES[bass->step_count];
+
+            // Calculate target frequency
+            bass->target_freq = midi_to_freq(bass->current_note);
+
+            // If slide is enabled and this note has slide flag, start from previous freq
+            if (bass->has_slide && bass->slide_amount > 0.01f && bass->previous_freq > 0.0f) {
+                bass->current_freq = bass->previous_freq;  // Start at previous note
+            } else {
+                bass->current_freq = bass->target_freq;  // Jump immediately
+            }
         }
 
         // Advance step counter (16 steps = 1 bar)
@@ -208,9 +240,23 @@ void rg303_bass_process(RG303Bass* bass, const float* in_l, const float* in_r,
     float bass_out = 0.0f;
 
     if (bass->note_active) {
-        const float note_duration = 0.15f;  // 150ms per note (staccato)
+        const float note_duration = 0.45f;  // 450ms per note (longer, more legato)
 
         if (bass->env_time < note_duration) {
+            // Slide/portamento - glide from current_freq to target_freq
+            if (bass->has_slide && bass->slide_amount > 0.01f) {
+                // Slide time controlled by slide_amount (20ms to 80ms)
+                float slide_time = 0.02f + (bass->slide_amount * 0.06f);
+
+                if (bass->env_time < slide_time) {
+                    // Linear interpolation from current to target
+                    float t = bass->env_time / slide_time;
+                    bass->current_freq = bass->previous_freq + (bass->target_freq - bass->previous_freq) * t;
+                } else {
+                    bass->current_freq = bass->target_freq;
+                }
+            }
+
             // Generate sawtooth wave
             bass->osc_phase += bass->current_freq / (float)sample_rate;
             if (bass->osc_phase >= 1.0f) bass->osc_phase -= 1.0f;
@@ -224,7 +270,7 @@ void rg303_bass_process(RG303Bass* bass, const float* in_l, const float* in_r,
 
             // Filter envelope - starts high, decays to cutoff value
             // TB-303 style: envelope modulates filter cutoff
-            float filter_env = 1.0f - (bass->env_time / 0.05f);  // 50ms filter envelope
+            float filter_env = 1.0f - (bass->env_time / 0.08f);  // 80ms filter envelope (longer)
             if (filter_env < 0.0f) filter_env = 0.0f;
             filter_env = filter_env * filter_env;  // Exponential curve
 
@@ -238,7 +284,7 @@ void rg303_bass_process(RG303Bass* bass, const float* in_l, const float* in_r,
             bass_out = filter_process(&bass->filter, saw, cutoff * 0.5f, resonance);
 
             // Apply amplitude envelope and accent
-            float accent_mult = bass->is_accent ? (1.0f + bass->accent_amount) : 1.0f;
+            float accent_mult = bass->is_accent ? 1.5f : 1.0f;  // Accents are 50% louder
             bass_out *= amp_env * 0.5f * accent_mult;
 
             bass->env_time += 1.0f / (float)sample_rate;

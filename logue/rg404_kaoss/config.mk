@@ -1,12 +1,16 @@
-# Project name
-PROJECT = rg404_kaoss
-PROJECT_TYPE = genericfx
+# RG-404 Kaotic Effect for NTS-3 kaoss pad
 
-# C++ sources
+PROJECT := rg404_kaoss
+PROJECT_TYPE := genericfx
+
+# Sources
+UCSRC = header.c rg404_kick.c
 UCXXSRC = unit.cc
 
-# C sources
-UCSRC = header.c rg404_kick.c
-
-# Include directory for processor.h
+# Libraries
 UINCDIR = .
+ULIBDIR =
+ULIBS = -lm
+
+# Definitions
+UDEFS =

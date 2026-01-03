@@ -9,9 +9,13 @@ LDFLAGS = -lm
 SOURCES = synth_resonator.c \
           synth_noise.c \
           synth_filter.c \
+          synth_filter_ladder.c \
           synth_envelope.c \
+          synth_lfo.c \
+          synth_oscillator.c \
           synth_voice_manager.c \
-          synth_utils.c
+          synth_utils.c \
+          bass_station.c
 
 # Object files
 OBJECTS = $(SOURCES:.c=.o)

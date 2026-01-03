@@ -1,0 +1,13 @@
+{
+  "header": {
+    "platform": "nts-3_kaoss",
+    "module": "genericfx",
+    "api": "2.0.0",
+    "dev_id": 0,
+    "prg_id": 1028,
+    "version": "1.0.0",
+    "name": "RG-404 BGFX",
+    "author": "Regroove",
+    "description": "Four-on-the-floor kick generator (background effect)"
+  }
+}

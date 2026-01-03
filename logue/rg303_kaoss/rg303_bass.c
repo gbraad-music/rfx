@@ -45,28 +45,29 @@ struct RG303Bass {
     int has_slide;           // Whether current note has slide
 };
 
-// TB-303 style bass pattern - classic acid line
-// Using MIDI note numbers: C2=36, C#2=37, D2=38, etc.
+// "Happy Birthday" melody as bass pattern
+// Using MIDI note numbers: C2=36, D2=38, E2=40, F2=41, G2=43
+// Pattern: C C D C F E - C C D C G F (first two phrases)
 static const int PATTERN_NOTES[16] = {
-    36, 0, 48, 0,   // C2, rest, C3, rest
-    43, 0, 48, 0,   // G2, rest, C3, rest
-    36, 0, 48, 0,   // C2, rest, C3, rest
-    41, 0, 43, 0    // F2, rest, G2, rest
+    36, 0, 36, 38,   // C2, rest, C2, D2    (Ha-ppy birth-)
+    36, 0, 41, 0,    // C2, rest, F2, rest  (-day to)
+    40, 0, 36, 0,    // E2, rest, C2, rest  (you, Ha-)
+    36, 38, 36, 43   // C2, D2, C2, G2      (-ppy birth-day to)
 };
 
 static const int PATTERN_ACCENTS[16] = {
-    1, 0, 0, 0,
-    0, 0, 1, 0,
-    1, 0, 0, 0,
-    0, 0, 0, 0
+    1, 0, 0, 0,    // Accent on first "Ha-"
+    0, 0, 1, 0,    // Accent on "to"
+    0, 0, 1, 0,    // Accent on "you"
+    0, 0, 0, 1     // Accent on final "to"
 };
 
-// Slide pattern - which notes should slide from previous note
+// Slide pattern - add some acid weirdness to the birthday tune
 static const int PATTERN_SLIDES[16] = {
-    0, 0, 1, 0,   // Slide up to C3
-    0, 0, 1, 0,   // Slide up to C3
-    0, 0, 0, 0,   // No slide
-    0, 0, 1, 0    // Slide up to G2
+    0, 0, 0, 1,    // Slide to D2
+    0, 0, 1, 0,    // Slide to F2
+    0, 0, 0, 0,    // No slide
+    0, 0, 0, 1     // Slide to G2
 };
 
 // Convert MIDI note to frequency

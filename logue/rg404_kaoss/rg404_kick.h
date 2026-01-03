@@ -13,6 +13,7 @@ void rg404_kick_destroy(RG404Kick* kick);
 // Parameters
 void rg404_kick_set_rhythm(RG404Kick* kick, float rhythm);
 void rg404_kick_set_mix(RG404Kick* kick, float mix);
+void rg404_kick_set_drive(RG404Kick* kick, float drive);
 
 // Processing
 void rg404_kick_process(RG404Kick* kick, const float* in_l, const float* in_r,

@@ -14,16 +14,18 @@ const __unit_header genericfx_unit_header_t unit_header = {
     .unit_id = 0x2U,
     .version = 0x00010000U,
     .name = "RG-404 Kaotic",
-    .num_params = 2,
+    .num_params = 3,
 
     .params = {
       // RHYTHM - Rhythmic variation/syncopation (X-axis)
       {0, 1023, 0, 0, k_unit_param_type_none, 0, 0, 0, {"RHYTHM"}},
 
-      // LEVEL - Kick mix level (Y-axis)
+      // LEVEL - Kick mix level (DEPTH control)
       {0, 1023, 0, 716, k_unit_param_type_none, 0, 0, 0, {"LEVEL"}},
 
-      {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
+      // DRIVE - Kick overdrive/saturation (unmapped, editor only)
+      {0, 1023, 0, 0, k_unit_param_type_none, 0, 0, 0, {"DRIVE"}},
+
       {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
       {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
       {0, 0, 0, 0, k_unit_param_type_none, 0, 0, 0, {""}},
@@ -35,9 +37,12 @@ const __unit_header genericfx_unit_header_t unit_header = {
     // RHYTHM mapped to X axis
     {k_genericfx_param_assign_x, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
 
-    // LEVEL mapped to Y axis
-    {k_genericfx_param_assign_y, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 716},
-    {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},
+    // LEVEL mapped to DEPTH
+    {k_genericfx_param_assign_depth, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 716},
+
+    // DRIVE unmapped (editor only)
+    {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 1023, 0},
+
     {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},
     {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},
     {k_genericfx_param_assign_none, k_genericfx_curve_linear, k_genericfx_curve_unipolar, 0, 0, 0},

@@ -6,6 +6,7 @@ struct RG404Kick {
     float rhythm_variation;  // 0.0 = pure 4-on-floor, 1.0 = max syncopation
     float kick_mix;
     float input_mix;
+    float drive_amount;      // 1.0 = clean, 3.0 = max overdrive
 
     float metro_phase;
     float metro_increment;
@@ -25,6 +26,7 @@ RG404Kick* rg404_kick_create(void)
     kick->rhythm_variation = 0.0f;  // Pure 4-on-floor by default
     kick->kick_mix = 0.9f;
     kick->input_mix = 0.1f;
+    kick->drive_amount = 1.0f;      // Clean by default
     kick->metro_phase = 0.0f;
     kick->metro_increment = 0.0f;
     kick->step_count = 0;
@@ -57,6 +59,12 @@ void rg404_kick_set_mix(RG404Kick* kick, float mix)
 {
     if (!kick) return;
     kick->kick_mix = mix;
+}
+
+void rg404_kick_set_drive(RG404Kick* kick, float drive)
+{
+    if (!kick) return;
+    kick->drive_amount = drive;
 }
 
 void rg404_kick_set_tempo(RG404Kick* kick, float bpm)
@@ -159,6 +167,19 @@ void rg404_kick_process(RG404Kick* kick, const float* in_l, const float* in_r,
 
             // Apply amplitude envelope - boosted for louder bass
             kick_out = sine * amp_env * 1.5f;
+
+            // Apply drive/saturation
+            if (kick->drive_amount > 1.0f) {
+                kick_out *= kick->drive_amount;
+                // Soft clipping using tanh approximation
+                // tanh(x) ≈ x / (1 + |x|) for a simpler soft clip
+                if (kick_out > 0.0f) {
+                    kick_out = kick_out / (1.0f + kick_out);
+                } else {
+                    kick_out = kick_out / (1.0f - kick_out);
+                }
+                kick_out *= 1.5f; // Compensate for clipping loss
+            }
 
             kick->envelope_time += 1.0f / (float)sample_rate;
         } else {

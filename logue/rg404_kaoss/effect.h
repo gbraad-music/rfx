@@ -24,7 +24,8 @@ public:
   enum
   {
     PARAM_RHYTHM = 0U,  // Rhythmic variation (syncopation/swing)
-    PARAM_LEVEL,        // Kick mix level
+    PARAM_LEVEL,        // Kick mix level (DEPTH)
+    PARAM_DRIVE,        // Kick overdrive/saturation (unmapped)
     NUM_PARAMS
   };
 
@@ -48,6 +49,14 @@ public:
       {
         float mix = value / 1023.0f;
         rg404_kick_set_mix(kick_, mix);
+      }
+      break;
+
+    case PARAM_DRIVE:
+      // Convert 0-1023 to drive amount (1.0 to 3.0)
+      {
+        float drive = 1.0f + (value / 1023.0f) * 2.0f;
+        rg404_kick_set_drive(kick_, drive);
       }
       break;
     }

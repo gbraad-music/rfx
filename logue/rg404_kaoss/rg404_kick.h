@@ -11,7 +11,7 @@ RG404Kick* rg404_kick_create(void);
 void rg404_kick_destroy(RG404Kick* kick);
 
 // Parameters
-void rg404_kick_set_tempo_mult(RG404Kick* kick, float mult);
+void rg404_kick_set_rhythm(RG404Kick* kick, float rhythm);
 void rg404_kick_set_mix(RG404Kick* kick, float mix);
 
 // Processing

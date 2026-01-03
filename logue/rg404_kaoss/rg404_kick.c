@@ -3,12 +3,13 @@
 
 struct RG404Kick {
     float global_tempo_bpm;
-    float tempo_multiplier;
+    float rhythm_variation;  // 0.0 = pure 4-on-floor, 1.0 = max syncopation
     float kick_mix;
     float input_mix;
 
     float metro_phase;
     float metro_increment;
+    int step_count;       // 16th note counter (0-15, one bar)
 
     int kick_active;
     float envelope_time;  // Time progress in seconds (0 to 0.15)
@@ -21,19 +22,20 @@ RG404Kick* rg404_kick_create(void)
     if (!kick) return NULL;
 
     kick->global_tempo_bpm = 120.0f;
-    kick->tempo_multiplier = 1.0f;
+    kick->rhythm_variation = 0.0f;  // Pure 4-on-floor by default
     kick->kick_mix = 0.9f;
     kick->input_mix = 0.1f;
     kick->metro_phase = 0.0f;
     kick->metro_increment = 0.0f;
+    kick->step_count = 0;
     kick->kick_active = 0;
     kick->envelope_time = 0.0f;
     kick->osc_phase = 0.0f;
 
-    // Calculate initial metro increment
-    float effective_bpm = kick->global_tempo_bpm * kick->tempo_multiplier;
-    float beats_per_second = effective_bpm / 60.0f;
-    kick->metro_increment = beats_per_second / 48000.0f;
+    // Calculate initial metro increment (16th notes = 4x beat rate)
+    float beats_per_second = kick->global_tempo_bpm / 60.0f;
+    float sixteenths_per_second = beats_per_second * 4.0f;
+    kick->metro_increment = sixteenths_per_second / 48000.0f;
 
     return kick;
 }
@@ -45,16 +47,10 @@ void rg404_kick_destroy(RG404Kick* kick)
     }
 }
 
-void rg404_kick_set_tempo_mult(RG404Kick* kick, float mult)
+void rg404_kick_set_rhythm(RG404Kick* kick, float rhythm)
 {
     if (!kick) return;
-    kick->tempo_multiplier = 0.5f + (mult * 1.5f);
-
-    float effective_bpm = kick->global_tempo_bpm * kick->tempo_multiplier;
-    if (effective_bpm < 30.0f) effective_bpm = 30.0f;
-    if (effective_bpm > 300.0f) effective_bpm = 300.0f;
-    float beats_per_second = effective_bpm / 60.0f;
-    kick->metro_increment = beats_per_second / 48000.0f;
+    kick->rhythm_variation = rhythm;
 }
 
 void rg404_kick_set_mix(RG404Kick* kick, float mix)
@@ -68,11 +64,11 @@ void rg404_kick_set_tempo(RG404Kick* kick, float bpm)
     if (!kick) return;
     kick->global_tempo_bpm = bpm;
 
-    float effective_bpm = kick->global_tempo_bpm * kick->tempo_multiplier;
-    if (effective_bpm < 30.0f) effective_bpm = 30.0f;
-    if (effective_bpm > 300.0f) effective_bpm = 300.0f;
-    float beats_per_second = effective_bpm / 60.0f;
-    kick->metro_increment = beats_per_second / 48000.0f;
+    if (bpm < 30.0f) bpm = 30.0f;
+    if (bpm > 300.0f) bpm = 300.0f;
+    float beats_per_second = bpm / 60.0f;
+    float sixteenths_per_second = beats_per_second * 4.0f;
+    kick->metro_increment = sixteenths_per_second / 48000.0f;
 }
 
 void rg404_kick_process(RG404Kick* kick, const float* in_l, const float* in_r,
@@ -80,13 +76,54 @@ void rg404_kick_process(RG404Kick* kick, const float* in_l, const float* in_r,
 {
     if (!kick) return;
 
-    // Metro
+    // Metro - runs at 16th note resolution
     kick->metro_phase += kick->metro_increment;
     if (kick->metro_phase >= 1.0f) {
         kick->metro_phase -= 1.0f;
-        kick->kick_active = 1;
-        kick->envelope_time = 0.0f;
-        kick->osc_phase = 0.0f;
+
+        // Determine if we should trigger a kick on this 16th note
+        int should_trigger = 0;
+
+        // Main beats are steps 0, 4, 8, 12 (quarter notes)
+        // Pure 4-on-the-floor: kick on every quarter note
+        if (kick->step_count == 0 || kick->step_count == 4 ||
+            kick->step_count == 8 || kick->step_count == 12) {
+            should_trigger = 1;
+        }
+
+        // Add syncopation based on rhythm_variation
+        if (kick->rhythm_variation > 0.2f) {
+            // Add kick before beat 4: step 14 (last 16th of bar)
+            if (kick->step_count == 14) {
+                should_trigger = 1;
+            }
+        }
+
+        if (kick->rhythm_variation > 0.5f) {
+            // Add more syncopation: step 6 (16th after beat 2)
+            if (kick->step_count == 6) {
+                should_trigger = 1;
+            }
+        }
+
+        if (kick->rhythm_variation > 0.8f) {
+            // Dense pattern: add step 10 (16th after beat 3)
+            if (kick->step_count == 10) {
+                should_trigger = 1;
+            }
+        }
+
+        if (should_trigger) {
+            kick->kick_active = 1;
+            kick->envelope_time = 0.0f;
+            kick->osc_phase = 0.0f;
+        }
+
+        // Advance step counter (16 steps = 1 bar)
+        kick->step_count++;
+        if (kick->step_count >= 16) {
+            kick->step_count = 0;
+        }
     }
 
     // Generate kick - 909-style with pitch envelope

@@ -116,6 +116,14 @@ public:
     (void)y;
   }
 
+  inline void setTempo(float bpm) override final
+  {
+    if (kick_)
+    {
+      rg404_kick_set_tempo(kick_, bpm);
+    }
+  }
+
 private:
   RG404Kick* kick_ = nullptr;
 };

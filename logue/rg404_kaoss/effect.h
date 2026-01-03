@@ -12,6 +12,10 @@ extern "C" {
 #include "rg404_kick.h"
 }
 
+// WORKAROUND for "_ZdlPv", "ELF error: resolve symbol"
+// The logue SDK doesn't provide operator delete, but the Effect destructor needs it
+void operator delete(void *) noexcept {}
+
 class Effect : public Processor
 {
 public:

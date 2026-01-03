@@ -23,8 +23,8 @@ public:
 
   enum
   {
-    PARAM_TEMPO = 0U,
-    PARAM_KICK_MIX,
+    PARAM_RHYTHM = 0U,  // Rhythmic variation (syncopation/swing)
+    PARAM_LEVEL,        // Kick mix level
     NUM_PARAMS
   };
 
@@ -34,15 +34,16 @@ public:
 
     switch (index)
     {
-    case PARAM_TEMPO:
-      // Convert 0-1023 to tempo multiplier (0.5x to 2.0x)
+    case PARAM_RHYTHM:
+      // Convert 0-1023 to rhythmic variation (0.0 to 1.0)
+      // 0.0 = pure 4-on-floor, 1.0 = maximum syncopation/variation
       {
-        float mult = 0.5f + (value / 1023.0f) * 1.5f;
-        rg404_kick_set_tempo_mult(kick_, mult);
+        float rhythm = value / 1023.0f;
+        rg404_kick_set_rhythm(kick_, rhythm);
       }
       break;
 
-    case PARAM_KICK_MIX:
+    case PARAM_LEVEL:
       // Convert 0-1023 to mix level (0.0 to 1.0)
       {
         float mix = value / 1023.0f;

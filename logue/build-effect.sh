@@ -42,13 +42,14 @@ for effect in $EFFECTS; do
 
     # Build using the SDK's cmd_entry pattern
     # Mount rfx at /rfx so effects can find ../param_interface.h
+    # Always do clean build to avoid stale object files
     podman run --rm \
         -v "$PLATFORM_PATH:/workspace:rw" \
         -v "$SCRIPT_DIR/$effect:/workspace/project:rw" \
         -v "$SCRIPT_DIR/..:/rfx:ro" \
         -h logue-sdk \
         $CONTAINER_IMAGE \
-        /app/cmd_entry bash -c "source /app/nts-3_kaoss/environment && cd /workspace/project && make install"
+        /app/cmd_entry bash -c "source /app/nts-3_kaoss/environment && cd /workspace/project && make clean && make install"
 
     if [ $? -eq 0 ]; then
         # Copy to bin directory in project root - find any .nts3unit file in the effect directory

@@ -23,6 +23,8 @@ public:
         , fBrightness(0.7f)
         , fVelocitySens(0.8f)
         , fVolume(0.83f)
+        , fLfoRate(0.3f)
+        , fLfoDepth(0.2f)
     {
         // Initialize sample data structure
         fSampleData.attack_data = m1piano_onset;
@@ -91,6 +93,16 @@ protected:
             param.symbol = "volume";
             param.ranges.def = 0.83f;
             break;
+        case kParameterLfoRate:
+            param.name = "LFO Rate";
+            param.symbol = "lfo_rate";
+            param.ranges.def = 0.3f;
+            break;
+        case kParameterLfoDepth:
+            param.name = "LFO Depth";
+            param.symbol = "lfo_depth";
+            param.ranges.def = 0.2f;
+            break;
         }
     }
 
@@ -101,6 +113,8 @@ protected:
         case kParameterBrightness: return fBrightness;
         case kParameterVelocitySens: return fVelocitySens;
         case kParameterVolume: return fVolume;
+        case kParameterLfoRate: return fLfoRate;
+        case kParameterLfoDepth: return fLfoDepth;
         default: return 0.0f;
         }
     }
@@ -120,6 +134,14 @@ protected:
             break;
         case kParameterVolume:
             fVolume = value;
+            break;
+        case kParameterLfoRate:
+            fLfoRate = value;
+            updateAllVoices();
+            break;
+        case kParameterLfoDepth:
+            fLfoDepth = value;
+            updateAllVoices();
             break;
         }
     }
@@ -170,6 +192,10 @@ private:
         // Map decay parameter to 0.5s - 8s range
         float decay_time = 0.5f + fDecay * 7.5f;
         synth_sample_player_set_loop_decay(fVoices[idx].player, decay_time);
+
+        // Map LFO rate: 0-1 -> 0.5Hz-8Hz
+        float lfo_freq = 0.5f + fLfoRate * 7.5f;
+        synth_sample_player_set_lfo(fVoices[idx].player, lfo_freq, fLfoDepth);
     }
 
     void updateAllVoices()
@@ -264,6 +290,7 @@ private:
     PianoVoice fVoices[PIANO_VOICES];
 
     float fDecay, fBrightness, fVelocitySens, fVolume;
+    float fLfoRate, fLfoDepth;
     float fFilterPrev = 0.0f;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RG1PianoPlugin)

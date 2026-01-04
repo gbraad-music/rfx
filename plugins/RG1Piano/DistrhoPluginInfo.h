@@ -37,6 +37,8 @@ enum Parameters {
     kParameterBrightness,
     kParameterVelocitySens,
     kParameterVolume,
+    kParameterLfoRate,
+    kParameterLfoDepth,
 
     kParameterCount
 };

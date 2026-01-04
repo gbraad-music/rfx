@@ -170,8 +170,8 @@ void modal_piano_trigger(ModalPiano* piano, uint8_t note, uint8_t velocity) {
         }
 
         // Higher harmonics decay faster (lower feedback)
-        // Feedback: 0.5 (subtle ring) to 0.3 (quick decay) - much lower to avoid distortion
-        float feedback = 0.5f - (harmonic - 1) * 0.04f;
+        // Feedback: 0.85 (good ring) to 0.75 (faster decay) - high enough to be audible
+        float feedback = 0.85f - (harmonic - 1) * 0.02f;
 
         comb_init(&piano->resonators[i], freq, sample_rate, feedback);
 
@@ -336,12 +336,19 @@ float modal_piano_process(ModalPiano* piano, uint32_t output_sample_rate) {
             resonant_sample += resonator_out * piano->resonator_gains[i];
         }
 
-        // Normalize resonator sum and scale down heavily to avoid distortion
-        // Comb filters build up amplitude, so we need very low scaling
-        resonant_sample *= 0.05f;
+        // Normalize resonator sum
+        // Comb filters build up amplitude, scale appropriately
+        resonant_sample *= 0.25f;
 
         // ADD to dry signal (preserves volume)
         sample = sample + resonant_sample * piano->resonance_amount;
+
+        // Soft clip the result to prevent harsh peaks from high resonance
+        if (sample > 0.95f) {
+            sample = 0.95f + 0.05f * tanhf((sample - 0.95f) / 0.05f);
+        } else if (sample < -0.95f) {
+            sample = -0.95f + 0.05f * tanhf((sample + 0.95f) / 0.05f);
+        }
     }
 
     // Apply filter envelope (one-pole low-pass with time-varying cutoff)

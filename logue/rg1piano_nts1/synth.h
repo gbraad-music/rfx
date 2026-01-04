@@ -21,7 +21,9 @@ enum {
   PARAM_DECAY = 0,
   PARAM_BRIGHTNESS,
   PARAM_VELOCITY_SENS,
-  PARAM_VOLUME
+  PARAM_VOLUME,
+  PARAM_LFO_RATE,
+  PARAM_LFO_DEPTH
 };
 
 class Synth {
@@ -36,6 +38,9 @@ public:
     , brightness_(0.5f)
     , velocity_sens_(0.8f)
     , volume_(0.7f)
+    , lfo_rate_(0.3f)
+    , lfo_depth_(0.2f)
+    , lfo_phase_(0.0f)
     , filter_prev_sample_(0.0f)
   {}
 
@@ -124,6 +129,14 @@ public:
         volume_ = value / 1023.0f;
         break;
 
+      case PARAM_LFO_RATE:
+        lfo_rate_ = value / 1023.0f;
+        break;
+
+      case PARAM_LFO_DEPTH:
+        lfo_depth_ = value / 1023.0f;
+        break;
+
       default:
         break;
     }
@@ -135,6 +148,8 @@ public:
       case PARAM_BRIGHTNESS: return (int32_t)(brightness_ * 1023.0f);
       case PARAM_VELOCITY_SENS: return (int32_t)(velocity_sens_ * 1023.0f);
       case PARAM_VOLUME: return (int32_t)(volume_ * 1023.0f);
+      case PARAM_LFO_RATE: return (int32_t)(lfo_rate_ * 1023.0f);
+      case PARAM_LFO_DEPTH: return (int32_t)(lfo_depth_ * 1023.0f);
       default: return 0;
     }
   }
@@ -156,6 +171,9 @@ public:
     velocity_ = velocity;
     gate_ = true;
     active_ = true;
+
+    // Reset LFO phase for each note
+    lfo_phase_ = 0.0f;
 
     if (sample_player_) {
       // Apply velocity sensitivity
@@ -223,6 +241,20 @@ private:
     // Process sample player
     float sample = synth_sample_player_process(sample_player_, sampleRate);
 
+    // Apply LFO modulation (tremolo/vibrato effect)
+    // Map rate: 0-1 -> 0.5Hz-8Hz
+    float lfo_freq = 0.5f + lfo_rate_ * 7.5f;
+    lfo_phase_ += (2.0f * M_PI * lfo_freq) / sampleRate;
+    if (lfo_phase_ >= 2.0f * M_PI) {
+      lfo_phase_ -= 2.0f * M_PI;
+    }
+
+    // LFO creates tremolo effect: amplitude modulation
+    // depth 0 = no effect, depth 1 = full tremolo
+    float lfo_value = sinf(lfo_phase_);
+    float lfo_mod = 1.0f - (lfo_depth_ * 0.3f * (1.0f - lfo_value));
+    sample *= lfo_mod;
+
     // Apply simple brightness filter (low-pass)
     // This is a basic one-pole filter
     // Map brightness to 0.3-1.0 range to prevent signal loss at low values
@@ -262,6 +294,11 @@ private:
   float brightness_;
   float velocity_sens_;
   float volume_;
+  float lfo_rate_;
+  float lfo_depth_;
+
+  // LFO state
+  float lfo_phase_;
 
   // Filter state
   float filter_prev_sample_;

@@ -40,8 +40,8 @@ class RGResonate1Synth {
             this.masterGain.connect(this.speakerGain);
             console.log('[RGResonate1Synth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
-            // Load and register AudioWorklet processor
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js');
+            // Load and register AudioWorklet processor (with cache-busting)
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=173');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -100,7 +100,8 @@ class RGResonate1Synth {
                 data: {
                     jsCode: jsCode,
                     wasmBytes: wasmBytes,
-                    sampleRate: this.audioContext.sampleRate
+                    sampleRate: this.audioContext.sampleRate,
+                    engine: 0 // RGResonate1 engine ID
                 }
             });
 

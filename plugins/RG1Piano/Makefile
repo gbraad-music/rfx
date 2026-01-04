@@ -98,10 +98,10 @@ web: $(WASM_SOURCES)
 	@echo "Building RG1Piano for WebAssembly..."
 	$(EMCC) $(WASM_CFLAGS) $(WASM_EXPORTED_FUNCTIONS) $(WASM_SOURCES) -o $(WASM_OUTPUT)
 	@echo "Built: $(WASM_OUTPUT) and rg1piano.wasm"
-	@echo "Copying to web directory..."
-	@mkdir -p ../../web
-	@cp rg1piano.wasm rg1piano.js ../../web/
-	@echo "   ✅ Copied to ../../web/"
+	@echo "Copying to web/synths directory..."
+	@mkdir -p ../../web/synths
+	@cp rg1piano.wasm rg1piano.js ../../web/synths/
+	@echo "   ✅ Copied to ../../web/synths/"
 
 clean-web:
 	rm -f $(WASM_OUTPUT) rg1piano.wasm

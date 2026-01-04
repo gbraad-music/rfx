@@ -17,6 +17,7 @@ UCSRC += /rfx/data/rg1piano/sample_data.c
 
 # Path to synth components
 UCSRC += /rfx/synth/synth_sample_player.c
+UCSRC += /rfx/synth/synth_modal_piano.c
 
 # C++ sources
 UCXXSRC = unit.cc

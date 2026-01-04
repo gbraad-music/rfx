@@ -12,14 +12,15 @@
 
 // Import synth components
 extern "C" {
-#include "synth_sample_player.h"
+#include "synth_modal_piano.h"
 #include "sample_data.h"  // From ../../data/rg1piano/
 }
 
 // Parameter indices
 enum {
   PARAM_DECAY = 0,
-  PARAM_BRIGHTNESS,
+  PARAM_RESONANCE,      // Modal resonator amount
+  PARAM_BRIGHTNESS,     // Filter envelope sustain
   PARAM_VELOCITY_SENS,
   PARAM_VOLUME,
   PARAM_LFO_RATE,
@@ -29,22 +30,22 @@ enum {
 class Synth {
 public:
   Synth(void)
-    : sample_player_(nullptr)
+    : modal_piano_(nullptr)
     , note_(-1)
     , velocity_(0)
     , gate_(false)
     , active_(false)
     , decay_(0.5f)
-    , brightness_(0.5f)
+    , resonance_(0.0f)
+    , brightness_(0.6f)
     , velocity_sens_(0.8f)
     , volume_(0.7f)
     , lfo_rate_(0.3f)
     , lfo_depth_(0.2f)
-    , filter_prev_sample_(0.0f)
   {}
 
   ~Synth(void) {
-    if (sample_player_) synth_sample_player_destroy(sample_player_);
+    if (modal_piano_) modal_piano_destroy(modal_piano_);
   }
 
   inline int8_t Init(const unit_runtime_desc_t * desc) {
@@ -54,9 +55,9 @@ public:
     if (desc->output_channels != 2)
       return k_unit_err_geometry;
 
-    // Create sample player
-    sample_player_ = synth_sample_player_create();
-    if (!sample_player_) {
+    // Create modal piano
+    modal_piano_ = modal_piano_create();
+    if (!modal_piano_) {
       return k_unit_err_memory;
     }
 
@@ -68,18 +69,21 @@ public:
     sample_data_.sample_rate = 22050;
     sample_data_.root_note = 48;  // C3 (131.6 Hz verified with aubio)
 
-    synth_sample_player_load_sample(sample_player_, &sample_data_);
+    modal_piano_load_sample(modal_piano_, &sample_data_);
 
-    // Set default decay time
-    synth_sample_player_set_loop_decay(sample_player_, 2.0f);
+    // Set default parameters
+    modal_piano_set_decay(modal_piano_, 2.0f);
+    modal_piano_set_resonance(modal_piano_, 0.0f);  // Start with resonators off
+    modal_piano_set_filter_envelope(modal_piano_, 0.01f, 0.3f, 0.6f);  // 10ms attack, 300ms decay, 60% sustain
+    modal_piano_set_velocity_sensitivity(modal_piano_, 0.8f);
 
     return k_unit_err_none;
   }
 
   inline void Teardown() {
-    if (sample_player_) {
-      synth_sample_player_destroy(sample_player_);
-      sample_player_ = nullptr;
+    if (modal_piano_) {
+      modal_piano_destroy(modal_piano_);
+      modal_piano_ = nullptr;
     }
   }
 
@@ -87,9 +91,8 @@ public:
     gate_ = false;
     active_ = false;
     note_ = -1;
-    filter_prev_sample_ = 0.0f;
 
-    if (sample_player_) synth_sample_player_reset(sample_player_);
+    if (modal_piano_) modal_piano_reset(modal_piano_);
   }
 
   inline void Resume() {}
@@ -109,19 +112,34 @@ public:
     switch (index) {
       case PARAM_DECAY:
         decay_ = value / 1023.0f;
-        if (sample_player_) {
+        if (modal_piano_) {
           // Map decay parameter to 0.5s - 8s range
           float decay_time = 0.5f + decay_ * 7.5f;
-          synth_sample_player_set_loop_decay(sample_player_, decay_time);
+          modal_piano_set_decay(modal_piano_, decay_time);
+        }
+        break;
+
+      case PARAM_RESONANCE:
+        resonance_ = value / 1023.0f;
+        if (modal_piano_) {
+          modal_piano_set_resonance(modal_piano_, resonance_);
         }
         break;
 
       case PARAM_BRIGHTNESS:
         brightness_ = value / 1023.0f;
+        if (modal_piano_) {
+          // Brightness controls filter envelope sustain level
+          // Keep attack/decay times constant, update sustain
+          modal_piano_set_filter_envelope(modal_piano_, 0.01f, 0.3f, brightness_);
+        }
         break;
 
       case PARAM_VELOCITY_SENS:
         velocity_sens_ = value / 1023.0f;
+        if (modal_piano_) {
+          modal_piano_set_velocity_sensitivity(modal_piano_, velocity_sens_);
+        }
         break;
 
       case PARAM_VOLUME:
@@ -130,19 +148,19 @@ public:
 
       case PARAM_LFO_RATE:
         lfo_rate_ = value / 1023.0f;
-        if (sample_player_) {
+        if (modal_piano_) {
           // Map rate: 0-1 -> 0.5Hz-8Hz
           float lfo_freq = 0.5f + lfo_rate_ * 7.5f;
-          synth_sample_player_set_lfo(sample_player_, lfo_freq, lfo_depth_);
+          modal_piano_set_lfo(modal_piano_, lfo_freq, lfo_depth_);
         }
         break;
 
       case PARAM_LFO_DEPTH:
         lfo_depth_ = value / 1023.0f;
-        if (sample_player_) {
+        if (modal_piano_) {
           // Map rate: 0-1 -> 0.5Hz-8Hz
           float lfo_freq = 0.5f + lfo_rate_ * 7.5f;
-          synth_sample_player_set_lfo(sample_player_, lfo_freq, lfo_depth_);
+          modal_piano_set_lfo(modal_piano_, lfo_freq, lfo_depth_);
         }
         break;
 
@@ -154,6 +172,7 @@ public:
   inline int32_t getParameterValue(uint8_t index) const {
     switch (index) {
       case PARAM_DECAY: return (int32_t)(decay_ * 1023.0f);
+      case PARAM_RESONANCE: return (int32_t)(resonance_ * 1023.0f);
       case PARAM_BRIGHTNESS: return (int32_t)(brightness_ * 1023.0f);
       case PARAM_VELOCITY_SENS: return (int32_t)(velocity_sens_ * 1023.0f);
       case PARAM_VOLUME: return (int32_t)(volume_ * 1023.0f);
@@ -181,10 +200,8 @@ public:
     gate_ = true;
     active_ = true;
 
-    if (sample_player_) {
-      // Apply velocity sensitivity
-      uint8_t effective_velocity = (uint8_t)(127.0f * (1.0f - velocity_sens_ + velocity_sens_ * (velocity / 127.0f)));
-      synth_sample_player_trigger(sample_player_, note, effective_velocity);
+    if (modal_piano_) {
+      modal_piano_trigger(modal_piano_, note, velocity);
     }
   }
 
@@ -192,8 +209,8 @@ public:
     if (note == note_) {
       gate_ = false;
 
-      if (sample_player_) {
-        synth_sample_player_release(sample_player_);
+      if (modal_piano_) {
+        modal_piano_release(modal_piano_);
       }
     }
   }
@@ -207,8 +224,8 @@ public:
   inline void GateOff() {
     gate_ = false;
 
-    if (sample_player_) {
-      synth_sample_player_release(sample_player_);
+    if (modal_piano_) {
+      modal_piano_release(modal_piano_);
     }
   }
 
@@ -216,8 +233,8 @@ public:
     gate_ = false;
     active_ = false;
 
-    if (sample_player_) {
-      synth_sample_player_release(sample_player_);
+    if (modal_piano_) {
+      modal_piano_release(modal_piano_);
     }
   }
 
@@ -238,21 +255,14 @@ public:
 
 private:
   float renderSample() {
-    if (!active_ || !sample_player_) {
+    if (!active_ || !modal_piano_) {
       return 0.0f;
     }
 
     const int sampleRate = 48000;
 
-    // Process sample player (LFO is now handled internally)
-    float sample = synth_sample_player_process(sample_player_, sampleRate);
-
-    // Apply simple brightness filter (low-pass)
-    // This is a basic one-pole filter
-    // Map brightness to 0.3-1.0 range to prevent signal loss at low values
-    float cutoff = 0.3f + brightness_ * 0.7f;
-    sample = filter_prev_sample_ + cutoff * (sample - filter_prev_sample_);
-    filter_prev_sample_ = sample;
+    // Process modal piano (handles sample playback, resonators, filter envelope, LFO)
+    float sample = modal_piano_process(modal_piano_, sampleRate);
 
     // Apply master volume
     sample *= volume_;
@@ -265,15 +275,15 @@ private:
       sample = -1.0f + expf(sample + 1.0f);
     }
 
-    // Check if sample player is still active
-    if (!synth_sample_player_is_active(sample_player_)) {
+    // Check if modal piano is still active
+    if (!modal_piano_is_active(modal_piano_)) {
       active_ = false;
     }
 
     return sample;
   }
 
-  SynthSamplePlayer* sample_player_;
+  ModalPiano* modal_piano_;
   SampleData sample_data_;
 
   int note_;
@@ -283,12 +293,10 @@ private:
 
   // Parameters
   float decay_;
+  float resonance_;
   float brightness_;
   float velocity_sens_;
   float volume_;
   float lfo_rate_;
   float lfo_depth_;
-
-  // Filter state
-  float filter_prev_sample_;
 };

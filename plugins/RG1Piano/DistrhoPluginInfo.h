@@ -34,6 +34,7 @@
 // Parameters
 enum Parameters {
     kParameterDecay = 0,
+    kParameterResonance,
     kParameterBrightness,
     kParameterVelocitySens,
     kParameterVolume,

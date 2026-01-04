@@ -1,6 +1,10 @@
 #include "DistrhoPlugin.hpp"
-#include "../../synth/synth_sample_player.h"
+
+extern "C" {
+#include "../../synth/synth_modal_piano.h"
 #include "../../data/rg1piano/sample_data.h"
+}
+
 #include <cstring>
 #include <cmath>
 
@@ -9,7 +13,7 @@ START_NAMESPACE_DISTRHO
 #define PIANO_VOICES 8
 
 struct PianoVoice {
-    SynthSamplePlayer* player;
+    ModalPiano* piano;
     bool active;
     uint8_t note;
 };
@@ -20,7 +24,8 @@ public:
     RG1PianoPlugin()
         : Plugin(kParameterCount, 0, 0)
         , fDecay(0.5f)
-        , fBrightness(0.7f)
+        , fResonance(0.0f)
+        , fBrightness(0.6f)
         , fVelocitySens(0.8f)
         , fVolume(0.83f)
         , fLfoRate(0.3f)
@@ -36,12 +41,12 @@ public:
 
         // Create voices
         for (int i = 0; i < PIANO_VOICES; i++) {
-            fVoices[i].player = synth_sample_player_create();
+            fVoices[i].piano = modal_piano_create();
             fVoices[i].active = false;
             fVoices[i].note = 0;
 
-            if (fVoices[i].player) {
-                synth_sample_player_load_sample(fVoices[i].player, &fSampleData);
+            if (fVoices[i].piano) {
+                modal_piano_load_sample(fVoices[i].piano, &fSampleData);
                 updateVoice(i);
             }
         }
@@ -50,8 +55,8 @@ public:
     ~RG1PianoPlugin() override
     {
         for (int i = 0; i < PIANO_VOICES; i++) {
-            if (fVoices[i].player) {
-                synth_sample_player_destroy(fVoices[i].player);
+            if (fVoices[i].piano) {
+                modal_piano_destroy(fVoices[i].piano);
             }
         }
     }
@@ -78,10 +83,15 @@ protected:
             param.symbol = "decay";
             param.ranges.def = 0.5f;
             break;
+        case kParameterResonance:
+            param.name = "Resonance";
+            param.symbol = "resonance";
+            param.ranges.def = 0.0f;
+            break;
         case kParameterBrightness:
             param.name = "Brightness";
             param.symbol = "brightness";
-            param.ranges.def = 0.7f;
+            param.ranges.def = 0.6f;
             break;
         case kParameterVelocitySens:
             param.name = "Velocity Sens";
@@ -110,6 +120,7 @@ protected:
     {
         switch (index) {
         case kParameterDecay: return fDecay;
+        case kParameterResonance: return fResonance;
         case kParameterBrightness: return fBrightness;
         case kParameterVelocitySens: return fVelocitySens;
         case kParameterVolume: return fVolume;
@@ -126,11 +137,17 @@ protected:
             fDecay = value;
             updateAllVoices();
             break;
+        case kParameterResonance:
+            fResonance = value;
+            updateAllVoices();
+            break;
         case kParameterBrightness:
             fBrightness = value;
+            updateAllVoices();
             break;
         case kParameterVelocitySens:
             fVelocitySens = value;
+            updateAllVoices();
             break;
         case kParameterVolume:
             fVolume = value;
@@ -187,15 +204,24 @@ protected:
 private:
     void updateVoice(int idx)
     {
-        if (idx < 0 || idx >= PIANO_VOICES || !fVoices[idx].player) return;
+        if (idx < 0 || idx >= PIANO_VOICES || !fVoices[idx].piano) return;
 
         // Map decay parameter to 0.5s - 8s range
         float decay_time = 0.5f + fDecay * 7.5f;
-        synth_sample_player_set_loop_decay(fVoices[idx].player, decay_time);
+        modal_piano_set_decay(fVoices[idx].piano, decay_time);
+
+        // Set resonance amount
+        modal_piano_set_resonance(fVoices[idx].piano, fResonance);
+
+        // Set filter envelope (brightness controls sustain level)
+        modal_piano_set_filter_envelope(fVoices[idx].piano, 0.01f, 0.3f, fBrightness);
+
+        // Set velocity sensitivity
+        modal_piano_set_velocity_sensitivity(fVoices[idx].piano, fVelocitySens);
 
         // Map LFO rate: 0-1 -> 0.5Hz-8Hz
         float lfo_freq = 0.5f + fLfoRate * 7.5f;
-        synth_sample_player_set_lfo(fVoices[idx].player, lfo_freq, fLfoDepth);
+        modal_piano_set_lfo(fVoices[idx].piano, lfo_freq, fLfoDepth);
     }
 
     void updateAllVoices()
@@ -219,13 +245,10 @@ private:
     void handleNoteOn(uint8_t note, uint8_t velocity)
     {
         int voice_idx = findFreeVoice();
-        if (voice_idx < 0 || !fVoices[voice_idx].player) return;
+        if (voice_idx < 0 || !fVoices[voice_idx].piano) return;
 
-        // Apply velocity sensitivity
-        float vel_scale = 1.0f - fVelocitySens + fVelocitySens * (velocity / 127.0f);
-        uint8_t effective_velocity = (uint8_t)(127.0f * vel_scale);
-
-        synth_sample_player_trigger(fVoices[voice_idx].player, note, effective_velocity);
+        // Modal piano handles velocity sensitivity internally
+        modal_piano_trigger(fVoices[voice_idx].piano, note, velocity);
         fVoices[voice_idx].active = true;
         fVoices[voice_idx].note = note;
     }
@@ -234,7 +257,7 @@ private:
     {
         for (int i = 0; i < PIANO_VOICES; i++) {
             if (fVoices[i].active && fVoices[i].note == note) {
-                synth_sample_player_release(fVoices[i].player);
+                modal_piano_release(fVoices[i].piano);
             }
         }
     }
@@ -242,14 +265,14 @@ private:
     void renderFrame(float* outL, float* outR, uint32_t framePos, int sampleRate)
     {
         float mixL = 0.0f, mixR = 0.0f;
-        float filterPrev = fFilterPrev;
 
         for (int i = 0; i < PIANO_VOICES; i++) {
-            if (!fVoices[i].active || !fVoices[i].player) continue;
+            if (!fVoices[i].active || !fVoices[i].piano) continue;
 
-            float sample = synth_sample_player_process(fVoices[i].player, sampleRate);
+            // Modal piano handles filter envelope internally
+            float sample = modal_piano_process(fVoices[i].piano, sampleRate);
 
-            if (!synth_sample_player_is_active(fVoices[i].player)) {
+            if (!modal_piano_is_active(fVoices[i].piano)) {
                 fVoices[i].active = false;
                 continue;
             }
@@ -257,13 +280,6 @@ private:
             mixL += sample;
             mixR += sample;
         }
-
-        // Apply brightness filter (one-pole low-pass)
-        // Map brightness to 0.3-1.0 range
-        float cutoff = 0.3f + fBrightness * 0.7f;
-        mixL = filterPrev + cutoff * (mixL - filterPrev);
-        mixR = mixL;  // Keep stereo coherent
-        fFilterPrev = mixL;
 
         // Per-voice reduction for 8 voices + volume control
         mixL *= 0.2f * fVolume;
@@ -289,9 +305,8 @@ private:
     SampleData fSampleData;
     PianoVoice fVoices[PIANO_VOICES];
 
-    float fDecay, fBrightness, fVelocitySens, fVolume;
+    float fDecay, fResonance, fBrightness, fVelocitySens, fVolume;
     float fLfoRate, fLfoDepth;
-    float fFilterPrev = 0.0f;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RG1PianoPlugin)
 };

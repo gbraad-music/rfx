@@ -11,7 +11,9 @@ PROJECT_TYPE := osc
 
 # C sources
 UCSRC = header.c
-UCSRC += sample_data.c
+
+# Path to shared sample data
+UCSRC += /rfx/data/rg1piano/sample_data.c
 
 # Path to synth components
 UCSRC += /rfx/synth/synth_sample_player.c
@@ -29,6 +31,7 @@ ASMXSRC =
 #
 
 UINCDIR  = /rfx/synth
+UINCDIR += /rfx/data/rg1piano
 
 ##############################################################################
 # Library Paths

@@ -13,9 +13,8 @@
 // Import synth components
 extern "C" {
 #include "synth_sample_player.h"
+#include "sample_data.h"  // From ../../data/rg1piano/
 }
-
-#include "sample_data.h"
 
 // Parameter indices
 enum {
@@ -63,7 +62,7 @@ public:
     sample_data_.loop_data = m1piano_tail;
     sample_data_.loop_length = m1piano_tail_length;
     sample_data_.sample_rate = 22050;
-    sample_data_.root_note = 56;  // G#3
+    sample_data_.root_note = 48;  // C3 (131.6 Hz verified with aubio)
 
     synth_sample_player_load_sample(sample_player_, &sample_data_);
 

@@ -13,6 +13,7 @@ TARGETS = lv2_sep vst3
 FILES_DSP = \
 	RG1PianoPlugin.cpp \
 	../../synth/synth_sample_player.c \
+	../../synth/synth_modal_piano.c \
 	../../data/rg1piano/sample_data.c
 
 FILES_UI = \

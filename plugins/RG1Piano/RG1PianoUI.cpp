@@ -13,9 +13,12 @@ public:
     {
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true);
         fParameters[kParameterDecay] = 0.5f;
-        fParameters[kParameterBrightness] = 0.7f;
+        fParameters[kParameterResonance] = 0.0f;
+        fParameters[kParameterBrightness] = 0.6f;
         fParameters[kParameterVelocitySens] = 0.8f;
         fParameters[kParameterVolume] = 0.83f;
+        fParameters[kParameterLfoRate] = 0.3f;
+        fParameters[kParameterLfoDepth] = 0.2f;
         fImGuiWidget = new RG1PianoImGuiWidget(this);
         fImGuiWidget->setSize(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT);
     }
@@ -65,16 +68,30 @@ private:
                 ImGui::BeginGroup();
 
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
-                ImGui::Text("PIANO PARAMETERS");
+                ImGui::Text("SYNTHESIS");
                 ImGui::PopStyleColor();
                 ImGui::Spacing();
 
-                // First row
+                // First row - Synthesis parameters
                 KNOB(kParameterDecay, "Decay");
+                ImGui::SameLine();
+                KNOB(kParameterResonance, "Resonance");
                 ImGui::SameLine();
                 KNOB(kParameterBrightness, "Brightness");
                 ImGui::SameLine();
                 KNOB(kParameterVelocitySens, "Vel Sens");
+
+                ImGui::Spacing(); ImGui::Spacing();
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                ImGui::Text("MODULATION & OUTPUT");
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+
+                // Second row - LFO and volume
+                KNOB(kParameterLfoRate, "LFO Rate");
+                ImGui::SameLine();
+                KNOB(kParameterLfoDepth, "LFO Depth");
                 ImGui::SameLine();
                 KNOB(kParameterVolume, "Volume");
 
@@ -82,7 +99,7 @@ private:
 
                 // Info text
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
-                const char* info = "M1 Piano | 8-voice Polyphonic | Sample: C3 @ 22kHz";
+                const char* info = "M1 Piano | 8-voice Polyphonic | Modal Synthesis";
                 ImGui::SetCursorPosX((width - ImGui::CalcTextSize(info).x) * 0.5f);
                 ImGui::Text("%s", info);
                 ImGui::PopStyleColor();

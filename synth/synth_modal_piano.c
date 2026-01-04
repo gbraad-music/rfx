@@ -9,21 +9,18 @@
 #endif
 
 #define NUM_RESONATORS 6
-#define MAX_COMB_DELAY 256  // Max delay samples (covers down to ~188Hz at 48kHz)
 
-// Simple comb filter for modal resonators (much more stable than biquad)
+// Biquad filter for modal resonators
 typedef struct {
-    float buffer[MAX_COMB_DELAY];
-    int delay_samples;
-    int write_pos;
-    float feedback;
-} CombFilter;
+    float b0, b1, b2, a1, a2;  // Filter coefficients
+    float x1, x2, y1, y2;       // State variables
+} BiquadFilter;
 
 struct ModalPiano {
     SynthSamplePlayer* sample_player;
 
-    // Modal resonators (comb filters)
-    CombFilter resonators[NUM_RESONATORS];
+    // Modal resonators (biquad bandpass filters)
+    BiquadFilter resonators[NUM_RESONATORS];
     float resonator_gains[NUM_RESONATORS];
     float resonance_amount;
 
@@ -48,58 +45,54 @@ struct ModalPiano {
     uint8_t velocity;
 };
 
-// Initialize comb filter for resonance at given frequency
-static void comb_init(CombFilter* comb, float freq, float sample_rate, float decay_time) {
-    // Calculate delay for this frequency
-    // delay = sample_rate / freq
-    int delay = (int)(sample_rate / freq + 0.5f);
+// Initialize biquad as bandpass filter with moderate Q
+static void biquad_init_bandpass(BiquadFilter* filter, float freq, float sample_rate, float Q) {
+    float w0 = 2.0f * M_PI * freq / sample_rate;
+    float alpha = sinf(w0) / (2.0f * Q);
+    float cos_w0 = cosf(w0);
 
-    // Clamp to valid range
-    if (delay < 1) delay = 1;
-    if (delay >= MAX_COMB_DELAY) delay = MAX_COMB_DELAY - 1;
+    // Bandpass filter (constant 0 dB peak gain)
+    filter->b0 = alpha;
+    filter->b1 = 0.0f;
+    filter->b2 = -alpha;
+    filter->a1 = -2.0f * cos_w0;
+    filter->a2 = 1.0f - alpha;
 
-    comb->delay_samples = delay;
-    comb->write_pos = 0;
+    // Normalize by a0
+    float a0 = 1.0f + alpha;
+    filter->b0 /= a0;
+    filter->b1 /= a0;
+    filter->b2 /= a0;
+    filter->a1 /= a0;
+    filter->a2 /= a0;
 
-    // Calculate feedback for desired decay time
-    // feedback = pow(0.001, 1.0 / (decay_time * sample_rate / delay))
-    // Simpler: use fixed feedback based on harmonic number (higher = less feedback)
-    comb->feedback = decay_time;  // Will be set per-harmonic (0.95-0.99)
-
-    // Clear buffer
-    for (int i = 0; i < MAX_COMB_DELAY; i++) {
-        comb->buffer[i] = 0.0f;
-    }
+    filter->x1 = filter->x2 = 0.0f;
+    filter->y1 = filter->y2 = 0.0f;
 }
 
-// Process one sample through comb filter
-static inline float comb_process(CombFilter* comb, float input) {
-    // Read delayed sample
-    int read_pos = (comb->write_pos - comb->delay_samples + MAX_COMB_DELAY) % MAX_COMB_DELAY;
-    float delayed = comb->buffer[read_pos];
+// Process one sample through biquad filter
+static inline float biquad_process(BiquadFilter* filter, float input) {
+    float output = filter->b0 * input + filter->b1 * filter->x1 + filter->b2 * filter->x2
+                   - filter->a1 * filter->y1 - filter->a2 * filter->y2;
 
-    // Comb filter: output = input + feedback * delayed
-    float output = input + comb->feedback * delayed;
+    // Clamp output to prevent extreme values
+    if (output > 10.0f) output = 10.0f;
+    if (output < -10.0f) output = -10.0f;
+    // Check for NaN (NaN != NaN is true)
+    if (output != output) output = 0.0f;
 
-    // Soft clip to prevent runaway feedback
-    if (output > 1.0f) output = 1.0f;
-    if (output < -1.0f) output = -1.0f;
-
-    // Write to buffer
-    comb->buffer[comb->write_pos] = output;
-
-    // Advance write position
-    comb->write_pos = (comb->write_pos + 1) % MAX_COMB_DELAY;
+    filter->x2 = filter->x1;
+    filter->x1 = input;
+    filter->y2 = filter->y1;
+    filter->y1 = output;
 
     return output;
 }
 
-// Reset comb filter state
-static void comb_reset(CombFilter* comb) {
-    for (int i = 0; i < MAX_COMB_DELAY; i++) {
-        comb->buffer[i] = 0.0f;
-    }
-    comb->write_pos = 0;
+// Reset biquad filter state
+static void biquad_reset(BiquadFilter* filter) {
+    filter->x1 = filter->x2 = 0.0f;
+    filter->y1 = filter->y2 = 0.0f;
 }
 
 // Convert MIDI note to frequency
@@ -169,14 +162,14 @@ void modal_piano_trigger(ModalPiano* piano, uint8_t note, uint8_t velocity) {
             freq = sample_rate * 0.45f;
         }
 
-        // Higher harmonics decay faster (lower feedback)
-        // Feedback: 0.85 (good ring) to 0.75 (faster decay) - high enough to be audible
-        float feedback = 0.85f - (harmonic - 1) * 0.02f;
+        // Higher harmonics have lower Q (decay faster)
+        // Q: 12 (fundamental) down to 7 (6th harmonic) - moderate Q for stability
+        float Q = 12.0f - (harmonic - 1) * 0.8f;
 
-        comb_init(&piano->resonators[i], freq, sample_rate, feedback);
+        biquad_init_bandpass(&piano->resonators[i], freq, sample_rate, Q);
 
-        // Explicitly reset comb filter state for safety
-        comb_reset(&piano->resonators[i]);
+        // Explicitly reset filter state for safety
+        biquad_reset(&piano->resonators[i]);
 
         // Higher harmonics have lower gain
         piano->resonator_gains[i] = 1.0f / harmonic;
@@ -255,7 +248,7 @@ void modal_piano_reset(ModalPiano* piano) {
 
     // Reset resonator state
     for (int i = 0; i < NUM_RESONATORS; i++) {
-        comb_reset(&piano->resonators[i]);
+        biquad_reset(&piano->resonators[i]);
     }
 
     piano->filter_prev_sample = 0.0f;
@@ -332,13 +325,13 @@ float modal_piano_process(ModalPiano* piano, uint32_t output_sample_rate) {
         float resonant_sample = 0.0f;
 
         for (int i = 0; i < NUM_RESONATORS; i++) {
-            float resonator_out = comb_process(&piano->resonators[i], sample);
+            float resonator_out = biquad_process(&piano->resonators[i], sample);
             resonant_sample += resonator_out * piano->resonator_gains[i];
         }
 
         // Normalize resonator sum
-        // Comb filters build up amplitude, scale appropriately
-        resonant_sample *= 0.25f;
+        // Bandpass filters with Q=7-12 need moderate scaling
+        resonant_sample *= 1.5f;
 
         // ADD to dry signal (preserves volume)
         sample = sample + resonant_sample * piano->resonance_amount;

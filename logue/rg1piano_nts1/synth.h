@@ -40,7 +40,6 @@ public:
     , volume_(0.7f)
     , lfo_rate_(0.3f)
     , lfo_depth_(0.2f)
-    , lfo_phase_(0.0f)
     , filter_prev_sample_(0.0f)
   {}
 
@@ -131,10 +130,20 @@ public:
 
       case PARAM_LFO_RATE:
         lfo_rate_ = value / 1023.0f;
+        if (sample_player_) {
+          // Map rate: 0-1 -> 0.5Hz-8Hz
+          float lfo_freq = 0.5f + lfo_rate_ * 7.5f;
+          synth_sample_player_set_lfo(sample_player_, lfo_freq, lfo_depth_);
+        }
         break;
 
       case PARAM_LFO_DEPTH:
         lfo_depth_ = value / 1023.0f;
+        if (sample_player_) {
+          // Map rate: 0-1 -> 0.5Hz-8Hz
+          float lfo_freq = 0.5f + lfo_rate_ * 7.5f;
+          synth_sample_player_set_lfo(sample_player_, lfo_freq, lfo_depth_);
+        }
         break;
 
       default:
@@ -171,9 +180,6 @@ public:
     velocity_ = velocity;
     gate_ = true;
     active_ = true;
-
-    // Reset LFO phase for each note
-    lfo_phase_ = 0.0f;
 
     if (sample_player_) {
       // Apply velocity sensitivity
@@ -238,22 +244,8 @@ private:
 
     const int sampleRate = 48000;
 
-    // Process sample player
+    // Process sample player (LFO is now handled internally)
     float sample = synth_sample_player_process(sample_player_, sampleRate);
-
-    // Apply LFO modulation (tremolo/vibrato effect)
-    // Map rate: 0-1 -> 0.5Hz-8Hz
-    float lfo_freq = 0.5f + lfo_rate_ * 7.5f;
-    lfo_phase_ += (2.0f * M_PI * lfo_freq) / sampleRate;
-    if (lfo_phase_ >= 2.0f * M_PI) {
-      lfo_phase_ -= 2.0f * M_PI;
-    }
-
-    // LFO creates tremolo effect: amplitude modulation
-    // depth 0 = no effect, depth 1 = full tremolo
-    float lfo_value = sinf(lfo_phase_);
-    float lfo_mod = 1.0f - (lfo_depth_ * 0.3f * (1.0f - lfo_value));
-    sample *= lfo_mod;
 
     // Apply simple brightness filter (low-pass)
     // This is a basic one-pole filter
@@ -296,9 +288,6 @@ private:
   float volume_;
   float lfo_rate_;
   float lfo_depth_;
-
-  // LFO state
-  float lfo_phase_;
 
   // Filter state
   float filter_prev_sample_;

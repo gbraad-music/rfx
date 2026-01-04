@@ -3,6 +3,10 @@
 #include <math.h>
 #include <string.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
+
 struct SynthSamplePlayer {
     const SampleData* sample;
 
@@ -17,6 +21,11 @@ struct SynthSamplePlayer {
     float loop_decay_time;        // Decay time in seconds
     float loop_amplitude;         // Current amplitude during loop (0.0-1.0)
     float velocity_scale;         // Velocity scaling (0.0-1.0)
+
+    // LFO (Low Frequency Oscillator) for tremolo effect
+    float lfo_rate;               // LFO frequency in Hz
+    float lfo_depth;              // LFO modulation depth (0.0-1.0)
+    float lfo_phase;              // Current LFO phase (0 to 2*PI)
 };
 
 SynthSamplePlayer* synth_sample_player_create(void) {
@@ -61,6 +70,9 @@ void synth_sample_player_trigger(SynthSamplePlayer* player, uint8_t note, uint8_
     player->is_released = false;
     player->loop_amplitude = 1.0f;
     player->velocity_scale = velocity / 127.0f;
+
+    // Reset LFO phase for each note
+    player->lfo_phase = 0.0f;
 }
 
 void synth_sample_player_release(SynthSamplePlayer* player) {
@@ -71,6 +83,12 @@ void synth_sample_player_release(SynthSamplePlayer* player) {
 void synth_sample_player_set_loop_decay(SynthSamplePlayer* player, float decay_time) {
     if (!player) return;
     player->loop_decay_time = decay_time;
+}
+
+void synth_sample_player_set_lfo(SynthSamplePlayer* player, float rate, float depth) {
+    if (!player) return;
+    player->lfo_rate = rate;
+    player->lfo_depth = depth;
 }
 
 bool synth_sample_player_is_active(const SynthSamplePlayer* player) {
@@ -163,6 +181,22 @@ float synth_sample_player_process(SynthSamplePlayer* player, uint32_t output_sam
             player->sample->loop_length,
             player->playback_position
         );
+
+        // Apply LFO modulation (tremolo effect) if enabled
+        if (player->lfo_depth > 0.0f && player->lfo_rate > 0.0f) {
+            // Update LFO phase
+            player->lfo_phase += (2.0f * M_PI * player->lfo_rate) / output_sample_rate;
+            if (player->lfo_phase >= 2.0f * M_PI) {
+                player->lfo_phase -= 2.0f * M_PI;
+            }
+
+            // Calculate LFO modulation
+            float lfo_value = sinf(player->lfo_phase);
+            // LFO creates tremolo: depth 0 = no effect, depth 1 = full tremolo
+            // Scale depth to prevent complete silence
+            float lfo_mod = 1.0f - (player->lfo_depth * 0.3f * (1.0f - lfo_value));
+            output *= lfo_mod;
+        }
 
         // Apply decay envelope
         output *= player->loop_amplitude;

@@ -70,6 +70,13 @@ void synth_sample_player_release(SynthSamplePlayer* player);
 void synth_sample_player_set_loop_decay(SynthSamplePlayer* player, float decay_time);
 
 /**
+ * Set LFO (Low Frequency Oscillator) parameters for tremolo effect
+ * rate: LFO frequency in Hz (e.g., 0.5 - 8.0)
+ * depth: Modulation depth 0.0 (off) to 1.0 (maximum)
+ */
+void synth_sample_player_set_lfo(SynthSamplePlayer* player, float rate, float depth);
+
+/**
  * Check if the sample player is currently active
  */
 bool synth_sample_player_is_active(const SynthSamplePlayer* player);

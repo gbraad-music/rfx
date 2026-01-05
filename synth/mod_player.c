@@ -99,6 +99,13 @@ struct ModPlayer {
     uint8_t loop_start;
     uint8_t loop_end;
 
+    // Pattern loop (E6x effect)
+    uint8_t pattern_loop_row;
+    uint8_t pattern_loop_count;
+
+    // Pattern delay (EEx effect)
+    uint8_t pattern_delay;
+
     // Timing
     float samples_per_tick;
     float sample_accumulator;
@@ -126,6 +133,14 @@ static uint16_t get_period(uint8_t note, int8_t finetune) {
 
     return period_table[ft_index][note - 1];
 }
+
+// Sine table for vibrato/tremolo (64 entries, 0-255 range)
+static const uint8_t sine_table[64] = {
+    0,  24,  49,  74,  97, 120, 141, 161, 180, 197, 212, 224, 235, 244, 250, 253,
+  255, 253, 250, 244, 235, 224, 212, 197, 180, 161, 141, 120,  97,  74,  49,  24,
+    0, 232, 207, 182, 159, 136, 115,  95,  76,  59,  44,  32,  21,  12,   6,   3,
+    1,   3,   6,  12,  21,  32,  44,  59,  76,  95, 115, 136, 159, 182, 207, 232
+};
 
 // Helper: Parse MOD file format identifier
 static bool is_valid_mod(const uint8_t* data, uint32_t size) {
@@ -482,10 +497,58 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
     // Process immediate effects
     switch (note->effect) {
-        case 0x9:  // Sample offset - start sample at offset
+        case 0x4:  // Vibrato
             if (note->effect_param > 0) {
+                if ((note->effect_param & 0x0F) > 0) {
+                    chan->vibrato_depth = note->effect_param & 0x0F;
+                }
+                if ((note->effect_param >> 4) > 0) {
+                    chan->vibrato_speed = note->effect_param >> 4;
+                }
+            }
+            break;
+
+        case 0x5:  // Tone portamento + volume slide
+            // Portamento target already set if there was a period
+            // Volume slide will be handled in process_effects
+            break;
+
+        case 0x6:  // Vibrato + volume slide
+            // Vibrato parameters already set
+            // Volume slide will be handled in process_effects
+            break;
+
+        case 0x7:  // Tremolo
+            if (note->effect_param > 0) {
+                if ((note->effect_param & 0x0F) > 0) {
+                    chan->tremolo_depth = note->effect_param & 0x0F;
+                }
+                if ((note->effect_param >> 4) > 0) {
+                    chan->tremolo_speed = note->effect_param >> 4;
+                }
+            }
+            break;
+
+        case 0x8:  // Set panning (00 = left, 80 = center, FF = right)
+            {
+                // Convert 0-255 to -1.0 to 1.0
+                float pan = ((float)note->effect_param / 127.5f) - 1.0f;
+                if (pan < -1.0f) pan = -1.0f;
+                if (pan > 1.0f) pan = 1.0f;
+                chan->panning = pan;
+            }
+            break;
+
+        case 0x9:  // Sample offset - start sample at offset
+            {
+                uint8_t offset_param = note->effect_param;
+                if (offset_param == 0) {
+                    offset_param = chan->last_sample_offset;  // Use last offset
+                } else {
+                    chan->last_sample_offset = offset_param;  // Remember for next time
+                }
                 // Offset is in 256-byte units
-                chan->position = (float)(note->effect_param * 256);
+                chan->position = (float)(offset_param * 256);
             }
             break;
 
@@ -522,6 +585,50 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                 uint8_t sub_param = note->effect_param & 0x0F;
 
                 switch (sub_effect) {
+                    case 0x1:  // Fine portamento up
+                        if (chan->period > 0 && chan->period > sub_param) {
+                            chan->period -= sub_param;
+                        }
+                        if (chan->period < 113) chan->period = 113;
+                        break;
+
+                    case 0x2:  // Fine portamento down
+                        if (chan->period > 0) {
+                            chan->period += sub_param;
+                        }
+                        if (chan->period > 856) chan->period = 856;
+                        break;
+
+                    case 0x5:  // Set finetune
+                        chan->finetune = sub_param;
+                        if (chan->finetune > 7) chan->finetune |= 0xF0;  // Sign extend
+                        break;
+
+                    case 0x6:  // Pattern loop
+                        if (sub_param == 0) {
+                            // E60: Set loop start point
+                            player->pattern_loop_row = player->current_row;
+                        } else {
+                            // E6x: Loop back x times
+                            if (player->pattern_loop_count == 0) {
+                                // First time - set counter
+                                player->pattern_loop_count = sub_param;
+                            }
+
+                            if (player->pattern_loop_count > 0) {
+                                player->pattern_loop_count--;
+                                if (player->pattern_loop_count > 0) {
+                                    // Jump back to loop start
+                                    player->current_row = player->pattern_loop_row;
+                                }
+                            }
+                        }
+                        break;
+
+                    case 0x9:  // Retrigger note
+                        chan->retrigger_count = 0;
+                        break;
+
                     case 0xA:  // Fine volume slide up
                         chan->volume += sub_param;
                         if (chan->volume > 64) chan->volume = 64;
@@ -540,7 +647,13 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                         break;
 
                     case 0xD:  // Note delay (delay note by N ticks)
+                        chan->note_delay_ticks = sub_param;
                         // Will be handled in process_effects
+                        break;
+
+                    case 0xE:  // Pattern delay
+                        // Delay pattern by N rows (repeat current row N times)
+                        player->pattern_delay = sub_param;
                         break;
                 }
             }
@@ -582,14 +695,22 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
 
         case 0x1:  // Portamento up
             if (chan->period > 0) {
-                chan->period -= chan->effect_param;
+                uint8_t param = chan->effect_param;
+                if (param == 0) param = chan->last_portamento_up;
+                else chan->last_portamento_up = param;
+
+                chan->period -= param;
                 if (chan->period < 113) chan->period = 113;
             }
             break;
 
         case 0x2:  // Portamento down
             if (chan->period > 0) {
-                chan->period += chan->effect_param;
+                uint8_t param = chan->effect_param;
+                if (param == 0) param = chan->last_portamento_down;
+                else chan->last_portamento_down = param;
+
+                chan->period += param;
                 if (chan->period > 856) chan->period = 856;
             }
             break;
@@ -619,10 +740,71 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
             }
             break;
 
+        case 0x4:  // Vibrato
+            if (chan->vibrato_depth > 0 && chan->vibrato_speed > 0) {
+                // Get vibrato value from sine table
+                uint8_t vibrato_val = sine_table[chan->vibrato_pos & 0x3F];
+                int16_t vibrato_delta = ((int16_t)vibrato_val * chan->vibrato_depth) / 128;
+
+                // Apply vibrato to period (don't modify base period)
+                // This is applied during rendering in render_channel
+
+                // Advance vibrato position
+                chan->vibrato_pos += chan->vibrato_speed;
+                chan->vibrato_pos &= 0x3F;  // Wrap at 64
+            }
+            break;
+
+        case 0x5:  // Tone portamento + volume slide
+            // Do tone portamento (same as effect 3)
+            if (chan->portamento_target > 0 && chan->period > 0) {
+                uint16_t slide_speed = chan->effect_param;
+                if (slide_speed == 0) break;
+
+                if (chan->period < chan->portamento_target) {
+                    chan->period += slide_speed;
+                    if (chan->period > chan->portamento_target) {
+                        chan->period = chan->portamento_target;
+                    }
+                } else if (chan->period > chan->portamento_target) {
+                    if (chan->period > slide_speed) {
+                        chan->period -= slide_speed;
+                    } else {
+                        chan->period = chan->portamento_target;
+                    }
+                    if (chan->period < chan->portamento_target) {
+                        chan->period = chan->portamento_target;
+                    }
+                }
+            }
+            // Volume slide handled in effect 0xA logic
+            break;
+
+        case 0x6:  // Vibrato + volume slide
+            // Do vibrato (same as effect 4)
+            if (chan->vibrato_depth > 0 && chan->vibrato_speed > 0) {
+                chan->vibrato_pos += chan->vibrato_speed;
+                chan->vibrato_pos &= 0x3F;
+            }
+            // Volume slide handled in effect 0xA logic
+            break;
+
+        case 0x7:  // Tremolo
+            if (chan->tremolo_depth > 0 && chan->tremolo_speed > 0) {
+                // Tremolo modulates volume (applied during rendering)
+                chan->tremolo_pos += chan->tremolo_speed;
+                chan->tremolo_pos &= 0x3F;
+            }
+            break;
+
         case 0xA:  // Volume slide
             if (player->tick != 0) {  // Not on first tick
-                uint8_t up = (chan->effect_param >> 4) & 0x0F;
-                uint8_t down = chan->effect_param & 0x0F;
+                uint8_t param = chan->effect_param;
+                if (param == 0) param = chan->last_volume_slide;
+                else chan->last_volume_slide = param;
+
+                uint8_t up = (param >> 4) & 0x0F;
+                uint8_t down = param & 0x0F;
 
                 if (up > 0) {
                     chan->volume += up;
@@ -633,6 +815,36 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
                     } else {
                         chan->volume = 0;
                     }
+                }
+            }
+            break;
+
+        case 0xE:  // Extended effects (per-tick processing)
+            {
+                uint8_t sub_effect = (chan->effect_param >> 4) & 0x0F;
+                uint8_t sub_param = chan->effect_param & 0x0F;
+
+                switch (sub_effect) {
+                    case 0x9:  // Retrigger note
+                        if (sub_param > 0 && player->tick > 0) {
+                            chan->retrigger_count++;
+                            if (chan->retrigger_count >= sub_param) {
+                                chan->position = 0.0f;  // Restart sample
+                                chan->retrigger_count = 0;
+                            }
+                        }
+                        break;
+
+                    case 0xC:  // Note cut
+                        if (player->tick == sub_param) {
+                            chan->volume = 0;
+                        }
+                        break;
+
+                    case 0xD:  // Note delay
+                        // Note delay is handled in the row processing
+                        // (would need to delay triggering the note)
+                        break;
                 }
             }
             break;
@@ -653,12 +865,25 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
         return 0.0f;
     }
 
-    // Calculate playback increment
+    // Calculate playback increment with vibrato
     // On Amiga, samples are played at: amiga_clock / (period * 2) Hz
     // This is how fast we traverse through the sample data
     // At our output sample rate, we need to advance through source samples at:
     // increment = amiga_playback_rate / output_sample_rate
-    float amiga_playback_rate = period_to_frequency(chan->period);
+
+    // Apply vibrato to period
+    uint16_t effective_period = chan->period;
+    if (chan->vibrato_depth > 0) {
+        uint8_t vibrato_val = sine_table[chan->vibrato_pos & 0x3F];
+        int16_t vibrato_delta = ((int16_t)vibrato_val * chan->vibrato_depth) / 128;
+        // Center around 128 (sine goes 0-255, we want -128 to +127)
+        vibrato_delta -= 128;
+        effective_period = chan->period + vibrato_delta;
+        if (effective_period < 113) effective_period = 113;
+        if (effective_period > 856) effective_period = 856;
+    }
+
+    float amiga_playback_rate = period_to_frequency(effective_period);
     chan->increment = amiga_playback_rate / (float)sample_rate;
 
     // Debug: print first few render calls
@@ -702,8 +927,17 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     //     sample_debug_counter++;
     // }
 
-    // Apply volume
-    output *= (float)chan->volume / 64.0f;
+    // Apply volume with tremolo
+    uint8_t effective_volume = chan->volume;
+    if (chan->tremolo_depth > 0) {
+        uint8_t tremolo_val = sine_table[chan->tremolo_pos & 0x3F];
+        int16_t tremolo_delta = ((int16_t)tremolo_val * chan->tremolo_depth) / 128;
+        tremolo_delta -= 128;  // Center around 128
+        effective_volume = chan->volume + (tremolo_delta / 4);  // Scale down
+        if (effective_volume > 64) effective_volume = 64;
+    }
+
+    output *= (float)effective_volume / 64.0f;
     output *= chan->user_volume;
 
     // Advance position
@@ -730,16 +964,23 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                 if (player->tick >= player->speed) {
                     // Move to next row
                     player->tick = 0;
-                    player->current_row++;
 
-                    if (player->current_row >= MOD_PATTERN_ROWS) {
-                        // Move to next pattern
-                        player->current_row = 0;
-                        player->current_pattern_index++;
+                    // Handle pattern delay (EEx - repeat row N times)
+                    if (player->pattern_delay > 0) {
+                        player->pattern_delay--;
+                        // Don't advance row, just process it again
+                    } else {
+                        player->current_row++;
 
-                        // Handle loop
-                        if (player->current_pattern_index > player->loop_end) {
-                            player->current_pattern_index = player->loop_start;
+                        if (player->current_row >= MOD_PATTERN_ROWS) {
+                            // Move to next pattern
+                            player->current_row = 0;
+                            player->current_pattern_index++;
+
+                            // Handle loop
+                            if (player->current_pattern_index > player->loop_end) {
+                                player->current_pattern_index = player->loop_start;
+                            }
                         }
                     }
 

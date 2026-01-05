@@ -473,7 +473,9 @@ struct RegroovePad : app::ParamWidget {
 
 		// Draw label if present
 		if (!label.empty()) {
-			nvgFontSize(args.vg, 12);
+			// Scale font size based on button size (12pt for 49px, scale proportionally)
+			float fontSize = 12.0f * (width / 49.0f);
+			nvgFontSize(args.vg, fontSize);
 			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 			nvgFillColor(args.vg, active ? nvgRGB(0xff, 0xff, 0xff) : nvgRGB(0x88, 0x88, 0x88));

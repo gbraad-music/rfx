@@ -1,0 +1,67 @@
+/*
+ * RGModPlayer - Regroove MOD File Player
+ * DISTRHO Plugin Framework (DPF)
+ */
+
+#ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
+#define DISTRHO_PLUGIN_INFO_H_INCLUDED
+
+// Display strings
+#define RGMODPLAYER_DISPLAY_NAME "RGModPlayer - ProTracker Module Player"
+#define RGMODPLAYER_DESCRIPTION "4-Channel ProTracker MOD File Player"
+#define RGMODPLAYER_WINDOW_TITLE "RGModPlayer"
+
+#define DISTRHO_PLUGIN_BRAND "Regroove"
+#define DISTRHO_PLUGIN_NAME  RGMODPLAYER_DISPLAY_NAME
+#define DISTRHO_PLUGIN_URI   "https://music.gbraad.nl/regrooved/rgmodplayer"
+
+#define DISTRHO_PLUGIN_HAS_UI        1
+#define DISTRHO_PLUGIN_IS_RT_SAFE    1
+#define DISTRHO_PLUGIN_IS_SYNTH      1
+#define DISTRHO_PLUGIN_NUM_INPUTS    0
+#define DISTRHO_PLUGIN_NUM_OUTPUTS   2
+#define DISTRHO_PLUGIN_WANT_PROGRAMS 0
+#define DISTRHO_PLUGIN_WANT_STATE    1  // For file path
+#define DISTRHO_PLUGIN_WANT_FULL_STATE 1  // For getState
+#define DISTRHO_PLUGIN_WANT_TIMEPOS  0
+#define DISTRHO_PLUGIN_WANT_MIDI_INPUT 1
+
+// UI
+#define DISTRHO_UI_USE_NANOVG       0
+#define DISTRHO_UI_USER_RESIZABLE   1
+#define DISTRHO_UI_DEFAULT_WIDTH    600
+#define DISTRHO_UI_DEFAULT_HEIGHT   400
+
+// Parameters
+enum Parameters {
+    // Playback controls
+    kParameterPlay = 0,
+    kParameterLoopStart,
+    kParameterLoopEnd,
+    kParameterSpeed,
+    kParameterBPM,
+
+    // Channel 1
+    kParameterCh1Mute,
+    kParameterCh1Volume,
+    kParameterCh1Pan,
+
+    // Channel 2
+    kParameterCh2Mute,
+    kParameterCh2Volume,
+    kParameterCh2Pan,
+
+    // Channel 3
+    kParameterCh3Mute,
+    kParameterCh3Volume,
+    kParameterCh3Pan,
+
+    // Channel 4
+    kParameterCh4Mute,
+    kParameterCh4Volume,
+    kParameterCh4Pan,
+
+    kParameterCount
+};
+
+#endif // DISTRHO_PLUGIN_INFO_H_INCLUDED

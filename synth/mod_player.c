@@ -495,6 +495,14 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
         } else {
             chan->period = note->period;
             chan->position = 0.0f;  // Reset playback position
+
+            // Reset vibrato/tremolo phase when new note triggered (not for portamento/vibrato)
+            if (note->effect != 0x4 && note->effect != 0x6) {
+                chan->vibrato_pos = 0;
+            }
+            if (note->effect != 0x7) {
+                chan->tremolo_pos = 0;
+            }
         }
     }
 
@@ -894,9 +902,9 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     uint16_t effective_period = chan->period;
     if (chan->vibrato_depth > 0) {
         uint8_t vibrato_val = sine_table[chan->vibrato_pos & 0x3F];
-        int16_t vibrato_delta = ((int16_t)vibrato_val * chan->vibrato_depth) / 128;
-        // Center around 128 (sine goes 0-255, we want -128 to +127)
-        vibrato_delta -= 128;
+        // Sine table values 0-127 are positive, 128-255 are negative (signed int8)
+        int8_t signed_vibrato = (int8_t)vibrato_val;
+        int16_t vibrato_delta = ((int16_t)signed_vibrato * chan->vibrato_depth) / 128;
         effective_period = chan->period + vibrato_delta;
         if (effective_period < 113) effective_period = 113;
         if (effective_period > 856) effective_period = 856;
@@ -950,10 +958,13 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     uint8_t effective_volume = chan->volume;
     if (chan->tremolo_depth > 0) {
         uint8_t tremolo_val = sine_table[chan->tremolo_pos & 0x3F];
-        int16_t tremolo_delta = ((int16_t)tremolo_val * chan->tremolo_depth) / 128;
-        tremolo_delta -= 128;  // Center around 128
-        effective_volume = chan->volume + (tremolo_delta / 4);  // Scale down
-        if (effective_volume > 64) effective_volume = 64;
+        // Sine table values 0-127 are positive, 128-255 are negative (signed int8)
+        int8_t signed_tremolo = (int8_t)tremolo_val;
+        int16_t tremolo_delta = ((int16_t)signed_tremolo * chan->tremolo_depth) / 64;
+        int16_t new_volume = (int16_t)chan->volume + tremolo_delta;
+        if (new_volume < 0) new_volume = 0;
+        if (new_volume > 64) new_volume = 64;
+        effective_volume = (uint8_t)new_volume;
     }
 
     output *= (float)effective_volume / 64.0f;

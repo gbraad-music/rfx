@@ -102,9 +102,15 @@ struct ModPlayer {
     // Pattern loop (E6x effect)
     uint8_t pattern_loop_row;
     uint8_t pattern_loop_count;
+    bool pattern_loop_pending;  // Flag to jump on next row advance
 
     // Pattern delay (EEx effect)
     uint8_t pattern_delay;
+
+    // B+D combination (position jump + pattern break)
+    bool position_jump_pending;
+    uint8_t jump_to_pattern;
+    uint8_t jump_to_row;
 
     // Timing
     float samples_per_tick;
@@ -553,10 +559,10 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             break;
 
         case 0xB:  // Position jump - jump to pattern
-            if (note->effect_param < player->song_length) {
-                player->current_pattern_index = note->effect_param;
-                player->current_row = 0;
-            }
+            // Store for potential B+D combination
+            player->position_jump_pending = true;
+            player->jump_to_pattern = note->effect_param;
+            player->jump_to_row = 0;  // Default to row 0 if no D effect
             break;
 
         case 0xC:  // Set volume
@@ -568,14 +574,17 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             {
                 // Parameter is in BCD format: high nibble = tens, low nibble = ones
                 uint8_t row = ((note->effect_param >> 4) * 10) + (note->effect_param & 0x0F);
-                player->current_pattern_index++;
-                if (player->current_pattern_index >= player->song_length) {
-                    player->current_pattern_index = player->loop_start;
+                if (row >= MOD_PATTERN_ROWS) row = 0;
+
+                // If B was also on this row, use B's pattern; otherwise next pattern
+                if (!player->position_jump_pending) {
+                    player->jump_to_pattern = player->current_pattern_index + 1;
+                    if (player->jump_to_pattern >= player->song_length) {
+                        player->jump_to_pattern = player->loop_start;
+                    }
                 }
-                player->current_row = row;
-                if (player->current_row >= MOD_PATTERN_ROWS) {
-                    player->current_row = 0;
-                }
+                player->jump_to_row = row;
+                player->position_jump_pending = true;
             }
             break;
 
@@ -611,15 +620,18 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                         } else {
                             // E6x: Loop back x times
                             if (player->pattern_loop_count == 0) {
-                                // First time - set counter
+                                // First encounter - set counter to x (will loop x times)
                                 player->pattern_loop_count = sub_param;
-                            }
-
-                            if (player->pattern_loop_count > 0) {
+                                player->pattern_loop_pending = true;
+                            } else {
+                                // Subsequent encounters - decrement and check
                                 player->pattern_loop_count--;
                                 if (player->pattern_loop_count > 0) {
-                                    // Jump back to loop start
-                                    player->current_row = player->pattern_loop_row;
+                                    // Still more loops to go - set flag to jump back
+                                    player->pattern_loop_pending = true;
+                                } else {
+                                    // Done looping - reset counter for next time
+                                    player->pattern_loop_count = 0;
                                 }
                             }
                         }
@@ -653,7 +665,10 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
                     case 0xE:  // Pattern delay
                         // Delay pattern by N rows (repeat current row N times)
-                        player->pattern_delay = sub_param;
+                        // Only set if not already delaying (prevent infinite loop)
+                        if (player->pattern_delay == 0) {
+                            player->pattern_delay = sub_param;
+                        }
                         break;
                 }
             }
@@ -969,6 +984,12 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                     if (player->pattern_delay > 0) {
                         player->pattern_delay--;
                         // Don't advance row, just process it again
+                    }
+                    // Handle pattern loop (E6x - jump back to loop start)
+                    else if (player->pattern_loop_pending) {
+                        player->pattern_loop_pending = false;
+                        player->current_row = player->pattern_loop_row;
+                        // Don't increment, we're jumping back
                     } else {
                         player->current_row++;
 
@@ -976,6 +997,11 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                             // Move to next pattern
                             player->current_row = 0;
                             player->current_pattern_index++;
+
+                            // Reset pattern loop state when changing patterns
+                            player->pattern_loop_row = 0;
+                            player->pattern_loop_count = 0;
+                            player->pattern_loop_pending = false;
 
                             // Handle loop
                             if (player->current_pattern_index > player->loop_end) {
@@ -989,11 +1015,30 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                         uint8_t pattern_num = player->song_positions[player->current_pattern_index];
 
                         if (pattern_num < player->num_patterns) {
+                            // Clear position jump flag at start of row
+                            player->position_jump_pending = false;
+
+                            // Process all channels
                             for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
                                 uint32_t pattern_index = pattern_num * (MOD_MAX_CHANNELS * MOD_PATTERN_ROWS) +
                                                         player->current_row * MOD_MAX_CHANNELS + c;
                                 const ModNote* note = &player->patterns[pattern_index];
                                 process_note(player, c, note);
+                            }
+
+                            // Apply position jump if B or D was triggered
+                            if (player->position_jump_pending) {
+                                player->current_pattern_index = player->jump_to_pattern;
+                                player->current_row = player->jump_to_row;
+                                player->position_jump_pending = false;
+
+                                // Reset pattern loop state when jumping
+                                player->pattern_loop_row = 0;
+                                player->pattern_loop_count = 0;
+                                player->pattern_loop_pending = false;
+
+                                // Don't let row advance happen naturally
+                                player->current_row--;  // Will be incremented by main loop
                             }
                         }
                     }

@@ -109,11 +109,11 @@ void print_info(ModPlayer* player) {
 }
 
 void print_status(ModPlayer* player, bool playing) {
-    uint8_t pattern, row;
-    mod_player_get_position(player, &pattern, &row);
+    uint8_t order, row;
+    mod_player_get_position(player, &order, &row);
 
-    printf("\r[%s] Pattern: %3d  Row: %2d  | Ch: ",
-           playing ? ">" : "||", pattern, row);
+    printf("\r[%s] Song order: %3d  Row: %2d  | Ch: ",
+           playing ? ">" : "||", order, row);
 
     for (int i = 0; i < 4; i++) {
         bool muted = mod_player_get_channel_mute(player, i);

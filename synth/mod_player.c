@@ -10,6 +10,7 @@
 
 // Forward declarations
 static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note);
+static void trigger_position_callback(ModPlayer* player);
 
 // Period table for notes (ProTracker)
 static const uint16_t period_table[16][36] = {
@@ -117,6 +118,10 @@ struct ModPlayer {
     float samples_per_tick;
     float sample_accumulator;
 
+    // Position callback
+    ModPlayerPositionCallback position_callback;
+    void* callback_user_data;
+
     // Channels
     ModChannel channels[MOD_MAX_CHANNELS];
 };
@@ -127,6 +132,21 @@ static float period_to_frequency(uint16_t period) {
     // Amiga period to frequency: freq = 7093789.2 / (period * 2)
     // For PAL: 7093789.2 Hz
     return 7093789.2f / (period * 2.0f);
+}
+
+// Helper: Trigger position callback
+static void trigger_position_callback(ModPlayer* player) {
+    if (!player || !player->position_callback) return;
+
+    uint8_t order = player->current_pattern_index;
+    uint8_t row = player->current_row;
+    uint8_t pattern = 0;
+
+    if (order < player->song_length) {
+        pattern = player->song_positions[order];
+    }
+
+    player->position_callback(order, pattern, row, player->callback_user_data);
 }
 
 // Helper: Get period for note and finetune
@@ -408,6 +428,12 @@ void mod_player_get_position(const ModPlayer* player, uint8_t* pattern, uint8_t*
     if (!player) return;
     if (pattern) *pattern = player->current_pattern_index;
     if (row) *row = player->current_row;
+}
+
+void mod_player_set_position_callback(ModPlayer* player, ModPlayerPositionCallback callback, void* user_data) {
+    if (!player) return;
+    player->position_callback = callback;
+    player->callback_user_data = user_data;
 }
 
 void mod_player_set_position(ModPlayer* player, uint8_t pattern, uint8_t row) {
@@ -1006,6 +1032,7 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                         player->pattern_loop_pending = false;
                         player->current_row = player->pattern_loop_row;
                         player->in_pattern_delay_repeat = false;  // New row
+                        trigger_position_callback(player);  // Notify position change
                         // Don't increment, we're jumping back
                     } else {
                         player->current_row++;
@@ -1026,6 +1053,8 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                                 player->current_pattern_index = player->loop_start;
                             }
                         }
+
+                        trigger_position_callback(player);  // Notify position change
                     }
 
                     // Process notes for this row
@@ -1056,6 +1085,8 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                                 player->pattern_loop_pending = false;
                                 player->pattern_delay = 0;  // Reset pattern delay
                                 player->in_pattern_delay_repeat = false;  // Clear delay repeat flag
+
+                                trigger_position_callback(player);  // Notify position change
 
                                 // Don't let row advance happen naturally
                                 player->current_row--;  // Will be incremented by main loop

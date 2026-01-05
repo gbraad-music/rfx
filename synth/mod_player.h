@@ -26,6 +26,15 @@ extern "C" {
 typedef struct ModPlayer ModPlayer;
 
 /**
+ * Position change callback
+ * Called when song order, pattern number, or row changes
+ * order: Current position in song order (0-127)
+ * pattern: Actual pattern number being played
+ * row: Current row within pattern (0-63)
+ */
+typedef void (*ModPlayerPositionCallback)(uint8_t order, uint8_t pattern, uint8_t row, void* user_data);
+
+/**
  * MOD sample structure
  */
 typedef struct {
@@ -134,6 +143,13 @@ void mod_player_set_loop_range(ModPlayer* player, uint8_t start_pattern, uint8_t
  * Get current position
  */
 void mod_player_get_position(const ModPlayer* player, uint8_t* pattern, uint8_t* row);
+
+/**
+ * Set position change callback
+ * callback: Function to call when position changes (or NULL to disable)
+ * user_data: User data passed to callback
+ */
+void mod_player_set_position_callback(ModPlayer* player, ModPlayerPositionCallback callback, void* user_data);
 
 /**
  * Set position (jump to specific pattern/row)

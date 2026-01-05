@@ -10,6 +10,9 @@
 // Forward declaration
 struct RM_Deck;
 
+// Forward declaration of position callback for MOD player
+static void modPlayerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data);
+
 // Custom pad widget for deck controls
 struct DeckPad : RegroovePad {
 	RM_Deck* module;
@@ -38,8 +41,12 @@ struct RM_Deck : Module {
 		PLAY_PARAM,
 		PAD3_PARAM,  // Pattern -
 		PAD4_PARAM,  // Pattern +
-		PAD5_PARAM,  // Mute
+		PAD5_PARAM,  // Mute (all)
 		PAD6_PARAM,  // PFL
+		CHAN1_MUTE_PARAM,  // Channel 1 mute
+		CHAN2_MUTE_PARAM,  // Channel 2 mute
+		CHAN3_MUTE_PARAM,  // Channel 3 mute
+		CHAN4_MUTE_PARAM,  // Channel 4 mute
 		TEMPO_PARAM,
 		PARAMS_LEN
 	};
@@ -63,6 +70,10 @@ struct RM_Deck : Module {
 	std::atomic<bool> muted{false};
 	std::atomic<bool> pflActive{false};
 	std::atomic<bool> singlePatternLoop{false};  // Track if loop is set to single pattern
+	std::atomic<bool> channelMuted0{false};  // Channel 1 mute state
+	std::atomic<bool> channelMuted1{false};  // Channel 2 mute state
+	std::atomic<bool> channelMuted2{false};  // Channel 3 mute state
+	std::atomic<bool> channelMuted3{false};  // Channel 4 mute state
 	float smoothTempo = 1.0f;
 	std::atomic<bool> loading{false};
 	std::atomic<bool> shouldStopLoading{false};
@@ -70,6 +81,31 @@ struct RM_Deck : Module {
 	std::thread loadingThread;
 	std::atomic<bool> initialized{false};
 	std::string currentFileName;
+
+	// Position tracking from callback
+	std::atomic<uint8_t> currentOrder{0};
+	std::atomic<uint8_t> currentPattern{0};
+	std::atomic<uint8_t> currentRow{0};
+
+	// Helper methods for channel mute access
+	bool getChannelMuted(int index) const {
+		switch(index) {
+			case 0: return channelMuted0;
+			case 1: return channelMuted1;
+			case 2: return channelMuted2;
+			case 3: return channelMuted3;
+			default: return false;
+		}
+	}
+
+	void setChannelMuted(int index, bool muted) {
+		switch(index) {
+			case 0: channelMuted0 = muted; break;
+			case 1: channelMuted1 = muted; break;
+			case 2: channelMuted2 = muted; break;
+			case 3: channelMuted3 = muted; break;
+		}
+	}
 
 	// Audio buffer for MOD rendering (stereo interleaved)
 	static constexpr size_t BUFFER_SIZE = 512;
@@ -85,8 +121,12 @@ struct RM_Deck : Module {
 		configButton(PLAY_PARAM, "Play/Stop");
 		configButton(PAD3_PARAM, "Pattern -");
 		configButton(PAD4_PARAM, "Pattern +");
-		configButton(PAD5_PARAM, "Mute");
+		configButton(PAD5_PARAM, "Mute All");
 		configButton(PAD6_PARAM, "PFL");
+		configButton(CHAN1_MUTE_PARAM, "Channel 1 Mute");
+		configButton(CHAN2_MUTE_PARAM, "Channel 2 Mute");
+		configButton(CHAN3_MUTE_PARAM, "Channel 3 Mute");
+		configButton(CHAN4_MUTE_PARAM, "Channel 4 Mute");
 		configParam(TEMPO_PARAM, 0.9f, 1.1f, 1.0f, "Tempo", "%", -100.f, 100.f, -100.f);
 
 		configOutput(PFL_L_OUTPUT, "PFL Left");
@@ -95,6 +135,7 @@ struct RM_Deck : Module {
 		configOutput(AUDIO_R_OUTPUT, "Right audio");
 
 		modPlayer = mod_player_create();
+		mod_player_set_position_callback(modPlayer, modPlayerPositionCallback, this);
 		initialized = true;
 	}
 
@@ -127,6 +168,10 @@ struct RM_Deck : Module {
 				loading = true;
 				playing = false;
 				singlePatternLoop = false;  // Reset loop flag
+				// Reset channel mute states
+				for (int i = 0; i < 4; i++) {
+					setChannelMuted(i, false);
+				}
 			}
 
 			// Read file into memory
@@ -165,6 +210,11 @@ struct RM_Deck : Module {
 				size_t lastSlash = path.find_last_of("/\\");
 				currentFileName = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
 
+				// Reset all channel mutes in the player
+				for (int i = 0; i < 4; i++) {
+					mod_player_set_channel_mute(modPlayer, i, false);
+				}
+
 				fileLoaded = true;
 				bufferValid = false;
 			}
@@ -201,14 +251,22 @@ struct RM_Deck : Module {
 			params[PLAY_PARAM].setValue(0.f);
 		}
 
-		// Handle set loop button (PAD1)
+		// Handle set loop button (PAD1) - toggle between single pattern loop and full song
 		if (params[PAD1_PARAM].getValue() > 0.5f) {
 			if (fileLoaded && modPlayer) {
 				std::lock_guard<std::mutex> lock(swapMutex);
-				uint8_t currentPattern, currentRow;
-				mod_player_get_position(modPlayer, &currentPattern, &currentRow);
-				mod_player_set_loop_range(modPlayer, currentPattern, currentPattern);
-				singlePatternLoop = true;  // Mark that we have a single pattern loop
+				if (singlePatternLoop) {
+					// Disable loop - restore full song playback
+					uint8_t songLen = mod_player_get_song_length(modPlayer);
+					mod_player_set_loop_range(modPlayer, 0, songLen > 0 ? songLen - 1 : 0);
+					singlePatternLoop = false;
+				} else {
+					// Enable single pattern loop
+					uint8_t currentPattern, currentRow;
+					mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+					mod_player_set_loop_range(modPlayer, currentPattern, currentPattern);
+					singlePatternLoop = true;
+				}
 			}
 			params[PAD1_PARAM].setValue(0.f);
 		}
@@ -250,6 +308,19 @@ struct RM_Deck : Module {
 		if (params[PAD6_PARAM].getValue() > 0.5f) {
 			pflActive = !pflActive;
 			params[PAD6_PARAM].setValue(0.f);
+		}
+
+		// Handle channel mute buttons
+		for (int i = 0; i < 4; i++) {
+			if (params[CHAN1_MUTE_PARAM + i].getValue() > 0.5f) {
+				if (fileLoaded && modPlayer) {
+					std::lock_guard<std::mutex> lock(swapMutex);
+					bool newMuteState = !getChannelMuted(i);
+					setChannelMuted(i, newMuteState);
+					mod_player_set_channel_mute(modPlayer, i, newMuteState);
+				}
+				params[CHAN1_MUTE_PARAM + i].setValue(0.f);
+			}
 		}
 
 		// Playback
@@ -302,6 +373,14 @@ struct RM_Deck : Module {
 		json_object_set_new(rootJ, "singlePatternLoop", json_boolean(singlePatternLoop));
 		json_object_set_new(rootJ, "muted", json_boolean(muted));
 		json_object_set_new(rootJ, "pflActive", json_boolean(pflActive));
+
+		// Save channel mute states
+		json_t* channelMutesJ = json_array();
+		for (int i = 0; i < 4; i++) {
+			json_array_append_new(channelMutesJ, json_boolean(getChannelMuted(i)));
+		}
+		json_object_set_new(rootJ, "channelMutes", channelMutesJ);
+
 		return rootJ;
 	}
 
@@ -319,8 +398,34 @@ struct RM_Deck : Module {
 
 		json_t* pflJ = json_object_get(rootJ, "pflActive");
 		if (pflJ) pflActive = json_boolean_value(pflJ);
+
+		// Restore channel mute states
+		json_t* channelMutesJ = json_object_get(rootJ, "channelMutes");
+		if (channelMutesJ && json_is_array(channelMutesJ)) {
+			for (int i = 0; i < 4 && i < (int)json_array_size(channelMutesJ); i++) {
+				json_t* muteJ = json_array_get(channelMutesJ, i);
+				if (muteJ && json_is_boolean(muteJ)) {
+					bool muted = json_boolean_value(muteJ);
+					setChannelMuted(i, muted);
+					// Apply to mod player when file loads
+					if (modPlayer && fileLoaded) {
+						mod_player_set_channel_mute(modPlayer, i, muted);
+					}
+				}
+			}
+		}
 	}
 };
+
+// Implement position callback after RM_Deck is fully defined
+static void modPlayerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data) {
+	RM_Deck* module = static_cast<RM_Deck*>(user_data);
+	if (module) {
+		module->currentOrder = order;
+		module->currentPattern = pattern;
+		module->currentRow = row;
+	}
+}
 
 // Implement DeckPad::step() after RM_Deck is fully defined
 void DeckPad::step() {
@@ -341,7 +446,7 @@ void DeckPad::step() {
 			setPadState(0);  // GREY = state 0
 		}
 	} else if (module && padIndex == 4) {
-		// MUTE pad - show RED when muted
+		// MUTE ALL pad - show RED when muted
 		if (module->muted) {
 			setPadState(1);  // RED = state 1
 		} else {
@@ -353,6 +458,14 @@ void DeckPad::step() {
 			setPadState(2);  // GREEN = state 2
 		} else {
 			setPadState(0);  // GREY = state 0
+		}
+	} else if (module && padIndex >= 6 && padIndex <= 9) {
+		// Channel mute pads (CH1-CH4) - show RED when muted
+		int chanIndex = padIndex - 6;
+		if (module->getChannelMuted(chanIndex)) {
+			setPadState(1);  // RED = state 1
+		} else {
+			setPadState(2);  // GREEN = state 2 (unmuted/active)
 		}
 	} else {
 		setPadState(0);  // GREY for pattern +/- buttons
@@ -383,12 +496,10 @@ struct ModInfoDisplay : TransparentWidget {
 			return;
 		}
 
-		// Get position info
-		uint8_t songOrder = 0, row = 0;
-		if (module->modPlayer) {
-			std::lock_guard<std::mutex> lock(module->swapMutex);
-			mod_player_get_position(module->modPlayer, &songOrder, &row);
-		}
+		// Get position info from atomic variables
+		uint8_t order = module->currentOrder;
+		uint8_t pattern = module->currentPattern;
+		uint8_t row = module->currentRow;
 
 		// Display song position
 		nvgFontSize(args.vg, 11);
@@ -397,11 +508,14 @@ struct ModInfoDisplay : TransparentWidget {
 		nvgFillColor(args.vg, REGROOVE_TEXT);
 
 		char buf[64];
-		snprintf(buf, sizeof(buf), "Order: %02d", songOrder);
+		snprintf(buf, sizeof(buf), "Order: %02d", order);
 		nvgText(args.vg, 5, 5, buf, NULL);
 
+		snprintf(buf, sizeof(buf), "Pattern: %02d", pattern);
+		nvgText(args.vg, 5, 17, buf, NULL);
+
 		snprintf(buf, sizeof(buf), "Row: %02d", row);
-		nvgText(args.vg, 5, 20, buf, NULL);
+		nvgText(args.vg, 5, 29, buf, NULL);
 
 		// Show filename
 		nvgFontSize(args.vg, 9);
@@ -432,12 +546,31 @@ struct RM_DeckWidget : ModuleWidget {
 		titleLabel->bold = true;
 		addChild(titleLabel);
 
-		// MOD info display (shows song order, row, filename)
+		// MOD info display (shows song order, row, filename) - made smaller
 		ModInfoDisplay* infoDisplay = new ModInfoDisplay();
 		infoDisplay->box.pos = mm2px(Vec(3, 16));
-		infoDisplay->box.size = mm2px(Vec(54.96, 35));
+		infoDisplay->box.size = mm2px(Vec(54.96, 22));  // Much smaller - ends at 38mm
 		infoDisplay->module = module;
 		addChild(infoDisplay);
+
+		// Channel mute pads (4 small pads in a row below the display)
+		float chanPadStartX = 6;
+		float chanPadStartY = 40;  // Display ends at 38mm, start at 40mm
+		float chanPadSpacing = 1.5;
+		float chanPadSize = 11;  // 11mm buttons (smaller than main 13mm pads)
+
+		for (int i = 0; i < 4; i++) {
+			DeckPad* chanPad = new DeckPad();
+			chanPad->box.pos = mm2px(Vec(chanPadStartX + i * (chanPadSize + chanPadSpacing), chanPadStartY));
+			chanPad->box.size = mm2px(Vec(chanPadSize, chanPadSize));  // Set size BEFORE configuring
+			chanPad->module = module;
+			chanPad->padIndex = 6 + i;  // padIndex 6-9 for channel mutes
+			chanPad->label = "CH" + std::to_string(i + 1);
+			chanPad->app::ParamWidget::module = module;
+			chanPad->app::ParamWidget::paramId = RM_Deck::CHAN1_MUTE_PARAM + i;
+			chanPad->initParamQuantity();
+			addParam(chanPad);
+		}
 
 		// Pad grid - EXACT same layout as RDJ_Deck
 		float padStartX = 5;

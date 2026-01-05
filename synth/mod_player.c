@@ -106,6 +106,7 @@ struct ModPlayer {
 
     // Pattern delay (EEx effect)
     uint8_t pattern_delay;
+    bool in_pattern_delay_repeat;  // Flag to prevent re-triggering delay during repeats
 
     // B+D combination (position jump + pattern break)
     bool position_jump_pending;
@@ -665,8 +666,8 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
                     case 0xE:  // Pattern delay
                         // Delay pattern by N rows (repeat current row N times)
-                        // Only set if not already delaying (prevent infinite loop)
-                        if (player->pattern_delay == 0) {
+                        // Only trigger on first encounter, not during repeats
+                        if (!player->in_pattern_delay_repeat) {
                             player->pattern_delay = sub_param;
                         }
                         break;
@@ -732,7 +733,10 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
 
         case 0x3:  // Tone portamento (slide to note)
             if (chan->portamento_target > 0 && chan->period > 0) {
-                uint16_t slide_speed = chan->effect_param;
+                uint8_t slide_speed = chan->effect_param;
+                if (slide_speed == 0) slide_speed = chan->last_tone_portamento;
+                else chan->last_tone_portamento = slide_speed;
+
                 if (slide_speed == 0) break;
 
                 if (chan->period < chan->portamento_target) {
@@ -771,9 +775,9 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
             break;
 
         case 0x5:  // Tone portamento + volume slide
-            // Do tone portamento (same as effect 3)
+            // Do tone portamento (uses last 3xx speed)
             if (chan->portamento_target > 0 && chan->period > 0) {
-                uint16_t slide_speed = chan->effect_param;
+                uint8_t slide_speed = chan->last_tone_portamento;
                 if (slide_speed == 0) break;
 
                 if (chan->period < chan->portamento_target) {
@@ -983,15 +987,18 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                     // Handle pattern delay (EEx - repeat row N times)
                     if (player->pattern_delay > 0) {
                         player->pattern_delay--;
+                        player->in_pattern_delay_repeat = true;  // Mark as repeat
                         // Don't advance row, just process it again
                     }
                     // Handle pattern loop (E6x - jump back to loop start)
                     else if (player->pattern_loop_pending) {
                         player->pattern_loop_pending = false;
                         player->current_row = player->pattern_loop_row;
+                        player->in_pattern_delay_repeat = false;  // New row
                         // Don't increment, we're jumping back
                     } else {
                         player->current_row++;
+                        player->in_pattern_delay_repeat = false;  // New row
 
                         if (player->current_row >= MOD_PATTERN_ROWS) {
                             // Move to next pattern
@@ -1036,6 +1043,8 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                                 player->pattern_loop_row = 0;
                                 player->pattern_loop_count = 0;
                                 player->pattern_loop_pending = false;
+                                player->pattern_delay = 0;  // Reset pattern delay
+                                player->in_pattern_delay_repeat = false;  // Clear delay repeat flag
 
                                 // Don't let row advance happen naturally
                                 player->current_row--;  // Will be incremented by main loop

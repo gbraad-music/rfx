@@ -78,6 +78,7 @@ typedef struct {
     // Effect memory (for effects that use 00 parameter)
     uint8_t last_portamento_up;
     uint8_t last_portamento_down;
+    uint8_t last_tone_portamento;
     uint8_t last_volume_slide;
     uint8_t last_sample_offset;
 

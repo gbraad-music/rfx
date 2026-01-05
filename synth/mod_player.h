@@ -67,7 +67,19 @@ typedef struct {
     uint8_t effect_param;
     uint16_t portamento_target;
     uint8_t vibrato_pos;
+    uint8_t vibrato_speed;
+    uint8_t vibrato_depth;
     uint8_t tremolo_pos;
+    uint8_t tremolo_speed;
+    uint8_t tremolo_depth;
+    uint8_t retrigger_count;
+    uint8_t note_delay_ticks;
+
+    // Effect memory (for effects that use 00 parameter)
+    uint8_t last_portamento_up;
+    uint8_t last_portamento_down;
+    uint8_t last_volume_slide;
+    uint8_t last_sample_offset;
 
     // User controls
     bool muted;               // Channel muted by user

@@ -466,8 +466,14 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
     // Handle period (pitch)
     if (note->period > 0) {
-        chan->period = note->period;
-        chan->position = 0.0f;  // Reset playback position
+        // Effect 0x3 (tone portamento) sets target instead of changing period
+        if (note->effect == 0x3) {
+            chan->portamento_target = note->period;
+            // Don't reset position for portamento
+        } else {
+            chan->period = note->period;
+            chan->position = 0.0f;  // Reset playback position
+        }
     }
 
     // Store effect for processing
@@ -476,6 +482,13 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
     // Process immediate effects
     switch (note->effect) {
+        case 0x9:  // Sample offset - start sample at offset
+            if (note->effect_param > 0) {
+                // Offset is in 256-byte units
+                chan->position = (float)(note->effect_param * 256);
+            }
+            break;
+
         case 0xB:  // Position jump - jump to pattern
             if (note->effect_param < player->song_length) {
                 player->current_pattern_index = note->effect_param;
@@ -499,6 +512,36 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                 player->current_row = row;
                 if (player->current_row >= MOD_PATTERN_ROWS) {
                     player->current_row = 0;
+                }
+            }
+            break;
+
+        case 0xE:  // Extended effects
+            {
+                uint8_t sub_effect = (note->effect_param >> 4) & 0x0F;
+                uint8_t sub_param = note->effect_param & 0x0F;
+
+                switch (sub_effect) {
+                    case 0xA:  // Fine volume slide up
+                        chan->volume += sub_param;
+                        if (chan->volume > 64) chan->volume = 64;
+                        break;
+
+                    case 0xB:  // Fine volume slide down
+                        if (chan->volume >= sub_param) {
+                            chan->volume -= sub_param;
+                        } else {
+                            chan->volume = 0;
+                        }
+                        break;
+
+                    case 0xC:  // Note cut (cut after N ticks)
+                        // Will be handled in process_effects
+                        break;
+
+                    case 0xD:  // Note delay (delay note by N ticks)
+                        // Will be handled in process_effects
+                        break;
                 }
             }
             break;
@@ -548,6 +591,31 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
             if (chan->period > 0) {
                 chan->period += chan->effect_param;
                 if (chan->period > 856) chan->period = 856;
+            }
+            break;
+
+        case 0x3:  // Tone portamento (slide to note)
+            if (chan->portamento_target > 0 && chan->period > 0) {
+                uint16_t slide_speed = chan->effect_param;
+                if (slide_speed == 0) break;
+
+                if (chan->period < chan->portamento_target) {
+                    // Slide down (increase period)
+                    chan->period += slide_speed;
+                    if (chan->period > chan->portamento_target) {
+                        chan->period = chan->portamento_target;
+                    }
+                } else if (chan->period > chan->portamento_target) {
+                    // Slide up (decrease period)
+                    if (chan->period > slide_speed) {
+                        chan->period -= slide_speed;
+                    } else {
+                        chan->period = chan->portamento_target;
+                    }
+                    if (chan->period < chan->portamento_target) {
+                        chan->period = chan->portamento_target;
+                    }
+                }
             }
             break;
 

@@ -1,0 +1,550 @@
+#include "plugin.hpp"
+#include "../../regroove_components.hpp"
+#include "../../../synth/mod_player.h"
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <cstring>
+#include <osdialog.h>
+
+// Forward declaration
+struct RM_Deck;
+
+// Custom pad widget for deck controls
+struct DeckPad : RegroovePad {
+	RM_Deck* module;
+	int padIndex;
+
+	void onButton(const ButtonEvent& e) override {
+		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			pressed = true;
+			ParamQuantity* pq = getParamQuantity();
+			if (pq) {
+				pq->setValue(1.0f);
+			}
+		}
+		else if (e.action == GLFW_RELEASE && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			pressed = false;
+		}
+		ParamWidget::onButton(e);
+	}
+
+	void step() override;  // Implemented after RM_Deck definition
+};
+
+struct RM_Deck : Module {
+	enum ParamId {
+		PAD1_PARAM,  // Set loop
+		PLAY_PARAM,
+		PAD3_PARAM,  // Pattern -
+		PAD4_PARAM,  // Pattern +
+		PAD5_PARAM,  // Mute
+		PAD6_PARAM,  // PFL
+		TEMPO_PARAM,
+		PARAMS_LEN
+	};
+	enum InputId {
+		INPUTS_LEN
+	};
+	enum OutputId {
+		PFL_L_OUTPUT,
+		PFL_R_OUTPUT,
+		AUDIO_L_OUTPUT,
+		AUDIO_R_OUTPUT,
+		OUTPUTS_LEN
+	};
+	enum LightId {
+		LIGHTS_LEN
+	};
+
+	ModPlayer* modPlayer = nullptr;
+	std::atomic<bool> playing{false};
+	std::atomic<bool> fileLoaded{false};
+	std::atomic<bool> muted{false};
+	std::atomic<bool> pflActive{false};
+	std::atomic<bool> singlePatternLoop{false};  // Track if loop is set to single pattern
+	float smoothTempo = 1.0f;
+	std::atomic<bool> loading{false};
+	std::atomic<bool> shouldStopLoading{false};
+	std::mutex swapMutex;
+	std::thread loadingThread;
+	std::atomic<bool> initialized{false};
+	std::string currentFileName;
+
+	// Audio buffer for MOD rendering (stereo interleaved)
+	static constexpr size_t BUFFER_SIZE = 512;
+	float leftBuffer[BUFFER_SIZE];
+	float rightBuffer[BUFFER_SIZE];
+	size_t bufferPos = 0;
+	bool bufferValid = false;
+
+	RM_Deck() {
+		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
+
+		configButton(PAD1_PARAM, "Set Loop");
+		configButton(PLAY_PARAM, "Play/Stop");
+		configButton(PAD3_PARAM, "Pattern -");
+		configButton(PAD4_PARAM, "Pattern +");
+		configButton(PAD5_PARAM, "Mute");
+		configButton(PAD6_PARAM, "PFL");
+		configParam(TEMPO_PARAM, 0.9f, 1.1f, 1.0f, "Tempo", "%", -100.f, 100.f, -100.f);
+
+		configOutput(PFL_L_OUTPUT, "PFL Left");
+		configOutput(PFL_R_OUTPUT, "PFL Right");
+		configOutput(AUDIO_L_OUTPUT, "Left audio");
+		configOutput(AUDIO_R_OUTPUT, "Right audio");
+
+		modPlayer = mod_player_create();
+		initialized = true;
+	}
+
+	~RM_Deck() {
+		shouldStopLoading = true;
+		if (loadingThread.joinable()) {
+			loadingThread.join();
+		}
+		if (modPlayer) {
+			mod_player_destroy(modPlayer);
+		}
+	}
+
+	void loadFile(const std::string& path) {
+		if (!initialized || loading) {
+			return;
+		}
+
+		// Stop any existing loading thread
+		shouldStopLoading = true;
+		if (loadingThread.joinable()) {
+			loadingThread.join();
+		}
+		shouldStopLoading = false;
+
+		loadingThread = std::thread([this, path]() {
+			{
+				std::lock_guard<std::mutex> lock(swapMutex);
+				fileLoaded = false;
+				loading = true;
+				playing = false;
+				singlePatternLoop = false;  // Reset loop flag
+			}
+
+			// Read file into memory
+			FILE* f = fopen(path.c_str(), "rb");
+			if (!f) {
+				loading = false;
+				return;
+			}
+
+			fseek(f, 0, SEEK_END);
+			long fileSize = ftell(f);
+			fseek(f, 0, SEEK_SET);
+
+			std::vector<uint8_t> fileData(fileSize);
+			size_t bytesRead = fread(fileData.data(), 1, fileSize, f);
+			fclose(f);
+
+			if (bytesRead != (size_t)fileSize) {
+				loading = false;
+				return;
+			}
+
+			// Load MOD file
+			bool success = false;
+			{
+				std::lock_guard<std::mutex> lock(swapMutex);
+				if (modPlayer && !shouldStopLoading) {
+					success = mod_player_load(modPlayer, fileData.data(), fileData.size());
+				}
+			}
+
+			if (success && !shouldStopLoading) {
+				std::lock_guard<std::mutex> lock(swapMutex);
+
+				// Extract filename
+				size_t lastSlash = path.find_last_of("/\\");
+				currentFileName = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+
+				fileLoaded = true;
+				bufferValid = false;
+			}
+
+			loading = false;
+		});
+	}
+
+	void renderBuffer() {
+		if (!modPlayer || !fileLoaded || loading) {
+			bufferValid = false;
+			return;
+		}
+
+		std::lock_guard<std::mutex> lock(swapMutex);
+		mod_player_process(modPlayer, leftBuffer, rightBuffer, BUFFER_SIZE, APP->engine->getSampleRate());
+		bufferPos = 0;
+		bufferValid = true;
+	}
+
+	void process(const ProcessArgs& args) override {
+		// Handle play button
+		if (params[PLAY_PARAM].getValue() > 0.5f) {
+			if (fileLoaded) {
+				playing = !playing;
+				if (playing) {
+					std::lock_guard<std::mutex> lock(swapMutex);
+					mod_player_start(modPlayer);
+				} else {
+					std::lock_guard<std::mutex> lock(swapMutex);
+					mod_player_stop(modPlayer);
+				}
+			}
+			params[PLAY_PARAM].setValue(0.f);
+		}
+
+		// Handle set loop button (PAD1)
+		if (params[PAD1_PARAM].getValue() > 0.5f) {
+			if (fileLoaded && modPlayer) {
+				std::lock_guard<std::mutex> lock(swapMutex);
+				uint8_t currentPattern, currentRow;
+				mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+				mod_player_set_loop_range(modPlayer, currentPattern, currentPattern);
+				singlePatternLoop = true;  // Mark that we have a single pattern loop
+			}
+			params[PAD1_PARAM].setValue(0.f);
+		}
+
+		// Handle pattern - button (PAD3)
+		if (params[PAD3_PARAM].getValue() > 0.5f) {
+			if (fileLoaded && modPlayer) {
+				std::lock_guard<std::mutex> lock(swapMutex);
+				uint8_t currentPattern, currentRow;
+				mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+				if (currentPattern > 0) {
+					mod_player_set_position(modPlayer, currentPattern - 1, 0);
+				}
+			}
+			params[PAD3_PARAM].setValue(0.f);
+		}
+
+		// Handle pattern + button (PAD4)
+		if (params[PAD4_PARAM].getValue() > 0.5f) {
+			if (fileLoaded && modPlayer) {
+				std::lock_guard<std::mutex> lock(swapMutex);
+				uint8_t currentPattern, currentRow;
+				mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+				uint8_t songLen = mod_player_get_song_length(modPlayer);
+				if (currentPattern < songLen - 1) {
+					mod_player_set_position(modPlayer, currentPattern + 1, 0);
+				}
+			}
+			params[PAD4_PARAM].setValue(0.f);
+		}
+
+		// Handle mute button (PAD5)
+		if (params[PAD5_PARAM].getValue() > 0.5f) {
+			muted = !muted;
+			params[PAD5_PARAM].setValue(0.f);
+		}
+
+		// Handle PFL button (PAD6)
+		if (params[PAD6_PARAM].getValue() > 0.5f) {
+			pflActive = !pflActive;
+			params[PAD6_PARAM].setValue(0.f);
+		}
+
+		// Playback
+		if (loading || !playing || !fileLoaded) {
+			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
+			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
+			outputs[PFL_L_OUTPUT].setVoltage(0.f);
+			outputs[PFL_R_OUTPUT].setVoltage(0.f);
+			return;
+		}
+
+		// Render buffer if needed
+		if (!bufferValid || bufferPos >= BUFFER_SIZE) {
+			renderBuffer();
+		}
+
+		if (!bufferValid) {
+			outputs[AUDIO_L_OUTPUT].setVoltage(0.f);
+			outputs[AUDIO_R_OUTPUT].setVoltage(0.f);
+			outputs[PFL_L_OUTPUT].setVoltage(0.f);
+			outputs[PFL_R_OUTPUT].setVoltage(0.f);
+			return;
+		}
+
+		// Get samples from buffer
+		float leftSample = leftBuffer[bufferPos];
+		float rightSample = rightBuffer[bufferPos];
+		bufferPos++;
+
+		// Output audio
+		float gain = muted ? 0.f : 5.f;
+		outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
+		outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
+
+		// PFL output (Pre-Fader Listening)
+		if (pflActive) {
+			outputs[PFL_L_OUTPUT].setVoltage(leftSample * 5.f);
+			outputs[PFL_R_OUTPUT].setVoltage(rightSample * 5.f);
+		} else {
+			outputs[PFL_L_OUTPUT].setVoltage(0.f);
+			outputs[PFL_R_OUTPUT].setVoltage(0.f);
+		}
+	}
+
+	json_t* dataToJson() override {
+		json_t* rootJ = json_object();
+		if (fileLoaded && !currentFileName.empty()) {
+			json_object_set_new(rootJ, "fileName", json_string(currentFileName.c_str()));
+		}
+		json_object_set_new(rootJ, "singlePatternLoop", json_boolean(singlePatternLoop));
+		json_object_set_new(rootJ, "muted", json_boolean(muted));
+		json_object_set_new(rootJ, "pflActive", json_boolean(pflActive));
+		return rootJ;
+	}
+
+	void dataFromJson(json_t* rootJ) override {
+		json_t* fileNameJ = json_object_get(rootJ, "fileName");
+		if (fileNameJ) {
+			currentFileName = json_string_value(fileNameJ);
+		}
+
+		json_t* loopJ = json_object_get(rootJ, "singlePatternLoop");
+		if (loopJ) singlePatternLoop = json_boolean_value(loopJ);
+
+		json_t* mutedJ = json_object_get(rootJ, "muted");
+		if (mutedJ) muted = json_boolean_value(mutedJ);
+
+		json_t* pflJ = json_object_get(rootJ, "pflActive");
+		if (pflJ) pflActive = json_boolean_value(pflJ);
+	}
+};
+
+// Implement DeckPad::step() after RM_Deck is fully defined
+void DeckPad::step() {
+	if (module && padIndex == 0) {
+		// LOOP pad - show YELLOW when single pattern loop is set
+		if (module->singlePatternLoop) {
+			setPadState(3);  // YELLOW = state 3
+		} else {
+			setPadState(0);  // GREY = state 0
+		}
+	} else if (module && padIndex == 1) {
+		// PLAY pad - show GREEN when playing, RED when stopped with file loaded
+		if (module->playing) {
+			setPadState(2);  // GREEN = state 2
+		} else if (module->fileLoaded) {
+			setPadState(1);  // RED = state 1
+		} else {
+			setPadState(0);  // GREY = state 0
+		}
+	} else if (module && padIndex == 4) {
+		// MUTE pad - show RED when muted
+		if (module->muted) {
+			setPadState(1);  // RED = state 1
+		} else {
+			setPadState(0);  // GREY = state 0
+		}
+	} else if (module && padIndex == 5) {
+		// PFL pad - show GREEN when active
+		if (module->pflActive) {
+			setPadState(2);  // GREEN = state 2
+		} else {
+			setPadState(0);  // GREY = state 0
+		}
+	} else {
+		setPadState(0);  // GREY for pattern +/- buttons
+	}
+	RegroovePad::step();
+}
+
+// Display widget showing song position info
+struct ModInfoDisplay : TransparentWidget {
+	RM_Deck* module;
+
+	void draw(const DrawArgs& args) override {
+		// Red border
+		nvgBeginPath(args.vg);
+		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
+		nvgStrokeColor(args.vg, REGROOVE_RED);
+		nvgStrokeWidth(args.vg, 2);
+		nvgStroke(args.vg);
+
+		if (!module || !module->fileLoaded || module->loading) {
+			nvgFontSize(args.vg, 10);
+			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+			nvgFillColor(args.vg, nvgRGB(0x55, 0x55, 0x55));
+			const char* text = (!module || !module->fileLoaded) ? "Right-click to load MOD" : "Loading...";
+			nvgText(args.vg, box.size.x / 2, box.size.y / 2, text, NULL);
+			Widget::draw(args);
+			return;
+		}
+
+		// Get position info
+		uint8_t songOrder = 0, row = 0;
+		if (module->modPlayer) {
+			std::lock_guard<std::mutex> lock(module->swapMutex);
+			mod_player_get_position(module->modPlayer, &songOrder, &row);
+		}
+
+		// Display song position
+		nvgFontSize(args.vg, 11);
+		nvgFontFaceId(args.vg, APP->window->uiFont->handle);
+		nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+		nvgFillColor(args.vg, REGROOVE_TEXT);
+
+		char buf[64];
+		snprintf(buf, sizeof(buf), "Order: %02d", songOrder);
+		nvgText(args.vg, 5, 5, buf, NULL);
+
+		snprintf(buf, sizeof(buf), "Row: %02d", row);
+		nvgText(args.vg, 5, 20, buf, NULL);
+
+		// Show filename
+		nvgFontSize(args.vg, 9);
+		nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_BOTTOM);
+		nvgText(args.vg, box.size.x / 2, box.size.y - 5, module->currentFileName.c_str(), NULL);
+
+		Widget::draw(args);
+	}
+};
+
+struct RM_DeckWidget : ModuleWidget {
+	RM_DeckWidget(RM_Deck* module) {
+		setModule(module);
+		setPanel(createPanel(asset::plugin(pluginInstance, "res/RM_Deck.svg")));
+
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, 0)));
+		addChild(createWidget<ScrewSilver>(Vec(RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+		addChild(createWidget<ScrewSilver>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
+
+		// Title
+		RegrooveLabel* titleLabel = new RegrooveLabel();
+		titleLabel->box.pos = mm2px(Vec(0, 6.5));
+		titleLabel->box.size = mm2px(Vec(60.96, 5));
+		titleLabel->text = "MOD Deck";
+		titleLabel->fontSize = 18.0;
+		titleLabel->color = nvgRGB(0xff, 0xff, 0xff);
+		titleLabel->bold = true;
+		addChild(titleLabel);
+
+		// MOD info display (shows song order, row, filename)
+		ModInfoDisplay* infoDisplay = new ModInfoDisplay();
+		infoDisplay->box.pos = mm2px(Vec(3, 16));
+		infoDisplay->box.size = mm2px(Vec(54.96, 35));
+		infoDisplay->module = module;
+		addChild(infoDisplay);
+
+		// Pad grid - EXACT same layout as RDJ_Deck
+		float padStartX = 5;
+		float padStartY = 54;
+		float padSpacing = 5;
+		float padSize = 13;
+
+		// Row 1
+		DeckPad* pad1 = createParam<DeckPad>(mm2px(Vec(padStartX, padStartY)), module, RM_Deck::PAD1_PARAM);
+		pad1->module = module;
+		pad1->padIndex = 0;
+		pad1->label = "LOOP";
+		addParam(pad1);
+
+		DeckPad* playPad = createParam<DeckPad>(mm2px(Vec(padStartX + padSize + padSpacing, padStartY)), module, RM_Deck::PLAY_PARAM);
+		playPad->module = module;
+		playPad->padIndex = 1;
+		playPad->label = "PLAY";
+		addParam(playPad);
+
+		// Row 2
+		DeckPad* pad3 = createParam<DeckPad>(mm2px(Vec(padStartX, padStartY + padSize + padSpacing)), module, RM_Deck::PAD3_PARAM);
+		pad3->module = module;
+		pad3->padIndex = 2;
+		pad3->label = "PTN-";
+		addParam(pad3);
+
+		DeckPad* pad4 = createParam<DeckPad>(mm2px(Vec(padStartX + padSize + padSpacing, padStartY + padSize + padSpacing)), module, RM_Deck::PAD4_PARAM);
+		pad4->module = module;
+		pad4->padIndex = 3;
+		pad4->label = "PTN+";
+		addParam(pad4);
+
+		// Row 3
+		DeckPad* pad5 = createParam<DeckPad>(mm2px(Vec(padStartX, padStartY + (padSize + padSpacing) * 2)), module, RM_Deck::PAD5_PARAM);
+		pad5->module = module;
+		pad5->padIndex = 4;
+		pad5->label = "MUTE";
+		addParam(pad5);
+
+		DeckPad* pad6 = createParam<DeckPad>(mm2px(Vec(padStartX + padSize + padSpacing, padStartY + (padSize + padSpacing) * 2)), module, RM_Deck::PAD6_PARAM);
+		pad6->module = module;
+		pad6->padIndex = 5;
+		pad6->label = "PFL";
+		addParam(pad6);
+
+		// Tempo fader - EXACT same as RDJ_Deck
+		float faderWidth = 10;
+		float faderHeight = 50;
+		float faderCenterX = 52;
+		float faderTopY = 56;
+		float faderLeft = faderCenterX - (faderWidth / 2);
+
+		auto* tempoFader = createParam<RegrooveSlider>(mm2px(Vec(faderLeft, faderTopY)), module, RM_Deck::TEMPO_PARAM);
+		tempoFader->box.size = mm2px(Vec(faderWidth, faderHeight));
+		addParam(tempoFader);
+
+		RegrooveLabel* tempoLabel = new RegrooveLabel();
+		tempoLabel->box.pos = mm2px(Vec(47, 53));
+		tempoLabel->box.size = mm2px(Vec(10, 3));
+		tempoLabel->text = "Tempo";
+		tempoLabel->fontSize = 7.0;
+		addChild(tempoLabel);
+
+		// PFL outputs (left side) - EXACT same positions
+		RegrooveLabel* pflLabel = new RegrooveLabel();
+		pflLabel->box.pos = mm2px(Vec(7.5, 110));
+		pflLabel->box.size = mm2px(Vec(9, 3));
+		pflLabel->text = "PFL";
+		pflLabel->fontSize = 7.0;
+		pflLabel->align = NVG_ALIGN_CENTER;
+		addChild(pflLabel);
+
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(7.5, 118.0)), module, RM_Deck::PFL_L_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(16.5, 118.0)), module, RM_Deck::PFL_R_OUTPUT));
+
+		// Audio outputs (right side) - EXACT same positions
+		RegrooveLabel* outLabel = new RegrooveLabel();
+		outLabel->box.pos = mm2px(Vec(38, 110));
+		outLabel->box.size = mm2px(Vec(20, 3));
+		outLabel->text = "Out";
+		outLabel->fontSize = 7.0;
+		outLabel->align = NVG_ALIGN_CENTER;
+		addChild(outLabel);
+
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(43.48, 118.0)), module, RM_Deck::AUDIO_L_OUTPUT));
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(53.48, 118.0)), module, RM_Deck::AUDIO_R_OUTPUT));
+	}
+
+	void appendContextMenu(Menu* menu) override {
+		RM_Deck* module = dynamic_cast<RM_Deck*>(this->module);
+		if (!module) return;
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createMenuLabel("MOD File"));
+
+		menu->addChild(createMenuItem("Load MOD file", "", [=]() {
+			if (!module || !module->initialized || module->loading) {
+				return;
+			}
+			char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, osdialog_filters_parse("MOD Files:mod"));
+			if (path) {
+				module->loadFile(path);
+				free(path);
+			}
+		}));
+	}
+};
+
+Model* modelRM_Deck = createModel<RM_Deck, RM_DeckWidget>("RM_Deck");

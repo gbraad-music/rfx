@@ -682,8 +682,9 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
     }
 
     // Calculate samples per tick
-    // Formula scales with speed (ticks per row)
-    player->samples_per_tick = (uint32_t)((sample_rate * (float)player->speed) / (2.0f * (float)player->bpm));
+    // Standard ProTracker formula: samples_per_tick = sample_rate * 2.5 / BPM
+    // Speed (ticks/row) doesn't affect tick length, only how many ticks per row
+    player->samples_per_tick = (uint32_t)(sample_rate * 2.5f / (float)player->bpm);
 
     for (size_t i = 0; i < frames; i++) {
         float left = 0.0f;

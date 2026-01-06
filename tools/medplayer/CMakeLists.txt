@@ -4,6 +4,11 @@ project(MEDPlayerTest VERSION 1.0.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Optional features
+# Enable OctaMED synth instruments (SYNTHETIC/HYBRID types)
+# To enable: cmake -DMMD_SYNTH_SUPPORT=ON ..
+option(MMD_SYNTH_SUPPORT "Enable OctaMED synthetic instruments" OFF)
+
 # For cross-compilation, manually specify SDL2
 if(CMAKE_CROSSCOMPILING)
     # MinGW SDL2 paths
@@ -25,11 +30,24 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../synth
 )
 
-# MMD Player Test executable
-add_executable(med_player_test
+# MMD Player Test executable sources
+set(MEDPLAYER_SOURCES
     med_player_test.c
     ../../synth/mmd_player.c
 )
+
+# Add synth sources if MMD_SYNTH_SUPPORT is enabled
+if(MMD_SYNTH_SUPPORT)
+    message(STATUS "MMD_SYNTH_SUPPORT enabled - including synth components")
+    list(APPEND MEDPLAYER_SOURCES
+        ../../synth/synth_oscillator.c
+        ../../synth/synth_envelope.c
+        ../../synth/synth_lfo.c
+    )
+    add_definitions(-DMMD_SYNTH_SUPPORT)
+endif()
+
+add_executable(med_player_test ${MEDPLAYER_SOURCES})
 
 # Link libraries
 if(CMAKE_CROSSCOMPILING)

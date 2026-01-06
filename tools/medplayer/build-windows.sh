@@ -18,6 +18,9 @@ echo
 mkdir -p build-windows
 cd build-windows
 
+# With synth support
+# cmake -DMMD_SYNTH_SUPPORT=ON . && cmake --build .)
+
 # Configure with CMake
 cmake .. \
     -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN_FILE" \

@@ -602,6 +602,15 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
     // fprintf(stderr, "med_player: Calculated BPM: %d, Speed (ticks/row): %d\n",
     //         player->bpm, player->speed);
 
+    // Read track volumes and pans (offset 770 = after tempo2)
+    // trackvols[64] at offset 770, trackpans[64] at offset 834
+    for (int i = 0; i < player->num_tracks && i < 64; i++) {
+        uint8_t tvol = song_base[770 + i];
+        // If track volume is 0, default to 64 (full volume)
+        player->track_volumes[i] = (tvol > 0) ? tvol : 64;
+        player->track_pans[i] = (int8_t)song_base[834 + i];
+    }
+
     // Read blocks
     player->blocks = (MedBlock*)calloc(player->num_blocks, sizeof(MedBlock));
     const uint8_t* blockarr_ptr = read_ptr(base, blockarr_offset);
@@ -957,7 +966,8 @@ static void trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
         MedSample* smp = &player->samples[instrument - 1];
         if (smp->data) {
             chan->sample = smp;
-            chan->volume = chan->sample->volume;
+            // Don't set volume here - it's handled in process_tick based on whether
+            // there's a volume command. Sample volume is applied as multiplier during mixing.
             chan->finetune = chan->sample->finetune;
         } else {
             // No sample data (e.g., SYNTHETIC instrument without synth support)
@@ -976,6 +986,10 @@ static void trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
 
         chan->period = get_note_period((uint8_t)transposed_note, chan->finetune);
         chan->position = 0.0f;
+
+        // Clear portamento effects when new note triggers
+        chan->portamento_up = 0;
+        chan->portamento_down = 0;
 
         // if (trigger_count < 10) {
         //     // Calculate frequency for debugging
@@ -998,15 +1012,25 @@ static void process_tick(MedPlayer* player) {
         for (int ch = 0; ch < player->num_tracks; ch++) {
             int note_idx = player->current_row * block->num_tracks + ch;
             MMD2Note* note = &block->notes[note_idx];
+            MedChannel* chan = &player->channels[ch];
 
             // Trigger new note if present
             if (note->note > 0) {
                 trigger_note(player, ch, note->note, note->instrument);
+
+                // When instrument changes: reset channel volume to sample's default
+                // (unless there's a volume command on this row)
+                if (note->instrument > 0 && note->command != 0x0C && chan->sample) {
+                    chan->volume = chan->sample->volume;
+                }
             }
 
-            // Process effects on every row (not just when there's a note)
-            MedChannel* chan = &player->channels[ch];
+            // Process volume command (overrides sample default volume)
+            if (note->command == 0x0C) {  // Set volume
+                chan->volume = note->param;
+            }
 
+            // Process other effects
             if (note->command == 0x01) {  // Portamento up
                 if (note->param != 0) {
                     chan->portamento_up = note->param;
@@ -1017,10 +1041,10 @@ static void process_tick(MedPlayer* player) {
                     chan->portamento_down = note->param;
                     chan->portamento_up = 0;  // Clear opposite direction
                 }
-            } else if (note->command == 0x0C) {  // Set volume
-                if (chan->sample) {
-                    chan->volume = note->param;
-                }
+            } else if (note->command == 0x00 && note->param == 0x00) {
+                // No effect - clear portamento (important for empty patterns)
+                chan->portamento_up = 0;
+                chan->portamento_down = 0;
             }
             // TODO: Add more effects (vibrato, arpeggio, etc.)
         }
@@ -1093,12 +1117,6 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                        size_t frames, float sample_rate) {
     if (!player || !left_out || !right_out) return;
 
-    // static int debug_counter = 0;
-    // if (debug_counter++ % 1000 == 0) {
-    //     fprintf(stderr, "med_player: process() called, playing=%d, pattern=%d, row=%d\n",
-    //             player->playing, player->current_pattern, player->current_row);
-    // }
-
     // Calculate samples per tick
     // Standard ProTracker formula: samples_per_tick = sample_rate * 2.5 / BPM
     // Speed (ticks/row) doesn't affect tick length, only how many ticks per row
@@ -1119,7 +1137,9 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                 if (chan->period > 0) {
                     float freq = 7093789.2f / ((float)chan->period * 2.0f);
                     float sample = synth_instrument_process(chan->sample->synth, freq, sample_rate);
-                    float vol = (chan->volume / 64.0f) * chan->user_volume;
+                    // Apply volume: channel volume * sample volume * track volume * user volume
+                    float vol = (chan->volume / 64.0f) * (chan->sample->volume / 64.0f) *
+                               (player->track_volumes[ch] / 64.0f) * chan->user_volume;
 
                     // Apply panning
                     float pan = (chan->panning + 16) / 32.0f;
@@ -1170,7 +1190,12 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                     sample = chan->sample->data[sample_idx] / 128.0f;
                 }
 
-                float vol = (chan->volume / 64.0f) * chan->user_volume;
+                // Apply volume: channel volume * sample volume * track volume * user volume
+                // Channel volume: set by effects (0x0C) or initialized from track volume
+                // Sample volume: default volume stored in sample data
+                // Track volume: per-track scaling factor
+                float vol = (chan->volume / 64.0f) * (chan->sample->volume / 64.0f) *
+                           (player->track_volumes[ch] / 64.0f) * chan->user_volume;
 
                 // Apply panning
                 float pan = (chan->panning + 16) / 32.0f;  // -16..+16 -> 0..1

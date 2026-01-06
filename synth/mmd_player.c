@@ -226,6 +226,8 @@ typedef struct {
     uint8_t vibrato_pos;
     uint8_t vibrato_depth;
     uint8_t vibrato_speed;
+    uint8_t portamento_up;      // Portamento up speed
+    uint8_t portamento_down;    // Portamento down speed
 } MedChannel;
 
 // Main player structure
@@ -1003,18 +1005,52 @@ static void process_tick(MedPlayer* player) {
             }
 
             // Process effects on every row (not just when there's a note)
-            if (note->command == 0x0C) {  // Set volume
-                if (player->channels[ch].sample) {
-                    player->channels[ch].volume = note->param;
+            MedChannel* chan = &player->channels[ch];
+
+            if (note->command == 0x01) {  // Portamento up
+                if (note->param != 0) {
+                    chan->portamento_up = note->param;
+                    chan->portamento_down = 0;  // Clear opposite direction
+                }
+            } else if (note->command == 0x02) {  // Portamento down
+                if (note->param != 0) {
+                    chan->portamento_down = note->param;
+                    chan->portamento_up = 0;  // Clear opposite direction
+                }
+            } else if (note->command == 0x0C) {  // Set volume
+                if (chan->sample) {
+                    chan->volume = note->param;
                 }
             }
-            // TODO: Add more effects (portamento, vibrato, arpeggio, etc.)
+            // TODO: Add more effects (vibrato, arpeggio, etc.)
         }
 
         // Fire position callback
         if (player->position_callback) {
             player->position_callback(player->current_order, player->current_pattern,
                                     player->current_row, player->callback_user_data);
+        }
+    } else {
+        // Process continuous effects (every tick except tick 0)
+        for (int ch = 0; ch < player->num_tracks; ch++) {
+            MedChannel* chan = &player->channels[ch];
+
+            // Apply portamento up
+            if (chan->portamento_up > 0 && chan->period > 0) {
+                if (chan->period > chan->portamento_up) {
+                    chan->period -= chan->portamento_up;
+                } else {
+                    chan->period = 1;  // Minimum period
+                }
+            }
+
+            // Apply portamento down
+            if (chan->portamento_down > 0 && chan->period > 0) {
+                chan->period += chan->portamento_down;
+                if (chan->period > 65535) {
+                    chan->period = 65535;  // Maximum period
+                }
+            }
         }
     }
 

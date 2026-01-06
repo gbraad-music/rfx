@@ -2,6 +2,9 @@
  * OctaMED MMD Player (MMD2/MMD3)
  * Supports MMD2/MMD3 format (modern 4-byte note format)
  * No MIDI support - pure sample playback
+ *
+ * Conditional features:
+ * - MMD_SYNTH_SUPPORT: Enable OctaMED synth instruments (SYNTHETIC/HYBRID types)
  */
 
 #include "mmd_player.h"
@@ -9,6 +12,13 @@
 #include <string.h>
 #include <math.h>
 #include <stdio.h>
+
+#ifdef MMD_SYNTH_SUPPORT
+// Include synth components for OctaMED synthetic instruments
+#include "synth_oscillator.h"
+#include "synth_envelope.h"
+#include "synth_lfo.h"
+#endif
 
 // Endianness conversion (MMD files are big-endian)
 #define BE16(x) ((uint16_t)( \
@@ -31,6 +41,34 @@
 // Instrument flags
 #define INSTR_FLAG_STEREO  0x04
 #define INSTR_FLAG_16BIT   0x08
+
+// Instrument types (for type field in InstrHdr)
+#define INSTR_TYPE_HYBRID     -2  // Sample with synth scripts
+#define INSTR_TYPE_SYNTHETIC  -1  // Pure synth (no sample)
+#define INSTR_TYPE_SAMPLE      0  // Regular sample (or octave-based 1-6)
+
+#ifdef MMD_SYNTH_SUPPORT
+// Synth script commands
+#define SYNTH_CMD_SET_VOLUME      0x00  // 0x00-0x40: Set volume (0-64)
+#define SYNTH_CMD_SET_WAVEFORM    0x00  // 0x00-0x3F: Set waveform (0-63)
+#define SYNTH_CMD_SPD             0xF0  // Set speed
+#define SYNTH_CMD_WAI             0xF1  // Wait
+#define SYNTH_CMD_CHD             0xF2  // Change down
+#define SYNTH_CMD_CHU             0xF3  // Change up
+#define SYNTH_CMD_VBD             0xF4  // Vibrato depth (wave) / Envelope (vol)
+#define SYNTH_CMD_VBS             0xF5  // Vibrato speed (wave) / Envelope (vol)
+#define SYNTH_CMD_RES             0xF6  // Reset
+#define SYNTH_CMD_VWF             0xF7  // Vibrato waveform
+#define SYNTH_CMD_JWS             0xFA  // Jump script
+#define SYNTH_CMD_ARP             0xFC  // Begin arpeggio
+#define SYNTH_CMD_ARE             0xFD  // End arpeggio
+#define SYNTH_CMD_JMP             0xFE  // Jump to position
+#define SYNTH_CMD_END             0xFF  // End sequence
+#define SYNTH_CMD_HLT             0xFB  // Halt
+
+#define MAX_WAVEFORMS 64
+#define MAX_SYNTH_SCRIPT 128
+#endif
 
 // Period table for Amiga notes (same as MOD)
 static const uint16_t period_table[12 * 10] = {
@@ -87,6 +125,58 @@ typedef struct {
     uint32_t long_replen;   // Repeat length in bytes
 } __attribute__((packed)) InstrExt;
 
+#ifdef MMD_SYNTH_SUPPORT
+// MMD Synth Instrument (file format)
+typedef struct {
+    uint8_t default_decay;
+    uint8_t reserved[3];
+    uint16_t loop_start;      // Only for hybrid
+    uint16_t loop_length;
+    uint16_t vol_table_len;
+    uint16_t wave_table_len;
+    uint8_t vol_speed;
+    uint8_t wave_speed;
+    uint16_t num_waveforms;
+    uint8_t vol_table[MAX_SYNTH_SCRIPT];
+    uint8_t wave_table[MAX_SYNTH_SCRIPT];
+} __attribute__((packed)) MMDSynthInstr;
+
+// Synth script state (runtime)
+typedef struct {
+    uint8_t pc;              // Program counter
+    uint8_t speed;           // Ticks per step
+    uint8_t tick_counter;    // Current tick
+    uint8_t wait_counter;    // Wait counter
+    bool active;             // Script is running
+} SynthScript;
+
+// Synth instrument state (runtime)
+typedef struct {
+    // Waveforms (each is 256 samples)
+    int8_t* waveforms[MAX_WAVEFORMS];
+    uint16_t waveform_lengths[MAX_WAVEFORMS];
+    uint8_t num_waveforms;
+
+    // Script data
+    uint8_t vol_table[MAX_SYNTH_SCRIPT];
+    uint8_t wave_table[MAX_SYNTH_SCRIPT];
+    uint16_t vol_table_len;
+    uint16_t wave_table_len;
+    uint8_t vol_speed;
+    uint8_t wave_speed;
+
+    // Current state
+    uint8_t current_waveform;
+    uint8_t current_volume;   // 0-64
+    SynthScript vol_script;
+    SynthScript wave_script;
+
+    // Oscillator state
+    Oscillator osc;
+    Envelope env;
+} SynthInstrument;
+#endif
+
 // Sample data
 typedef struct {
     int8_t* data;           // Sample data (8-bit signed)
@@ -98,6 +188,12 @@ typedef struct {
     int8_t finetune;        // Finetune (-8 to +7)
     bool is_stereo;         // Stereo flag
     bool is_16bit;          // 16-bit flag
+
+#ifdef MMD_SYNTH_SUPPORT
+    bool is_synth;          // Synthetic instrument
+    bool is_hybrid;         // Hybrid (sample + synth)
+    SynthInstrument* synth; // Synth data (NULL if not synth)
+#endif
 } MedSample;
 
 // MMD2 Note (4 bytes, unpacked - much simpler than MMD0!)
@@ -198,6 +294,17 @@ void med_player_destroy(MedPlayer* player) {
         if (player->samples[i].data) {
             free(player->samples[i].data);
         }
+#ifdef MMD_SYNTH_SUPPORT
+        // Free synth data
+        if (player->samples[i].synth) {
+            for (int w = 0; w < player->samples[i].synth->num_waveforms; w++) {
+                if (player->samples[i].synth->waveforms[w]) {
+                    free(player->samples[i].synth->waveforms[w]);
+                }
+            }
+            free(player->samples[i].synth);
+        }
+#endif
     }
 
     // Free blocks
@@ -222,6 +329,121 @@ void med_player_destroy(MedPlayer* player) {
 
     free(player);
 }
+
+#ifdef MMD_SYNTH_SUPPORT
+// Initialize synth script
+static void synth_script_init(SynthScript* script, uint8_t speed) {
+    script->pc = 0;
+    script->speed = speed > 0 ? speed : 1;
+    script->tick_counter = 0;
+    script->wait_counter = 0;
+    script->active = true;
+}
+
+// Execute one tick of synth script
+// Returns: updated value (volume 0-64 or waveform 0-63)
+static uint8_t synth_script_tick(SynthScript* script, const uint8_t* table, uint16_t table_len,
+                                  uint8_t current_value, bool is_volume) {
+    if (!script->active || table_len == 0) {
+        return current_value;
+    }
+
+    // Wait handling
+    if (script->wait_counter > 0) {
+        script->wait_counter--;
+        return current_value;
+    }
+
+    // Speed handling (ticks per step)
+    script->tick_counter++;
+    if (script->tick_counter < script->speed) {
+        return current_value;
+    }
+    script->tick_counter = 0;
+
+    // Execute command
+    if (script->pc >= table_len) {
+        script->active = false;
+        return current_value;
+    }
+
+    uint8_t cmd = table[script->pc++];
+
+    // Simple implementation - just handle basic commands for now
+    if (cmd >= 0xF0) {
+        switch (cmd) {
+            case SYNTH_CMD_SPD:  // Set speed
+                if (script->pc < table_len) {
+                    script->speed = table[script->pc++];
+                    if (script->speed == 0) script->speed = 1;
+                }
+                break;
+
+            case SYNTH_CMD_WAI:  // Wait
+                if (script->pc < table_len) {
+                    script->wait_counter = table[script->pc++];
+                }
+                break;
+
+            case SYNTH_CMD_JMP:  // Jump
+                if (script->pc < table_len) {
+                    uint8_t target = table[script->pc++];
+                    if (target < table_len) {
+                        script->pc = target;
+                    }
+                }
+                break;
+
+            case SYNTH_CMD_END:  // End
+            case SYNTH_CMD_HLT:  // Halt
+                script->active = false;
+                break;
+
+            default:
+                // Unknown command - skip
+                break;
+        }
+    } else {
+        // Direct value (volume 0-64 or waveform 0-63)
+        if (is_volume) {
+            current_value = (cmd <= 64) ? cmd : 64;
+        } else {
+            current_value = (cmd < 64) ? cmd : 0;
+        }
+    }
+
+    return current_value;
+}
+
+// Process synth instrument - generate one sample
+static float synth_instrument_process(SynthInstrument* synth, float freq, float sample_rate) {
+    if (!synth || synth->num_waveforms == 0) {
+        return 0.0f;
+    }
+
+    // Get current waveform
+    uint8_t wf_idx = synth->current_waveform;
+    if (wf_idx >= synth->num_waveforms || !synth->waveforms[wf_idx]) {
+        return 0.0f;
+    }
+
+    // Generate sample from current waveform
+    int8_t* waveform = synth->waveforms[wf_idx];
+    uint16_t wf_len = synth->waveform_lengths[wf_idx];
+
+    // Simple wavetable oscillator
+    oscillator_set_frequency(&synth->osc, freq);
+    float phase = oscillator_process(&synth->osc, sample_rate);
+
+    // Sample the waveform
+    int pos = (int)(phase * wf_len) % wf_len;
+    float sample = waveform[pos] / 128.0f;
+
+    // Apply volume
+    float volume = synth->current_volume / 64.0f;
+    return sample * volume;
+}
+#endif
 
 // Read pointer from file (convert big-endian offset to usable pointer)
 static const uint8_t* read_ptr(const uint8_t* base, uint32_t offset) {
@@ -442,7 +664,121 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             fprintf(stderr, "med_player:   Sample %d: length=%u, type=%d, flags=0x%02X (16bit=%d, stereo=%d)\n",
                     i, length, type, type_and_flags, is_16bit, is_stereo);
 
-            // Handle modern sample format (type -2)
+#ifdef MMD_SYNTH_SUPPORT
+            // Handle synthetic/hybrid instruments (type -1 or -2 with synth data)
+            if (type == INSTR_TYPE_SYNTHETIC || type == INSTR_TYPE_HYBRID) {
+                fprintf(stderr, "med_player:   %s instrument detected\\n",
+                        type == INSTR_TYPE_SYNTHETIC ? "SYNTHETIC" : "HYBRID");
+
+                // Read InstrExt first
+                const uint8_t* ext_ptr = instr_ptr + 6;
+                if (ext_ptr + 18 > base + player->file_size) {
+                    fprintf(stderr, "med_player: ERROR: InstrExt out of bounds\\n");
+                    continue;
+                }
+
+                int8_t finetune = ext_ptr[3];
+
+                // Read MMDSynthInstr structure (after InstrExt)
+                const uint8_t* synth_ptr = ext_ptr + 18;
+                if (synth_ptr + sizeof(MMDSynthInstr) > base + player->file_size) {
+                    fprintf(stderr, "med_player: ERROR: SynthInstr out of bounds\\n");
+                    continue;
+                }
+
+                MMDSynthInstr synth_data;
+                memcpy(&synth_data, synth_ptr, sizeof(MMDSynthInstr));
+
+                // Convert endianness
+                uint16_t vol_table_len = BE16(synth_data.vol_table_len);
+                uint16_t wave_table_len = BE16(synth_data.wave_table_len);
+                uint16_t num_waveforms = BE16(synth_data.num_waveforms);
+
+                fprintf(stderr, "med_player:   Synth: vol_len=%u, wave_len=%u, waveforms=%u\\n",
+                        vol_table_len, wave_table_len, num_waveforms);
+
+                // Create synth instrument
+                SynthInstrument* synth = (SynthInstrument*)calloc(1, sizeof(SynthInstrument));
+                if (!synth) {
+                    fprintf(stderr, "med_player: ERROR: Failed to allocate synth\\n");
+                    continue;
+                }
+
+                // Copy script tables
+                synth->vol_table_len = (vol_table_len <= MAX_SYNTH_SCRIPT) ? vol_table_len : MAX_SYNTH_SCRIPT;
+                synth->wave_table_len = (wave_table_len <= MAX_SYNTH_SCRIPT) ? wave_table_len : MAX_SYNTH_SCRIPT;
+                memcpy(synth->vol_table, synth_data.vol_table, synth->vol_table_len);
+                memcpy(synth->wave_table, synth_data.wave_table, synth->wave_table_len);
+                synth->vol_speed = synth_data.vol_speed;
+                synth->wave_speed = synth_data.wave_speed;
+
+                // Initialize scripts
+                synth_script_init(&synth->vol_script, synth->vol_speed);
+                synth_script_init(&synth->wave_script, synth->wave_speed);
+                synth->current_volume = 64;
+                synth->current_waveform = 0;
+
+                // Initialize oscillator
+                oscillator_init(&synth->osc, OSC_SINE);
+
+                // Load waveforms (pointer array follows synth data)
+                const uint8_t* wf_ptr = synth_ptr + sizeof(MMDSynthInstr);
+                synth->num_waveforms = (num_waveforms <= MAX_WAVEFORMS) ? num_waveforms : MAX_WAVEFORMS;
+
+                for (int w = 0; w < synth->num_waveforms; w++) {
+                    if (wf_ptr + 4 > base + player->file_size) break;
+
+                    uint32_t wf_offset = BE32(*(uint32_t*)wf_ptr);
+                    wf_ptr += 4;
+
+                    if (wf_offset == 0) continue;
+
+                    const uint8_t* waveform_data = read_ptr(base, wf_offset);
+                    if (!waveform_data || waveform_data + 2 > base + player->file_size) continue;
+
+                    // Read waveform length (stored as word count)
+                    uint16_t wf_len_words = BE16(*(uint16_t*)waveform_data);
+                    uint16_t wf_len = wf_len_words * 2;  // Convert to bytes
+                    waveform_data += 2;
+
+                    if (waveform_data + wf_len > base + player->file_size) {
+                        fprintf(stderr, "med_player: WARNING: Waveform %d out of bounds\\n", w);
+                        continue;
+                    }
+
+                    // Allocate and copy waveform
+                    synth->waveforms[w] = (int8_t*)malloc(wf_len);
+                    if (synth->waveforms[w]) {
+                        memcpy(synth->waveforms[w], waveform_data, wf_len);
+                        synth->waveform_lengths[w] = wf_len;
+                    }
+                }
+
+                // Set up sample structure
+                player->samples[i].is_synth = (type == INSTR_TYPE_SYNTHETIC);
+                player->samples[i].is_hybrid = (type == INSTR_TYPE_HYBRID);
+                player->samples[i].synth = synth;
+                player->samples[i].finetune = finetune;
+                player->samples[i].volume = 64;
+
+                // For hybrid, also load the sample data
+                if (type == INSTR_TYPE_HYBRID && length > 0) {
+                    const uint8_t* sample_data = wf_ptr;
+                    player->samples[i].length = length;
+                    player->samples[i].data = (int8_t*)malloc(length);
+                    if (player->samples[i].data) {
+                        memcpy(player->samples[i].data, sample_data, length);
+                    }
+                }
+
+                samples_loaded++;
+                fprintf(stderr, "med_player:   ✓ Loaded %s instrument %d\\n",
+                        type == INSTR_TYPE_SYNTHETIC ? "SYNTHETIC" : "HYBRID", i);
+                continue;
+            }
+#endif
+
+            // Handle modern sample format (type -2 without synth support = regular sample)
             if (type == -2) {  // INSTR_SAMPLE
                 fprintf(stderr, "med_player:   Handling type %d sample...\n", type);
 
@@ -693,7 +1029,43 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
         // Mix all channels
         for (int ch = 0; ch < player->num_tracks; ch++) {
             MedChannel* chan = &player->channels[ch];
-            if (!chan->sample || !chan->sample->data || chan->muted) continue;
+            if (!chan->sample || chan->muted) continue;
+
+#ifdef MMD_SYNTH_SUPPORT
+            // Handle synth instruments
+            if (chan->sample->is_synth && chan->sample->synth) {
+                if (chan->period > 0) {
+                    float freq = 7093789.2f / ((float)chan->period * 2.0f);
+                    float sample = synth_instrument_process(chan->sample->synth, freq, sample_rate);
+                    float vol = (chan->volume / 64.0f) * chan->user_volume;
+
+                    // Apply panning
+                    float pan = (chan->panning + 16) / 32.0f;
+                    left += sample * vol * (1.0f - pan);
+                    right += sample * vol * pan;
+
+                    // Tick synth scripts
+                    chan->sample->synth->current_volume = synth_script_tick(
+                        &chan->sample->synth->vol_script,
+                        chan->sample->synth->vol_table,
+                        chan->sample->synth->vol_table_len,
+                        chan->sample->synth->current_volume,
+                        true
+                    );
+                    chan->sample->synth->current_waveform = synth_script_tick(
+                        &chan->sample->synth->wave_script,
+                        chan->sample->synth->wave_table,
+                        chan->sample->synth->wave_table_len,
+                        chan->sample->synth->current_waveform,
+                        false
+                    );
+                }
+                continue;
+            }
+#endif
+
+            // Regular sample playback
+            if (!chan->sample->data) continue;
 
             // Get sample
             int sample_idx = (int)chan->position;

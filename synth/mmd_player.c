@@ -952,8 +952,10 @@ static uint16_t get_note_period(uint8_t note, int8_t finetune) {
 }
 
 // Trigger note on channel
-static void trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t instrument) {
+// Returns true if instrument changed
+static bool trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t instrument) {
     MedChannel* chan = &player->channels[channel];
+    bool instrument_changed = false;
 
     // static int trigger_count = 0;
     // if (trigger_count < 10) {
@@ -965,9 +967,9 @@ static void trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
     if (instrument > 0 && instrument <= MAX_SAMPLES) {
         MedSample* smp = &player->samples[instrument - 1];
         if (smp->data) {
+            // Check if instrument actually changed
+            instrument_changed = (chan->sample != smp);
             chan->sample = smp;
-            // Don't set volume here - it's handled in process_tick based on whether
-            // there's a volume command. Sample volume is applied as multiplier during mixing.
             chan->finetune = chan->sample->finetune;
         } else {
             // No sample data (e.g., SYNTHETIC instrument without synth support)
@@ -998,6 +1000,8 @@ static void trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
         //             note, chan->sample->transpose, transposed_note, chan->period, freq, chan->volume, chan->sample->length);
         // }
     }
+
+    return instrument_changed;
 }
 
 // Process one tick
@@ -1015,17 +1019,18 @@ static void process_tick(MedPlayer* player) {
             MedChannel* chan = &player->channels[ch];
 
             // Trigger new note if present
+            bool instrument_changed = false;
             if (note->note > 0) {
-                trigger_note(player, ch, note->note, note->instrument);
+                instrument_changed = trigger_note(player, ch, note->note, note->instrument);
 
-                // When instrument changes: reset channel volume to sample's default
+                // When instrument ACTUALLY changes: reset channel volume to sample's default
                 // (unless there's a volume command on this row)
-                if (note->instrument > 0 && note->command != 0x0C && chan->sample) {
+                if (instrument_changed && note->command != 0x0C && chan->sample) {
                     chan->volume = chan->sample->volume;
                 }
             }
 
-            // Process volume command (overrides sample default volume)
+            // Process volume command (overrides everything)
             if (note->command == 0x0C) {  // Set volume
                 chan->volume = note->param;
             }

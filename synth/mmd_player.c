@@ -520,6 +520,14 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 for (int i = 0; i < player->song_length; i++) {
                     player->play_seq[i] = BE16(*(uint16_t*)(seq_ptr + 42 + i * 2));
                 }
+
+                // Debug: show first entries in play sequence
+                fprintf(stderr, "med_player: Play sequence (first 10 entries): ");
+                int debug_count = (player->song_length < 10) ? player->song_length : 10;
+                for (int i = 0; i < debug_count; i++) {
+                    fprintf(stderr, "%d ", player->play_seq[i]);
+                }
+                fprintf(stderr, "\n");
             }
         }
     }
@@ -544,6 +552,14 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
 
     fprintf(stderr, "med_player: Tracks: %d, Blocks: %d, Song length: %d\n",
             player->num_tracks, player->num_blocks, player->song_length);
+
+    // Initialize playback position from play sequence
+    if (player->play_seq && player->song_length > 0) {
+        player->current_order = 0;
+        player->current_pattern = player->play_seq[0];
+        player->current_row = 0;
+        fprintf(stderr, "med_player: Initial position: order 0, pattern %d\n", player->current_pattern);
+    }
 
     // Read BPM and flags from later in structure
     const uint8_t* song_base = read_ptr(base, player->song_offset);
@@ -610,8 +626,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
         memcpy(player->blocks[i].notes, notes_ptr, note_count * sizeof(MMD2Note));
         blocks_with_data++;
 
-        // Debug first few notes
-        if (blocks_with_data == 1) {  // First block with data
+        // Debug first few notes in early blocks
+        if (i < 3) {  // First 3 blocks
             fprintf(stderr, "med_player: Block %d has %d tracks, %d lines, note_count=%zu\n",
                     i, numtracks, lines+1, note_count);
             fprintf(stderr, "med_player: First note bytes in block %d:\n", i);
@@ -657,12 +673,16 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             int16_t type_and_flags = (int16_t)BE16(*(uint16_t*)(instr_ptr + 4));
 
             // Extract type and flags
-            int16_t type = type_and_flags & 0x0F;  // Low nibble is type
+            // For synth types (< 0), use the full value
+            // For regular samples (>= 0), the low nibble is the type, high bits are flags
+            int16_t type = type_and_flags;  // Full value preserves sign
+            bool is_synth = (type < 0);
+            int16_t masked_type = type & 0x0F;  // Low nibble for octave-based samples
             bool is_16bit = (type_and_flags & 0x10) != 0;  // S_16 flag
             bool is_stereo = (type_and_flags & 0x20) != 0;  // STEREO flag
 
-            fprintf(stderr, "med_player:   Sample %d: length=%u, type=%d, flags=0x%02X (16bit=%d, stereo=%d)\n",
-                    i, length, type, type_and_flags, is_16bit, is_stereo);
+            fprintf(stderr, "med_player:   Sample %d: length=%u, type=%d, is_synth=%d, masked=%d, flags=0x%04X (16bit=%d, stereo=%d)\n",
+                    i, length, type, is_synth, masked_type, (uint16_t)type_and_flags, is_16bit, is_stereo);
 
 #ifdef MMD_SYNTH_SUPPORT
             // Handle synthetic/hybrid instruments (type -1 or -2 with synth data)
@@ -826,9 +846,10 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 samples_loaded++;
                 fprintf(stderr, "med_player:   ✓ Loaded sample %d (%u bytes)\n", i, length);
             }
-            // Handle old octave-based sample formats (type 0-6)
-            else if (type >= 0 && type <= 6) {
-                fprintf(stderr, "med_player:   Old octave-based sample (type %d)\n", type);
+            // Handle old octave-based sample formats (type 0-7)
+            // Note: Use masked_type (low nibble) for octave-based samples
+            else if (!is_synth && masked_type >= 0 && masked_type <= 7) {
+                fprintf(stderr, "med_player:   Old octave-based sample (type %d)\n", masked_type);
 
                 // Bounds check for sample data (comes right after InstrHdr, no InstrExt)
                 if (instr_ptr + 6 + length > base + player->file_size) {
@@ -867,6 +888,10 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 samples_loaded++;
                 fprintf(stderr, "med_player:   ✓ Loaded old-format sample %d (%u bytes, vol=%d, 16bit=%d, stereo=%d)\n",
                         i, length, svol, is_16bit, is_stereo);
+            } else {
+                // Unknown/unsupported sample type
+                fprintf(stderr, "med_player:   WARNING: Skipping unsupported sample type %d (masked=%d) for sample %d\n",
+                        type, masked_type, i);
             }
         }
     }

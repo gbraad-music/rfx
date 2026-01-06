@@ -47,22 +47,29 @@ if(MMD_SYNTH_SUPPORT)
     add_definitions(-DMMD_SYNTH_SUPPORT)
 endif()
 
-add_executable(med_player_test ${MEDPLAYER_SOURCES})
+# Choose executable name based on synth support
+if(MMD_SYNTH_SUPPORT)
+    set(EXECUTABLE_NAME med_player_synth)
+else()
+    set(EXECUTABLE_NAME med_player_test)
+endif()
+
+add_executable(${EXECUTABLE_NAME} ${MEDPLAYER_SOURCES})
 
 # Link libraries
 if(CMAKE_CROSSCOMPILING)
-    target_link_libraries(med_player_test ${SDL2_LIBRARIES} -lm)
+    target_link_libraries(${EXECUTABLE_NAME} ${SDL2_LIBRARIES} -lm)
 else()
-    target_link_libraries(med_player_test ${SDL2_LIBRARIES} m)
+    target_link_libraries(${EXECUTABLE_NAME} ${SDL2_LIBRARIES} m)
 endif()
 
 # Windows-specific settings
 if(WIN32)
     # Link MinGW standard libraries statically
-    set_target_properties(med_player_test PROPERTIES
+    set_target_properties(${EXECUTABLE_NAME} PROPERTIES
         LINK_FLAGS "-static-libgcc -mconsole"
     )
 endif()
 
 # Installation
-install(TARGETS med_player_test DESTINATION bin)
+install(TARGETS ${EXECUTABLE_NAME} DESTINATION bin)

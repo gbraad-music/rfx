@@ -1635,8 +1635,9 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
 
                 // Apply panning (use track panning for classic Amiga hard panning)
                 float pan = (player->track_pans[ch] + 16) / 32.0f;  // -16..+16 -> 0..1
-                left += sample * vol * (1.0f - pan);
-                right += sample * vol * pan;
+                // Amiga-style mixing: simple addition without normalization (0.5x scaling)
+                left += sample * vol * (1.0f - pan) * 0.5f;
+                right += sample * vol * pan * 0.5f;
             }
 
             // Advance position

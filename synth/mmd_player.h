@@ -136,6 +136,15 @@ void med_player_set_bpm(MedPlayer* player, uint16_t bpm);
  */
 uint16_t med_player_get_bpm(const MedPlayer* player);
 
+/**
+ * Set loop range (pattern order indices)
+ * @param player Player instance
+ * @param start_order First order to play (0-song_length-1)
+ * @param end_order Last order to play (0-song_length-1)
+ * If start_order == end_order, only that order will loop
+ */
+void med_player_set_loop_range(MedPlayer* player, uint16_t start_order, uint16_t end_order);
+
 #ifdef __cplusplus
 }
 #endif

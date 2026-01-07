@@ -271,6 +271,8 @@ struct MedPlayer {
     uint32_t tick;
     uint32_t samples_per_tick;
     uint32_t sample_counter;
+    uint16_t loop_start;    // Loop start order (for pattern loop)
+    uint16_t loop_end;      // Loop end order (for pattern loop)
 
     // Volume mode
     bool vol_hex;           // True = hex display mode, False = decimal display mode
@@ -652,6 +654,10 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 player->num_tracks, MAX_CHANNELS);
         player->num_tracks = MAX_CHANNELS;
     }
+
+    // Initialize loop range to full song
+    player->loop_start = 0;
+    player->loop_end = (player->song_length > 0) ? (player->song_length - 1) : 0;
 
     // fprintf(stderr, "med_player: Tracks: %d, Blocks: %d, Song length: %d\n",
     //         player->num_tracks, player->num_blocks, player->song_length);
@@ -1465,8 +1471,9 @@ static void process_tick(MedPlayer* player) {
             player->current_row = 0;
             player->current_order++;
 
-            if (player->current_order >= player->song_length) {
-                player->current_order = 0;
+            // Handle loop range
+            if (player->current_order > player->loop_end || player->current_order >= player->song_length) {
+                player->current_order = player->loop_start;
 
                 // Reset channel volumes when song loops (OctaMED behavior)
                 for (int ch = 0; ch < MAX_CHANNELS; ch++) {
@@ -1732,4 +1739,17 @@ void med_player_set_bpm(MedPlayer* player, uint16_t bpm) {
 // Get BPM
 uint16_t med_player_get_bpm(const MedPlayer* player) {
     return player ? player->bpm : 0;
+}
+
+// Set loop range
+void med_player_set_loop_range(MedPlayer* player, uint16_t start_order, uint16_t end_order) {
+    if (!player) return;
+
+    // Clamp to valid range
+    if (start_order >= player->song_length) start_order = player->song_length - 1;
+    if (end_order >= player->song_length) end_order = player->song_length - 1;
+    if (start_order > end_order) start_order = end_order;
+
+    player->loop_start = start_order;
+    player->loop_end = end_order;
 }

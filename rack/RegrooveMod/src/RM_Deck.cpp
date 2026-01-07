@@ -1,17 +1,26 @@
 #include "plugin.hpp"
 #include "../../regroove_components.hpp"
 #include "../../../synth/mod_player.h"
+#include "../../../synth/mmd_player.h"
 #include <thread>
 #include <atomic>
 #include <mutex>
 #include <cstring>
+#include <algorithm>
 #include <osdialog.h>
 
 // Forward declaration
 struct RM_Deck;
 
-// Forward declaration of position callback for MOD player
-static void modPlayerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data);
+// Forward declaration of position callback
+static void playerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data);
+
+// Player type enum
+enum class PlayerType {
+	NONE,
+	MOD,
+	MED
+};
 
 // Custom pad widget for deck controls
 struct DeckPad : RegroovePad {
@@ -64,7 +73,11 @@ struct RM_Deck : Module {
 		LIGHTS_LEN
 	};
 
+	// Players (only one is active at a time)
 	ModPlayer* modPlayer = nullptr;
+	MedPlayer* medPlayer = nullptr;
+	PlayerType playerType = PlayerType::NONE;
+
 	std::atomic<bool> playing{false};
 	std::atomic<bool> fileLoaded{false};
 	std::atomic<bool> muted{false};
@@ -107,7 +120,7 @@ struct RM_Deck : Module {
 		}
 	}
 
-	// Audio buffer for MOD rendering (stereo interleaved)
+	// Audio buffer for rendering (stereo interleaved)
 	static constexpr size_t BUFFER_SIZE = 512;
 	float leftBuffer[BUFFER_SIZE];
 	float rightBuffer[BUFFER_SIZE];
@@ -134,8 +147,9 @@ struct RM_Deck : Module {
 		configOutput(AUDIO_L_OUTPUT, "Left audio");
 		configOutput(AUDIO_R_OUTPUT, "Right audio");
 
+		// Create both players (only one will be used at a time)
 		modPlayer = mod_player_create();
-		mod_player_set_position_callback(modPlayer, modPlayerPositionCallback, this);
+		medPlayer = med_player_create();
 		initialized = true;
 	}
 
@@ -147,6 +161,31 @@ struct RM_Deck : Module {
 		if (modPlayer) {
 			mod_player_destroy(modPlayer);
 		}
+		if (medPlayer) {
+			med_player_destroy(medPlayer);
+		}
+	}
+
+	// Helper: detect file type from extension
+	PlayerType detectFileType(const std::string& path) {
+		// Get lowercase extension
+		std::string ext;
+		size_t dotPos = path.find_last_of('.');
+		if (dotPos != std::string::npos) {
+			ext = path.substr(dotPos + 1);
+			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+		}
+
+		// Check for MED/MMD extensions
+		if (ext == "med" || ext == "mmd" || ext == "mmd0" || ext == "mmd1" || ext == "mmd2" || ext == "mmd3") {
+			return PlayerType::MED;
+		}
+		// Check for MOD extensions
+		else if (ext == "mod") {
+			return PlayerType::MOD;
+		}
+
+		return PlayerType::NONE;
 	}
 
 	void loadFile(const std::string& path) {
@@ -174,6 +213,13 @@ struct RM_Deck : Module {
 				}
 			}
 
+			// Detect file type
+			PlayerType detectedType = detectFileType(path);
+			if (detectedType == PlayerType::NONE) {
+				loading = false;
+				return;
+			}
+
 			// Read file into memory
 			FILE* f = fopen(path.c_str(), "rb");
 			if (!f) {
@@ -194,12 +240,24 @@ struct RM_Deck : Module {
 				return;
 			}
 
-			// Load MOD file
+			// Load file using appropriate player
 			bool success = false;
 			{
 				std::lock_guard<std::mutex> lock(swapMutex);
-				if (modPlayer && !shouldStopLoading) {
-					success = mod_player_load(modPlayer, fileData.data(), fileData.size());
+				if (!shouldStopLoading) {
+					if (detectedType == PlayerType::MOD && modPlayer) {
+						success = mod_player_load(modPlayer, fileData.data(), fileData.size());
+						if (success) {
+							playerType = PlayerType::MOD;
+							mod_player_set_position_callback(modPlayer, playerPositionCallback, this);
+						}
+					} else if (detectedType == PlayerType::MED && medPlayer) {
+						success = med_player_load(medPlayer, fileData.data(), fileData.size());
+						if (success) {
+							playerType = PlayerType::MED;
+							med_player_set_position_callback(medPlayer, playerPositionCallback, this);
+						}
+					}
 				}
 			}
 
@@ -212,7 +270,11 @@ struct RM_Deck : Module {
 
 				// Reset all channel mutes in the player
 				for (int i = 0; i < 4; i++) {
-					mod_player_set_channel_mute(modPlayer, i, false);
+					if (playerType == PlayerType::MOD) {
+						mod_player_set_channel_mute(modPlayer, i, false);
+					} else if (playerType == PlayerType::MED) {
+						med_player_set_channel_mute(medPlayer, i, false);
+					}
 				}
 
 				fileLoaded = true;
@@ -224,13 +286,19 @@ struct RM_Deck : Module {
 	}
 
 	void renderBuffer() {
-		if (!modPlayer || !fileLoaded || loading) {
+		if (!fileLoaded || loading || playerType == PlayerType::NONE) {
 			bufferValid = false;
 			return;
 		}
 
 		std::lock_guard<std::mutex> lock(swapMutex);
-		mod_player_process(modPlayer, leftBuffer, rightBuffer, BUFFER_SIZE, APP->engine->getSampleRate());
+
+		if (playerType == PlayerType::MOD && modPlayer) {
+			mod_player_process(modPlayer, leftBuffer, rightBuffer, BUFFER_SIZE, APP->engine->getSampleRate());
+		} else if (playerType == PlayerType::MED && medPlayer) {
+			med_player_process(medPlayer, leftBuffer, rightBuffer, BUFFER_SIZE, APP->engine->getSampleRate());
+		}
+
 		bufferPos = 0;
 		bufferValid = true;
 	}
@@ -242,10 +310,18 @@ struct RM_Deck : Module {
 				playing = !playing;
 				if (playing) {
 					std::lock_guard<std::mutex> lock(swapMutex);
-					mod_player_start(modPlayer);
+					if (playerType == PlayerType::MOD && modPlayer) {
+						mod_player_start(modPlayer);
+					} else if (playerType == PlayerType::MED && medPlayer) {
+						med_player_start(medPlayer);
+					}
 				} else {
 					std::lock_guard<std::mutex> lock(swapMutex);
-					mod_player_stop(modPlayer);
+					if (playerType == PlayerType::MOD && modPlayer) {
+						mod_player_stop(modPlayer);
+					} else if (playerType == PlayerType::MED && medPlayer) {
+						med_player_stop(medPlayer);
+					}
 				}
 			}
 			params[PLAY_PARAM].setValue(0.f);
@@ -253,18 +329,29 @@ struct RM_Deck : Module {
 
 		// Handle set loop button (PAD1) - toggle between single pattern loop and full song
 		if (params[PAD1_PARAM].getValue() > 0.5f) {
-			if (fileLoaded && modPlayer) {
+			if (fileLoaded && playerType != PlayerType::NONE) {
 				std::lock_guard<std::mutex> lock(swapMutex);
 				if (singlePatternLoop) {
 					// Disable loop - restore full song playback
-					uint8_t songLen = mod_player_get_song_length(modPlayer);
-					mod_player_set_loop_range(modPlayer, 0, songLen > 0 ? songLen - 1 : 0);
+					uint8_t songLen = 0;
+					if (playerType == PlayerType::MOD && modPlayer) {
+						songLen = mod_player_get_song_length(modPlayer);
+						mod_player_set_loop_range(modPlayer, 0, songLen > 0 ? songLen - 1 : 0);
+					} else if (playerType == PlayerType::MED && medPlayer) {
+						songLen = med_player_get_song_length(medPlayer);
+						med_player_set_loop_range(medPlayer, 0, songLen > 0 ? songLen - 1 : 0);
+					}
 					singlePatternLoop = false;
 				} else {
 					// Enable single pattern loop
 					uint8_t currentPattern, currentRow;
-					mod_player_get_position(modPlayer, &currentPattern, &currentRow);
-					mod_player_set_loop_range(modPlayer, currentPattern, currentPattern);
+					if (playerType == PlayerType::MOD && modPlayer) {
+						mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+						mod_player_set_loop_range(modPlayer, currentPattern, currentPattern);
+					} else if (playerType == PlayerType::MED && medPlayer) {
+						med_player_get_position(medPlayer, &currentPattern, &currentRow);
+						med_player_set_loop_range(medPlayer, currentPattern, currentPattern);
+					}
 					singlePatternLoop = true;
 				}
 			}
@@ -273,12 +360,19 @@ struct RM_Deck : Module {
 
 		// Handle pattern - button (PAD3)
 		if (params[PAD3_PARAM].getValue() > 0.5f) {
-			if (fileLoaded && modPlayer) {
+			if (fileLoaded && playerType != PlayerType::NONE) {
 				std::lock_guard<std::mutex> lock(swapMutex);
 				uint8_t currentPattern, currentRow;
-				mod_player_get_position(modPlayer, &currentPattern, &currentRow);
-				if (currentPattern > 0) {
-					mod_player_set_position(modPlayer, currentPattern - 1, 0);
+				if (playerType == PlayerType::MOD && modPlayer) {
+					mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+					if (currentPattern > 0) {
+						mod_player_set_position(modPlayer, currentPattern - 1, 0);
+					}
+				} else if (playerType == PlayerType::MED && medPlayer) {
+					med_player_get_position(medPlayer, &currentPattern, &currentRow);
+					if (currentPattern > 0) {
+						med_player_set_position(medPlayer, currentPattern - 1, 0);
+					}
 				}
 			}
 			params[PAD3_PARAM].setValue(0.f);
@@ -286,13 +380,22 @@ struct RM_Deck : Module {
 
 		// Handle pattern + button (PAD4)
 		if (params[PAD4_PARAM].getValue() > 0.5f) {
-			if (fileLoaded && modPlayer) {
+			if (fileLoaded && playerType != PlayerType::NONE) {
 				std::lock_guard<std::mutex> lock(swapMutex);
 				uint8_t currentPattern, currentRow;
-				mod_player_get_position(modPlayer, &currentPattern, &currentRow);
-				uint8_t songLen = mod_player_get_song_length(modPlayer);
-				if (currentPattern < songLen - 1) {
-					mod_player_set_position(modPlayer, currentPattern + 1, 0);
+				uint8_t songLen = 0;
+				if (playerType == PlayerType::MOD && modPlayer) {
+					mod_player_get_position(modPlayer, &currentPattern, &currentRow);
+					songLen = mod_player_get_song_length(modPlayer);
+					if (currentPattern < songLen - 1) {
+						mod_player_set_position(modPlayer, currentPattern + 1, 0);
+					}
+				} else if (playerType == PlayerType::MED && medPlayer) {
+					med_player_get_position(medPlayer, &currentPattern, &currentRow);
+					songLen = med_player_get_song_length(medPlayer);
+					if (currentPattern < songLen - 1) {
+						med_player_set_position(medPlayer, currentPattern + 1, 0);
+					}
 				}
 			}
 			params[PAD4_PARAM].setValue(0.f);
@@ -313,11 +416,15 @@ struct RM_Deck : Module {
 		// Handle channel mute buttons
 		for (int i = 0; i < 4; i++) {
 			if (params[CHAN1_MUTE_PARAM + i].getValue() > 0.5f) {
-				if (fileLoaded && modPlayer) {
+				if (fileLoaded && playerType != PlayerType::NONE) {
 					std::lock_guard<std::mutex> lock(swapMutex);
 					bool newMuteState = !getChannelMuted(i);
 					setChannelMuted(i, newMuteState);
-					mod_player_set_channel_mute(modPlayer, i, newMuteState);
+					if (playerType == PlayerType::MOD && modPlayer) {
+						mod_player_set_channel_mute(modPlayer, i, newMuteState);
+					} else if (playerType == PlayerType::MED && medPlayer) {
+						med_player_set_channel_mute(medPlayer, i, newMuteState);
+					}
 				}
 				params[CHAN1_MUTE_PARAM + i].setValue(0.f);
 			}
@@ -407,9 +514,13 @@ struct RM_Deck : Module {
 				if (muteJ && json_is_boolean(muteJ)) {
 					bool muted = json_boolean_value(muteJ);
 					setChannelMuted(i, muted);
-					// Apply to mod player when file loads
-					if (modPlayer && fileLoaded) {
-						mod_player_set_channel_mute(modPlayer, i, muted);
+					// Apply to player when file loads
+					if (fileLoaded) {
+						if (playerType == PlayerType::MOD && modPlayer) {
+							mod_player_set_channel_mute(modPlayer, i, muted);
+						} else if (playerType == PlayerType::MED && medPlayer) {
+							med_player_set_channel_mute(medPlayer, i, muted);
+						}
 					}
 				}
 			}
@@ -418,7 +529,7 @@ struct RM_Deck : Module {
 };
 
 // Implement position callback after RM_Deck is fully defined
-static void modPlayerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data) {
+static void playerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data) {
 	RM_Deck* module = static_cast<RM_Deck*>(user_data);
 	if (module) {
 		module->currentOrder = order;
@@ -490,7 +601,7 @@ struct ModInfoDisplay : TransparentWidget {
 			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 			nvgFillColor(args.vg, nvgRGB(0x55, 0x55, 0x55));
-			const char* text = (!module || !module->fileLoaded) ? "Right-click to load MOD" : "Loading...";
+			const char* text = (!module || !module->fileLoaded) ? "Right-click to load file" : "Loading...";
 			nvgText(args.vg, box.size.x / 2, box.size.y / 2, text, NULL);
 			Widget::draw(args);
 			return;
@@ -546,25 +657,25 @@ struct RM_DeckWidget : ModuleWidget {
 		titleLabel->bold = true;
 		addChild(titleLabel);
 
-		// MOD info display (shows song order, row, filename) - made smaller
+		// Info display (shows song order, row, filename)
 		ModInfoDisplay* infoDisplay = new ModInfoDisplay();
 		infoDisplay->box.pos = mm2px(Vec(3, 16));
-		infoDisplay->box.size = mm2px(Vec(54.96, 22));  // Much smaller - ends at 38mm
+		infoDisplay->box.size = mm2px(Vec(54.96, 22));
 		infoDisplay->module = module;
 		addChild(infoDisplay);
 
 		// Channel mute pads (4 small pads in a row below the display)
 		float chanPadStartX = 6;
-		float chanPadStartY = 40;  // Display ends at 38mm, start at 40mm
+		float chanPadStartY = 40;
 		float chanPadSpacing = 1.5;
-		float chanPadSize = 11;  // 11mm buttons (smaller than main 13mm pads)
+		float chanPadSize = 11;
 
 		for (int i = 0; i < 4; i++) {
 			DeckPad* chanPad = new DeckPad();
 			chanPad->box.pos = mm2px(Vec(chanPadStartX + i * (chanPadSize + chanPadSpacing), chanPadStartY));
-			chanPad->box.size = mm2px(Vec(chanPadSize, chanPadSize));  // Set size BEFORE configuring
+			chanPad->box.size = mm2px(Vec(chanPadSize, chanPadSize));
 			chanPad->module = module;
-			chanPad->padIndex = 6 + i;  // padIndex 6-9 for channel mutes
+			chanPad->padIndex = 6 + i;
 			chanPad->label = "CH" + std::to_string(i + 1);
 			chanPad->app::ParamWidget::module = module;
 			chanPad->app::ParamWidget::paramId = RM_Deck::CHAN1_MUTE_PARAM + i;
@@ -572,7 +683,7 @@ struct RM_DeckWidget : ModuleWidget {
 			addParam(chanPad);
 		}
 
-		// Pad grid - EXACT same layout as RDJ_Deck
+		// Pad grid
 		float padStartX = 5;
 		float padStartY = 54;
 		float padSpacing = 5;
@@ -617,7 +728,7 @@ struct RM_DeckWidget : ModuleWidget {
 		pad6->label = "PFL";
 		addParam(pad6);
 
-		// Tempo fader - EXACT same as RDJ_Deck
+		// Tempo fader
 		float faderWidth = 10;
 		float faderHeight = 50;
 		float faderCenterX = 52;
@@ -635,7 +746,7 @@ struct RM_DeckWidget : ModuleWidget {
 		tempoLabel->fontSize = 7.0;
 		addChild(tempoLabel);
 
-		// PFL outputs (left side) - EXACT same positions
+		// PFL outputs (left side)
 		RegrooveLabel* pflLabel = new RegrooveLabel();
 		pflLabel->box.pos = mm2px(Vec(7.5, 110));
 		pflLabel->box.size = mm2px(Vec(9, 3));
@@ -647,7 +758,7 @@ struct RM_DeckWidget : ModuleWidget {
 		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(7.5, 118.0)), module, RM_Deck::PFL_L_OUTPUT));
 		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(16.5, 118.0)), module, RM_Deck::PFL_R_OUTPUT));
 
-		// Audio outputs (right side) - EXACT same positions
+		// Audio outputs (right side)
 		RegrooveLabel* outLabel = new RegrooveLabel();
 		outLabel->box.pos = mm2px(Vec(38, 110));
 		outLabel->box.size = mm2px(Vec(20, 3));
@@ -665,13 +776,14 @@ struct RM_DeckWidget : ModuleWidget {
 		if (!module) return;
 
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createMenuLabel("MOD File"));
+		menu->addChild(createMenuLabel("Module File"));
 
-		menu->addChild(createMenuItem("Load MOD file", "", [=]() {
+		menu->addChild(createMenuItem("Load MOD/MED file", "", [=]() {
 			if (!module || !module->initialized || module->loading) {
 				return;
 			}
-			char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL, osdialog_filters_parse("MOD Files:mod"));
+			char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL,
+				osdialog_filters_parse("Module Files:mod,med,mmd,mmd0,mmd1,mmd2,mmd3"));
 			if (path) {
 				module->loadFile(path);
 				free(path);

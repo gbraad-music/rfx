@@ -129,12 +129,8 @@ bool render_to_wav(MedPlayer* player, const char* output_file) {
         }
     }
 
-    // Set up loop tracking
-    LoopTracker tracker = {0};
-    tracker.prev_order = 255;  // Sentinel value to skip first callback
-    tracker.has_looped = false;
-
-    med_player_set_position_callback(player, position_callback, &tracker);
+    // Disable looping so playback stops at end instead of looping
+    med_player_set_disable_looping(player, true);
 
     // Reserve space for header (we'll update it later with actual size)
     long header_pos = ftell(f);
@@ -163,7 +159,7 @@ bool render_to_wav(MedPlayer* player, const char* output_file) {
         fprintf(stderr, "Rendering");
     }
 
-    while (!tracker.has_looped) {
+    while (med_player_is_playing(player)) {
         // Process audio
         med_player_process(player, left, right, render_frames, SAMPLE_RATE);
 

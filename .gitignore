@@ -34,6 +34,7 @@ logue/*/*.nts3unit
 logue/*/*.drmlgunit
 
 # Object files and related
+*.exe
 *.d
 *.o
 *.obj

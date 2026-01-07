@@ -91,7 +91,7 @@ struct ModPlayer {
     // Playback state
     bool playing;
     uint8_t current_pattern_index;  // Index into song_positions
-    uint8_t current_row;
+    uint16_t current_row;
     uint8_t tick;
     uint8_t speed;                  // Ticks per row (default 6)
     uint8_t bpm;                    // Beats per minute (default 125)
@@ -424,7 +424,7 @@ void mod_player_set_loop_range(ModPlayer* player, uint8_t start_pattern, uint8_t
     player->loop_end = end_pattern;
 }
 
-void mod_player_get_position(const ModPlayer* player, uint8_t* pattern, uint8_t* row) {
+void mod_player_get_position(const ModPlayer* player, uint8_t* pattern, uint16_t* row) {
     if (!player) return;
     if (pattern) *pattern = player->current_pattern_index;
     if (row) *row = player->current_row;
@@ -436,7 +436,7 @@ void mod_player_set_position_callback(ModPlayer* player, ModPlayerPositionCallba
     player->callback_user_data = user_data;
 }
 
-void mod_player_set_position(ModPlayer* player, uint8_t pattern, uint8_t row) {
+void mod_player_set_position(ModPlayer* player, uint8_t pattern, uint16_t row) {
     if (!player) return;
     if (pattern < player->song_length && row < MOD_PATTERN_ROWS) {
         player->current_pattern_index = pattern;

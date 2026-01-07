@@ -1309,26 +1309,52 @@ static void process_tick(MedPlayer* player) {
                             player->current_pattern, player->current_row);
                 }
 
-                // Initialize volume to max ONLY if volume has never been set
-                if (!chan->volume_set) {
-                    fprintf(stderr, "INIT: ch=%d vol=%d at pattern %d row %d\n",
-                            ch, player->max_volume, player->current_pattern, player->current_row);
+                // When instrument changes, ALWAYS reset volume to sample's default
+                // When same instrument, only initialize volume if never set
+                if (inst_changed) {
+                    // New instrument - ALWAYS reset to its default volume
+                    uint8_t default_vol = chan->sample ? chan->sample->volume : 64;
+                    // Scale from 0-64 to 0-127
+                    chan->volume = default_vol * 2;
+                    if (chan->volume > 127) chan->volume = 127;
+                    chan->current_volume = chan->volume;
+                    chan->volume_set = true;
+
+                    if (ch == 0) {  // Track 0 only
+                        fprintf(stderr, "VOL RESET: ch=%d inst=%d default_vol=%d → vol=%d\n",
+                                ch, note->instrument, default_vol, chan->volume);
+                    }
+                } else if (!chan->volume_set) {
+                    // Same instrument, first time - initialize to max
                     chan->volume = player->max_volume;
-                    chan->current_volume = player->max_volume;  // Set current volume immediately for new notes
+                    chan->current_volume = player->max_volume;
                     chan->volume_set = true;
                 }
-                // Otherwise volume persists (even if faded to 0!)
+                // Otherwise volume persists
             }
 
-            // Process volume command (ONLY way to change volume after initialization)
+            // Process volume command AFTER note trigger (so it can override sample default)
             if (note->command == 0x0C) {  // Set volume
                 uint8_t old_vol = chan->volume;
-                chan->volume = note->param;
+                // OctaMED volume interpretation depends on vol_hex flag:
+                // - If vol_hex (hex mode): values are 0x00-0x7F (0-127), use directly
+                // - If NOT vol_hex (decimal mode): values are 0-64 decimal, scale to 0-127
+                if (player->vol_hex) {
+                    // Hex mode: 0x00-0x7F maps to 0-127
+                    chan->volume = (note->param > 127) ? 127 : note->param;
+                } else {
+                    // Decimal mode: 0-64 maps to 0-127
+                    uint8_t new_vol = (note->param > 64) ? 64 : note->param;
+                    chan->volume = new_vol * 2;
+                    if (chan->volume > 127) chan->volume = 127;
+                }
                 chan->volume_set = true;
-                // Note: current_volume will ramp toward this target in the mixing loop
-                fprintf(stderr, "VOL CMD: ch=%d vol %d->%d at pattern %d row %d (note=%02X inst=%02X)\n",
-                        ch, old_vol, note->param, player->current_pattern, player->current_row,
-                        note->note, note->instrument);
+                chan->current_volume = chan->volume;  // Apply immediately
+
+                if (ch == 0) {  // Track 0 only
+                    fprintf(stderr, "VOL CMD: ch=%d %d→%d (param=0x%02X note=%02X inst=%02X)\n",
+                            ch, old_vol, chan->volume, note->param, note->note, note->instrument);
+                }
             }
 
             // Process other effects

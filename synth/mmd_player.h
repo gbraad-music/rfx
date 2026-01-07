@@ -13,7 +13,7 @@ extern "C" {
 typedef struct MedPlayer MedPlayer;
 
 // Position callback - called when playback position changes
-typedef void (*MedPositionCallback)(uint8_t order, uint8_t pattern, uint8_t row, void* user_data);
+typedef void (*MedPositionCallback)(uint8_t order, uint8_t pattern, uint16_t row, void* user_data);
 
 /**
  * Create a new MED player instance
@@ -65,7 +65,7 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
  * @param out_pattern Current pattern index
  * @param out_row Current row within pattern
  */
-void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint8_t* out_row);
+void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint16_t* out_row);
 
 /**
  * Set playback position
@@ -73,7 +73,7 @@ void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint
  * @param pattern Pattern index
  * @param row Row within pattern
  */
-void med_player_set_position(MedPlayer* player, uint8_t pattern, uint8_t row);
+void med_player_set_position(MedPlayer* player, uint8_t pattern, uint16_t row);
 
 /**
  * Get song length (number of patterns in play sequence)

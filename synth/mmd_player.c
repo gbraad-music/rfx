@@ -265,7 +265,7 @@ struct MedPlayer {
     bool playing;
     uint16_t current_order;
     uint16_t current_pattern;
-    uint8_t current_row;
+    uint16_t current_row;
     uint16_t bpm;
     uint8_t speed;          // Ticks per row
     uint32_t tick;
@@ -625,14 +625,6 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 for (int i = 0; i < player->song_length; i++) {
                     player->play_seq[i] = BE16(*(uint16_t*)(seq_ptr + 42 + i * 2));
                 }
-
-                // Debug: show first entries in play sequence
-                // fprintf(stderr, "med_player: Play sequence (first 10 entries): ");
-                // int debug_count = (player->song_length < 10) ? player->song_length : 10;
-                // for (int i = 0; i < debug_count; i++) {
-                //     fprintf(stderr, "%d ", player->play_seq[i]);
-                // }
-                // fprintf(stderr, "\n");
             }
         }
     }
@@ -776,8 +768,6 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
 
         // Debug first few notes in early blocks
         // if (i < 3) {  // First 3 blocks
-        //     fprintf(stderr, "med_player: Block %d has %d tracks, %d lines, note_count=%zu\n",
-        //             i, numtracks, lines+1, note_count);
         //     fprintf(stderr, "med_player: First 8 rows of block %d:\n", i);
         //     for (int row = 0; row < 8 && row < (int)(lines+1); row++) {
         //         for (int trk = 0; trk < numtracks; trk++) {
@@ -1680,14 +1670,14 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
 }
 
 // Get position
-void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint8_t* out_row) {
+void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint16_t* out_row) {
     if (!player) return;
     if (out_pattern) *out_pattern = player->current_order;  // Return order index, not pattern number (to match MOD player behavior)
     if (out_row) *out_row = player->current_row;
 }
 
 // Set position
-void med_player_set_position(MedPlayer* player, uint8_t pattern, uint8_t row) {
+void med_player_set_position(MedPlayer* player, uint8_t pattern, uint16_t row) {
     if (!player) return;
     // Pattern parameter is actually order index (to match MOD player behavior)
     player->current_order = pattern;

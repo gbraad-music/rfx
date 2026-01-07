@@ -13,7 +13,7 @@
 struct RM_Deck;
 
 // Forward declaration of position callback
-static void playerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data);
+static void playerPositionCallback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data);
 
 // Player type enum
 enum class PlayerType {
@@ -98,7 +98,7 @@ struct RM_Deck : Module {
 	// Position tracking from callback
 	std::atomic<uint8_t> currentOrder{0};
 	std::atomic<uint8_t> currentPattern{0};
-	std::atomic<uint8_t> currentRow{0};
+	std::atomic<uint16_t> currentRow{0};
 
 	// Helper methods for channel mute access
 	bool getChannelMuted(int index) const {
@@ -344,7 +344,8 @@ struct RM_Deck : Module {
 					singlePatternLoop = false;
 				} else {
 					// Enable single pattern loop
-					uint8_t currentPattern, currentRow;
+					uint8_t currentPattern;
+					uint16_t currentRow;
 					if (playerType == PlayerType::MOD && modPlayer) {
 						mod_player_get_position(modPlayer, &currentPattern, &currentRow);
 						mod_player_set_loop_range(modPlayer, currentPattern, currentPattern);
@@ -362,7 +363,8 @@ struct RM_Deck : Module {
 		if (params[PAD3_PARAM].getValue() > 0.5f) {
 			if (fileLoaded && playerType != PlayerType::NONE) {
 				std::lock_guard<std::mutex> lock(swapMutex);
-				uint8_t currentPattern, currentRow;
+				uint8_t currentPattern;
+		uint16_t currentRow;
 				if (playerType == PlayerType::MOD && modPlayer) {
 					mod_player_get_position(modPlayer, &currentPattern, &currentRow);
 					if (currentPattern > 0) {
@@ -382,7 +384,8 @@ struct RM_Deck : Module {
 		if (params[PAD4_PARAM].getValue() > 0.5f) {
 			if (fileLoaded && playerType != PlayerType::NONE) {
 				std::lock_guard<std::mutex> lock(swapMutex);
-				uint8_t currentPattern, currentRow;
+				uint8_t currentPattern;
+		uint16_t currentRow;
 				uint8_t songLen = 0;
 				if (playerType == PlayerType::MOD && modPlayer) {
 					mod_player_get_position(modPlayer, &currentPattern, &currentRow);
@@ -529,7 +532,7 @@ struct RM_Deck : Module {
 };
 
 // Implement position callback after RM_Deck is fully defined
-static void playerPositionCallback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data) {
+static void playerPositionCallback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data) {
 	RM_Deck* module = static_cast<RM_Deck*>(user_data);
 	if (module) {
 		module->currentOrder = order;
@@ -610,7 +613,7 @@ struct ModInfoDisplay : TransparentWidget {
 		// Get position info from atomic variables
 		uint8_t order = module->currentOrder;
 		uint8_t pattern = module->currentPattern;
-		uint8_t row = module->currentRow;
+		uint16_t row = module->currentRow;
 
 		// Display song position
 		nvgFontSize(args.vg, 11);

@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 # Master Makefile for building all individual RFX plugins
 
-PLUGINS = RFX_Distortion RFX_Filter RFX_EQ RFX_Compressor RFX_Delay TB303_Synth
+PLUGINS = RFX_Distortion RFX_Filter RFX_EQ RFX_Compressor RFX_Delay TB303_Synth RGModPlayer
 
 .PHONY: all clean $(PLUGINS) gen-ttl lv2 lv2-ui lv2-dsp vst3 vst3-ui vst3-dsp
 

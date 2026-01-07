@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # List of modules to build
-MODULES=("RegrooveFX" "RegrooveM1" "RegrooveDJ" "RG909_Drum" "RG303_Synth" "RG808_Drum")
+MODULES=("RegrooveFX" "RegrooveM1" "RegrooveDJ" "RegrooveMod" "RG909_Drum" "RG303_Synth" "RG808_Drum")
 
 # If a module name is provided as argument, build only that module
 if [ $# -gt 0 ]; then

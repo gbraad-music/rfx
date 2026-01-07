@@ -1315,11 +1315,11 @@ static void process_tick(MedPlayer* player) {
                 //             player->current_pattern, player->current_row);
                 // }
 
-                // When instrument changes, ALWAYS reset volume to sample's default
-                // When same instrument, only initialize volume if never set
-                if (inst_changed) {
-                    // New instrument - ALWAYS reset to its default volume
-                    uint8_t default_vol = chan->sample ? chan->sample->volume : 64;
+                // When instrument NUMBER is specified, ALWAYS reset volume to that instrument's default
+                // This happens even if it's the same instrument (classic tracker behavior)
+                if (note->instrument > 0 && chan->sample) {
+                    // Instrument specified - reset to its default volume
+                    uint8_t default_vol = chan->sample->volume;
                     // Scale from 0-64 to 0-127
                     chan->volume = default_vol * 2;
                     if (chan->volume > 127) chan->volume = 127;
@@ -1331,12 +1331,12 @@ static void process_tick(MedPlayer* player) {
                     //             ch, note->instrument, default_vol, chan->volume);
                     // }
                 } else if (!chan->volume_set) {
-                    // Same instrument, first time - initialize to max
+                    // No instrument specified, first time - initialize to max
                     chan->volume = player->max_volume;
                     chan->current_volume = player->max_volume;
                     chan->volume_set = true;
                 }
-                // Otherwise volume persists
+                // Otherwise volume persists (when note triggers without instrument)
             }
 
             // Process volume command AFTER note trigger (so it can override sample default)

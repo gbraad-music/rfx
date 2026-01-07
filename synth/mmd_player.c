@@ -470,12 +470,12 @@ static float synth_instrument_process(SynthInstrument* synth, float freq, float 
                     break;
                 }
             }
-            static int fallback_debug = 0;
-            if (fallback_debug < 3) {
-                fprintf(stderr, "WAVEFORM FALLBACK: requested %d, found %d (has_data=%d)\n",
-                        old_idx, wf_idx, synth->waveforms[wf_idx] != NULL);
-                fallback_debug++;
-            }
+            // static int fallback_debug = 0;
+            // if (fallback_debug < 3) {
+            //     fprintf(stderr, "WAVEFORM FALLBACK: requested %d, found %d (has_data=%d)\n",
+            //             old_idx, wf_idx, synth->waveforms[wf_idx] != NULL);
+            //     fallback_debug++;
+            // }
         }
 
         if (wf_idx < synth->num_waveforms && synth->waveforms[wf_idx]) {
@@ -1199,12 +1199,12 @@ static bool trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
             chan->finetune = chan->sample->finetune;
         } else {
             // No sample or synth data - stop the channel
-            static int reject_count = 0;
-            if (reject_count < 5) {
-                fprintf(stderr, "REJECT INST: ch=%d inst=%d (has_data=%d, is_synth=%d, has_synth_ptr=%d)\n",
-                        channel, instrument, smp->data != NULL, smp->is_synth, smp->synth != NULL);
-                reject_count++;
-            }
+            // static int reject_count = 0;
+            // if (reject_count < 5) {
+            //     fprintf(stderr, "REJECT INST: ch=%d inst=%d (has_data=%d, is_synth=%d, has_synth_ptr=%d)\n",
+            //             channel, instrument, smp->data != NULL, smp->is_synth, smp->synth != NULL);
+            //     reject_count++;
+            // }
             chan->sample = NULL;
             chan->volume = 0;
         }
@@ -1303,11 +1303,11 @@ static void process_tick(MedPlayer* player) {
                 bool inst_changed = trigger_note(player, ch, note->note, note->instrument);
 
                 // Debug: show synth triggers
-                if (chan->sample && chan->sample->is_synth) {
-                    fprintf(stderr, "SYNTH TRIGGER: ch=%d note=%d inst=%d (sample %d is synth) pattern=%d row=%d\n",
-                            ch, note->note, note->instrument, note->instrument,
-                            player->current_pattern, player->current_row);
-                }
+                // if (chan->sample && chan->sample->is_synth) {
+                //     fprintf(stderr, "SYNTH TRIGGER: ch=%d note=%d inst=%d (sample %d is synth) pattern=%d row=%d\n",
+                //             ch, note->note, note->instrument, note->instrument,
+                //             player->current_pattern, player->current_row);
+                // }
 
                 // When instrument changes, ALWAYS reset volume to sample's default
                 // When same instrument, only initialize volume if never set
@@ -1320,10 +1320,10 @@ static void process_tick(MedPlayer* player) {
                     chan->current_volume = chan->volume;
                     chan->volume_set = true;
 
-                    if (ch == 0) {  // Track 0 only
-                        fprintf(stderr, "VOL RESET: ch=%d inst=%d default_vol=%d → vol=%d\n",
-                                ch, note->instrument, default_vol, chan->volume);
-                    }
+                    // if (ch == 0) {  // Track 0 only
+                    //     fprintf(stderr, "VOL RESET: ch=%d inst=%d default_vol=%d → vol=%d\n",
+                    //             ch, note->instrument, default_vol, chan->volume);
+                    // }
                 } else if (!chan->volume_set) {
                     // Same instrument, first time - initialize to max
                     chan->volume = player->max_volume;
@@ -1351,10 +1351,10 @@ static void process_tick(MedPlayer* player) {
                 chan->volume_set = true;
                 chan->current_volume = chan->volume;  // Apply immediately
 
-                if (ch == 0) {  // Track 0 only
-                    fprintf(stderr, "VOL CMD: ch=%d %d→%d (param=0x%02X note=%02X inst=%02X)\n",
-                            ch, old_vol, chan->volume, note->param, note->note, note->instrument);
-                }
+                // if (ch == 0) {  // Track 0 only
+                //     fprintf(stderr, "VOL CMD: ch=%d %d→%d (param=0x%02X note=%02X inst=%02X)\n",
+                //             ch, old_vol, chan->volume, note->param, note->note, note->instrument);
+                // }
             }
 
             // Process other effects
@@ -1552,12 +1552,12 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                     }
                 }
 
-                static int synth_debug_count = 0;
-                if (synth_debug_count < 5 && chan->period > 0) {
-                    fprintf(stderr, "SYNTH PROCESS: ch=%d period=%d vol=%d\n",
-                            ch, chan->period, chan->volume);
-                    synth_debug_count++;
-                }
+                // static int synth_debug_count = 0;
+                // if (synth_debug_count < 5 && chan->period > 0) {
+                //     fprintf(stderr, "SYNTH PROCESS: ch=%d period=%d vol=%d\n",
+                //             ch, chan->period, chan->volume);
+                //     synth_debug_count++;
+                // }
 
                 if (chan->period > 0) {
                     // For synth instruments, calculate frequency from period using C-2 as reference
@@ -1566,13 +1566,13 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                     float freq = 55986.68f / (float)chan->period;
                     float sample = synth_instrument_process(chan->sample->synth, freq, sample_rate);
 
-                    static int sample_debug_count = 0;
-                    if (sample_debug_count < 3) {
-                        fprintf(stderr, "SYNTH SAMPLE: ch=%d wf=%d synth_vol=%d sample=%.3f freq=%.1f\n",
-                                ch, chan->sample->synth->current_waveform,
-                                chan->sample->synth->current_volume, sample, freq);
-                        sample_debug_count++;
-                    }
+                    // static int sample_debug_count = 0;
+                    // if (sample_debug_count < 3) {
+                    //     fprintf(stderr, "SYNTH SAMPLE: ch=%d wf=%d synth_vol=%d sample=%.3f freq=%.1f\n",
+                    //             ch, chan->sample->synth->current_waveform,
+                    //             chan->sample->synth->current_volume, sample, freq);
+                    //     sample_debug_count++;
+                    // }
 
                     // Apply volume: channel volume * sample volume * track volume * user volume
                     // Channel volume: 0-127 (from pattern commands, smoothly interpolated)
@@ -1582,16 +1582,16 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                     float vol = (chan->current_volume / (float)player->max_volume) * (chan->sample->volume / 64.0f) *
                                (player->track_volumes[ch] / 127.0f) * chan->user_volume;
 
-                    if (sample_debug_count < 3) {
-                        fprintf(stderr, "  vol components: chan_vol=%.3f smp_vol=%.3f trk_vol=%.3f user_vol=%.3f => final_vol=%.3f\n",
-                                chan->current_volume / (float)player->max_volume,
-                                chan->sample->volume / 64.0f,
-                                player->track_volumes[ch] / 127.0f,
-                                chan->user_volume, vol);
-                        fprintf(stderr, "  output: left+=%.3f right+=%.3f\n",
-                                sample * vol * (1.0f - ((player->track_pans[ch] + 16) / 32.0f)),
-                                sample * vol * ((player->track_pans[ch] + 16) / 32.0f));
-                    }
+                    // if (sample_debug_count < 3) {
+                    //     fprintf(stderr, "  vol components: chan_vol=%.3f smp_vol=%.3f trk_vol=%.3f user_vol=%.3f => final_vol=%.3f\n",
+                    //             chan->current_volume / (float)player->max_volume,
+                    //             chan->sample->volume / 64.0f,
+                    //             player->track_volumes[ch] / 127.0f,
+                    //             chan->user_volume, vol);
+                    //     fprintf(stderr, "  output: left+=%.3f right+=%.3f\n",
+                    //             sample * vol * (1.0f - ((player->track_pans[ch] + 16) / 32.0f)),
+                    //             sample * vol * ((player->track_pans[ch] + 16) / 32.0f));
+                    // }
 
                     // Apply panning (use track panning for classic Amiga hard panning)
                     float pan = (player->track_pans[ch] + 16) / 32.0f;

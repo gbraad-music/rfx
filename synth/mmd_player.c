@@ -263,6 +263,7 @@ struct MedPlayer {
 
     // Playback state
     bool playing;
+    bool disable_looping;   // If true, stop playback instead of looping
     uint16_t current_order;
     uint16_t current_pattern;
     uint16_t current_row;
@@ -1463,13 +1464,20 @@ static void process_tick(MedPlayer* player) {
 
             // Handle loop range
             if (player->current_order > player->loop_end || player->current_order >= player->song_length) {
-                player->current_order = player->loop_start;
+                if (player->disable_looping) {
+                    // Stop playback instead of looping
+                    player->playing = false;
+                    return;
+                } else {
+                    // Loop back to start
+                    player->current_order = player->loop_start;
 
-                // Reset channel volumes when song loops (OctaMED behavior)
-                for (int ch = 0; ch < MAX_CHANNELS; ch++) {
-                    player->channels[ch].volume = 0;
-                    player->channels[ch].current_volume = 0;
-                    player->channels[ch].volume_set = false;
+                    // Reset channel volumes when song loops (OctaMED behavior)
+                    for (int ch = 0; ch < MAX_CHANNELS; ch++) {
+                        player->channels[ch].volume = 0;
+                        player->channels[ch].current_volume = 0;
+                        player->channels[ch].volume_set = false;
+                    }
                 }
             }
 
@@ -1492,6 +1500,11 @@ void med_player_stop(MedPlayer* player) {
         player->playing = false;
         // fprintf(stderr, "med_player: Playback stopped\n");
     }
+}
+
+// Check if playing
+bool med_player_is_playing(const MedPlayer* player) {
+    return player ? player->playing : false;
 }
 
 // Process audio
@@ -1746,4 +1759,10 @@ void med_player_set_loop_range(MedPlayer* player, uint16_t start_order, uint16_t
 
     player->loop_start = start_order;
     player->loop_end = end_order;
+}
+
+// Set disable looping
+void med_player_set_disable_looping(MedPlayer* player, bool disable) {
+    if (!player) return;
+    player->disable_looping = disable;
 }

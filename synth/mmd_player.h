@@ -49,6 +49,13 @@ void med_player_start(MedPlayer* player);
 void med_player_stop(MedPlayer* player);
 
 /**
+ * Check if player is currently playing
+ * @param player Player instance
+ * @return true if playing, false otherwise
+ */
+bool med_player_is_playing(const MedPlayer* player);
+
+/**
  * Process audio (render samples)
  * @param player Player instance
  * @param left_out Left channel output buffer
@@ -144,6 +151,13 @@ uint16_t med_player_get_bpm(const MedPlayer* player);
  * If start_order == end_order, only that order will loop
  */
 void med_player_set_loop_range(MedPlayer* player, uint16_t start_order, uint16_t end_order);
+
+/**
+ * Enable or disable looping
+ * @param player Player instance
+ * @param disable If true, playback stops at end instead of looping
+ */
+void med_player_set_disable_looping(MedPlayer* player, bool disable);
 
 #ifdef __cplusplus
 }

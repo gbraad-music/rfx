@@ -583,8 +583,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             player->instr_ext_entries = BE16(*(uint16_t*)(expdata_ptr + 8));    // instrExtEntries at +8
             player->instr_ext_entry_size = BE16(*(uint16_t*)(expdata_ptr + 10)); // instrExtEntrySize at +10
 
-            fprintf(stderr, "med_player: ExpData: instrExtOffset=0x%X, entries=%u, entry_size=%u\n",
-                    player->instr_ext_offset, player->instr_ext_entries, player->instr_ext_entry_size);
+            // fprintf(stderr, "med_player: ExpData: instrExtOffset=0x%X, entries=%u, entry_size=%u\n",
+            //         player->instr_ext_offset, player->instr_ext_entries, player->instr_ext_entry_size);
         }
     }
 
@@ -677,15 +677,15 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
     uint8_t flags2 = song_base[768];
     uint8_t tempo2 = song_base[769];
 
-    fprintf(stderr, "med_player: Raw deftempo: %d, flags: 0x%02X, flags2: 0x%02X, tempo2: %d\n",
-            deftempo, flags, flags2, tempo2);
+    // fprintf(stderr, "med_player: Raw deftempo: %d, flags: 0x%02X, flags2: 0x%02X, tempo2: %d\n",
+    //         deftempo, flags, flags2, tempo2);
 
     // Volume mode: OctaMED uses 0-127 range for all volumes (pattern commands, samples, tracks)
     // The FLAG_VOLHEX just affects how they're displayed in the UI (hex vs decimal)
     player->vol_hex = (flags & 0x10) != 0;
     player->max_volume = 127;  // Always use 127 for all volume values
-    fprintf(stderr, "med_player: Volume mode: FLAG_VOLHEX=%d (hex display), using max_volume=%d\n",
-            player->vol_hex, player->max_volume);
+    // fprintf(stderr, "med_player: Volume mode: FLAG_VOLHEX=%d (hex display), using max_volume=%d\n",
+    //         player->vol_hex, player->max_volume);
 
     // OctaMED tempo handling (from OpenMPT's MMDTempoToBPM):
     bool bpmMode = (flags2 & 0x20) != 0;  // FLAG2_BPM
@@ -716,7 +716,7 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
 
     // Read track volumes and pans (offset 770 = after tempo2)
     // trackvols[64] at offset 770, trackpans[64] at offset 834
-    fprintf(stderr, "med_player: Track volumes and panning:\n");
+    // fprintf(stderr, "med_player: Track volumes and panning:\n");
 
     for (int i = 0; i < player->num_tracks && i < 64; i++) {
         uint8_t tvol = song_base[770 + i];
@@ -729,8 +729,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
         if (player->num_tracks == 4 && i < 4) {
             const int8_t amiga_pan[4] = {-16, 16, 16, -16};  // L-R-R-L
             player->track_pans[i] = amiga_pan[i];
-            fprintf(stderr, "  Track %d: vol=%d, pan=%d (Amiga L-R-R-L)\n",
-                    i, player->track_volumes[i], player->track_pans[i]);
+            // fprintf(stderr, "  Track %d: vol=%d, pan=%d (Amiga L-R-R-L)\n",
+            //         i, player->track_volumes[i], player->track_pans[i]);
         } else {
             // For 8+ channel files, read panning from file
             uint8_t pan_raw = song_base[834 + i];
@@ -741,8 +741,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             } else {
                 player->track_pans[i] = 0;  // Center if invalid
             }
-            fprintf(stderr, "  Track %d: vol=%d, pan=%d (from file)\n",
-                    i, player->track_volumes[i], player->track_pans[i]);
+            // fprintf(stderr, "  Track %d: vol=%d, pan=%d (from file)\n",
+            //         i, player->track_volumes[i], player->track_pans[i]);
         }
     }
 
@@ -836,14 +836,14 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             bool is_16bit = (type_and_flags & 0x10) != 0;  // S_16 flag
             bool is_stereo = (type_and_flags & 0x20) != 0;  // STEREO flag
 
-            fprintf(stderr, "med_player:   Sample %d: length=%u, type=%d (0x%04X), is_synth=%d\n",
-                    i+1, length, type, (uint16_t)type_and_flags, is_synth);
+            // fprintf(stderr, "med_player:   Sample %d: length=%u, type=%d (0x%04X), is_synth=%d\n",
+            //         i+1, length, type, (uint16_t)type_and_flags, is_synth);
 
 #ifdef MMD_SYNTH_SUPPORT
             // Handle synthetic/hybrid instruments (type -1 or -2 with synth data)
             if (type == INSTR_TYPE_SYNTHETIC || type == INSTR_TYPE_HYBRID) {
-                fprintf(stderr, "med_player:   %s instrument detected (sample %d, type=%d)\n",
-                        type == INSTR_TYPE_SYNTHETIC ? "SYNTHETIC" : "HYBRID", i+1, type);
+                // fprintf(stderr, "med_player:   %s instrument detected (sample %d, type=%d)\n",
+                //         type == INSTR_TYPE_SYNTHETIC ? "SYNTHETIC" : "HYBRID", i+1, type);
 
                 // Synth data starts immediately after the 6-byte MMDInstrHeader
                 // (InstrExt is stored separately in expData.instrExtOffset, not here!)
@@ -861,8 +861,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                         // instrext_ptr[2] = suppress_midi_off
                         finetune = (int8_t)instrext_ptr[3];
 
-                        fprintf(stderr, "med_player:   InstrExt[%d]: hold=%u, decay=%u, finetune=%d\n",
-                                i, hold, decay, finetune);
+                        // fprintf(stderr, "med_player:   InstrExt[%d]: hold=%u, decay=%u, finetune=%d\n",
+                        //         i, hold, decay, finetune);
                     }
                 }
 
@@ -883,8 +883,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 uint8_t wave_speed = synth_ptr[13];
                 uint16_t num_waveforms = BE16(*(uint16_t*)(synth_ptr + 14));
 
-                fprintf(stderr, "med_player:   Synth: vol_len=%u, wave_len=%u, waveforms=%u, vol_speed=%u, wave_speed=%u\n",
-                        vol_table_len, wave_table_len, num_waveforms, vol_speed, wave_speed);
+                // fprintf(stderr, "med_player:   Synth: vol_len=%u, wave_len=%u, waveforms=%u, vol_speed=%u, wave_speed=%u\n",
+                //         vol_table_len, wave_table_len, num_waveforms, vol_speed, wave_speed);
 
                 // Variable-length data follows the header
                 const uint8_t* vol_table_ptr = synth_ptr + 16;
@@ -897,16 +897,16 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 }
 
                 // Debug: show first few bytes of scripts (from actual file location)
-                fprintf(stderr, "med_player:     Vol script (from file): ");
-                for (int j = 0; j < 16 && j < vol_table_len; j++) {
-                    fprintf(stderr, "%02X ", vol_table_ptr[j]);
-                }
-                fprintf(stderr, "\n");
-                fprintf(stderr, "med_player:     Wave script (from file): ");
-                for (int j = 0; j < 16 && j < wave_table_len; j++) {
-                    fprintf(stderr, "%02X ", wave_table_ptr[j]);
-                }
-                fprintf(stderr, "\n");
+                // fprintf(stderr, "med_player:     Vol script (from file): ");
+                // for (int j = 0; j < 16 && j < vol_table_len; j++) {
+                //     fprintf(stderr, "%02X ", vol_table_ptr[j]);
+                // }
+                // fprintf(stderr, "\n");
+                // fprintf(stderr, "med_player:     Wave script (from file): ");
+                // for (int j = 0; j < 16 && j < wave_table_len; j++) {
+                //     fprintf(stderr, "%02X ", wave_table_ptr[j]);
+                // }
+                // fprintf(stderr, "\n");
 
                 // Create synth instrument
                 SynthInstrument* synth = (SynthInstrument*)calloc(1, sizeof(SynthInstrument));
@@ -943,7 +943,7 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 synth->env_counter = 0;
                 synth->env_volume = 1.0f;  // Start at full volume
 
-                fprintf(stderr, "med_player:   Envelope: hold=%u, decay=%u\n", hold, decay);
+                // fprintf(stderr, "med_player:   Envelope: hold=%u, decay=%u\n", hold, decay);
 
                 // Initialize phase for wavetable playback
                 synth->phase = 0.0f;
@@ -953,12 +953,12 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 const uint8_t* wf_ptr = synth_ptr + 16 + vol_table_len + wave_table_len;
                 synth->num_waveforms = (num_waveforms <= MAX_WAVEFORMS) ? num_waveforms : MAX_WAVEFORMS;
 
-                fprintf(stderr, "med_player:     Waveform array at offset: synth+16+%u+%u = synth+%u\n",
-                        vol_table_len, wave_table_len, 16 + vol_table_len + wave_table_len);
+                // fprintf(stderr, "med_player:     Waveform array at offset: synth+16+%u+%u = synth+%u\n",
+                //         vol_table_len, wave_table_len, 16 + vol_table_len + wave_table_len);
 
                 for (int w = 0; w < synth->num_waveforms; w++) {
                     if (wf_ptr + 4 > base + player->file_size) {
-                        fprintf(stderr, "med_player:     Waveform %d: pointer out of bounds\n", w);
+                        // fprintf(stderr, "med_player:     Waveform %d: pointer out of bounds\n", w);
                         break;
                     }
 
@@ -966,18 +966,18 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                     wf_ptr += 4;
 
                     if (wf_offset_rel == 0) {
-                        fprintf(stderr, "med_player:     Waveform %d: NULL offset (skipped)\n", w);
+                        // fprintf(stderr, "med_player:     Waveform %d: NULL offset (skipped)\n", w);
                         continue;
                     }
 
                     // Waveform offset is RELATIVE to instrument start, not absolute!
                     uint32_t wf_offset = instr_offset + wf_offset_rel;
-                    fprintf(stderr, "med_player:     Waveform %d: offset=0x%X (instr+0x%X, file_size=0x%zX)\n",
-                            w, wf_offset, wf_offset_rel, player->file_size);
+                    // fprintf(stderr, "med_player:     Waveform %d: offset=0x%X (instr+0x%X, file_size=0x%zX)\n",
+                    //         w, wf_offset, wf_offset_rel, player->file_size);
 
                     const uint8_t* waveform_data = read_ptr(base, wf_offset);
                     if (!waveform_data || waveform_data + 2 > base + player->file_size) {
-                        fprintf(stderr, "med_player:     Waveform %d: invalid data pointer (waveform_data=%p, base=%p)\n", w, (void*)waveform_data, (void*)base);
+                        // fprintf(stderr, "med_player:     Waveform %d: invalid data pointer (waveform_data=%p, base=%p)\n", w, (void*)waveform_data, (void*)base);
                         continue;
                     }
 
@@ -987,7 +987,7 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                     waveform_data += 2;
 
                     if (waveform_data + wf_len > base + player->file_size) {
-                        fprintf(stderr, "med_player:     Waveform %d: out of bounds (needs %u bytes)\n", w, wf_len);
+                        // fprintf(stderr, "med_player:     Waveform %d: out of bounds (needs %u bytes)\n", w, wf_len);
                         continue;
                     }
 
@@ -996,9 +996,9 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                     if (synth->waveforms[w]) {
                         memcpy(synth->waveforms[w], waveform_data, wf_len);
                         synth->waveform_lengths[w] = wf_len;
-                        fprintf(stderr, "med_player:     Waveform %d: %u bytes (offset 0x%X)\n", w, wf_len, wf_offset);
+                        // fprintf(stderr, "med_player:     Waveform %d: %u bytes (offset 0x%X)\n", w, wf_len, wf_offset);
                     } else {
-                        fprintf(stderr, "med_player:     Waveform %d: malloc failed\n", w);
+                        // fprintf(stderr, "med_player:     Waveform %d: malloc failed\n", w);
                     }
                 }
 
@@ -1027,8 +1027,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 }
 
                 samples_loaded++;
-                fprintf(stderr, "med_player:   ✓ Loaded %s instrument %d (vol=%d, transpose=%d, waveforms=%d)\n",
-                        type == INSTR_TYPE_SYNTHETIC ? "SYNTHETIC" : "HYBRID", i+1, svol, strans, synth->num_waveforms);
+                // fprintf(stderr, "med_player:   ✓ Loaded %s instrument %d (vol=%d, transpose=%d, waveforms=%d)\n",
+                //         type == INSTR_TYPE_SYNTHETIC ? "SYNTHETIC" : "HYBRID", i+1, svol, strans, synth->num_waveforms);
                 continue;
             }
 #endif
@@ -1085,8 +1085,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 player->samples[i].is_stereo = (instr_flags & INSTR_FLAG_STEREO) != 0;
                 player->samples[i].is_16bit = (instr_flags & INSTR_FLAG_16BIT) != 0;
 
-                fprintf(stderr, "med_player:   Sample %d: len=%u, vol=%d, repeat=%u/%u, 16bit=%d, stereo=%d\n",
-                        i+1, length, player->samples[i].volume, long_repeat, long_replen, is_16bit, is_stereo);
+                // fprintf(stderr, "med_player:   Sample %d: len=%u, vol=%d, repeat=%u/%u, 16bit=%d, stereo=%d\n",
+                //         i+1, length, player->samples[i].volume, long_repeat, long_replen, is_16bit, is_stereo);
 
                 samples_loaded++;
                 // fprintf(stderr, "med_player:   ✓ Loaded sample %d (%u bytes)\n", i, length);
@@ -1130,14 +1130,14 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 player->samples[i].is_stereo = is_stereo;
                 player->samples[i].is_16bit = is_16bit;
 
-                fprintf(stderr, "med_player:   Sample %d (old): len=%u, vol=%d, transpose=%d, repeat=%u/%u\n",
-                        i+1, length, svol, strans, player->samples[i].repeat_start, player->samples[i].repeat_length);
+                // fprintf(stderr, "med_player:   Sample %d (old): len=%u, vol=%d, transpose=%d, repeat=%u/%u\n",
+                //         i+1, length, svol, strans, player->samples[i].repeat_start, player->samples[i].repeat_length);
 
                 samples_loaded++;
             } else {
                 // Unknown/unsupported sample type
-                fprintf(stderr, "med_player:   WARNING: Skipping unsupported sample type %d (masked=%d) for sample %d\n",
-                        type, masked_type, i);
+                // fprintf(stderr, "med_player:   WARNING: Skipping unsupported sample type %d (masked=%d) for sample %d\n",
+                //         type, masked_type, i);
             }
         }
     }

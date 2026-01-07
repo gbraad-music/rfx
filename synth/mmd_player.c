@@ -1682,14 +1682,18 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
 // Get position
 void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint8_t* out_row) {
     if (!player) return;
-    if (out_pattern) *out_pattern = player->current_pattern;
+    if (out_pattern) *out_pattern = player->current_order;  // Return order index, not pattern number (to match MOD player behavior)
     if (out_row) *out_row = player->current_row;
 }
 
 // Set position
 void med_player_set_position(MedPlayer* player, uint8_t pattern, uint8_t row) {
     if (!player) return;
-    player->current_pattern = pattern;
+    // Pattern parameter is actually order index (to match MOD player behavior)
+    player->current_order = pattern;
+    if (player->play_seq && player->current_order < player->song_length) {
+        player->current_pattern = player->play_seq[player->current_order];
+    }
     player->current_row = row;
     player->tick = 0;
 }

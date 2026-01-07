@@ -91,7 +91,7 @@ typedef struct {
     bool has_looped;
 } LoopTracker;
 
-void position_callback(uint8_t order, uint8_t pattern, uint8_t row, void* user_data) {
+void position_callback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data) {
     LoopTracker* tracker = (LoopTracker*)user_data;
 
     // Detect loop: when order jumps backwards
@@ -297,7 +297,8 @@ void print_info(MedPlayer* player) {
 }
 
 void print_status(MedPlayer* player, bool playing) {
-    uint8_t pattern, row;
+    uint8_t pattern;
+    uint16_t row;
     med_player_get_position(player, &pattern, &row);
 
     printf("\r[%s] Pattern: %3d  Row: %2d  | Ch: ",

@@ -16,8 +16,9 @@ VPATH += ../../synth
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
 
-# Add MOD player C files
+# Add MOD and MED player C files
 SOURCES += ../../synth/mod_player.c
+SOURCES += ../../synth/mmd_player.c
 
 # Add dependencies
 DISTRIBUTABLES += res

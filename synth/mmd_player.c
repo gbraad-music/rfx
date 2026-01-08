@@ -18,6 +18,7 @@
 #include "synth_oscillator.h"
 #include "synth_envelope.h"
 #include "synth_lfo.h"
+#include "wavetable.h"
 #endif
 
 // Endianness conversion (MMD files are big-endian)
@@ -178,8 +179,8 @@ typedef struct {
     uint16_t env_counter;     // Envelope tick counter
     float env_volume;         // Envelope volume multiplier (0.0-1.0)
 
-    // Phase tracking for wavetable playback
-    float phase;  // 0.0 to 1.0
+    // Wavetable oscillator for playback
+    WavetableOscillator wavetable_osc;
 } SynthInstrument;
 #endif
 
@@ -482,22 +483,22 @@ static float synth_instrument_process(SynthInstrument* synth, float freq, float 
         }
 
         if (wf_idx < synth->num_waveforms && synth->waveforms[wf_idx]) {
-            // Generate sample from current waveform
+            // Generate sample from current waveform using shared wavetable component
             int8_t* waveform = synth->waveforms[wf_idx];
             uint16_t wf_len = synth->waveform_lengths[wf_idx];
 
-            // Wavetable playback with linear interpolation for smooth output
-            float phase_pos = synth->phase * wf_len;
-            int pos1 = (int)phase_pos % wf_len;
-            int pos2 = (pos1 + 1) % wf_len;
-            float frac = phase_pos - (int)phase_pos;
-
-            float samp1 = waveform[pos1] / 128.0f;
-            float samp2 = waveform[pos2] / 128.0f;
-            sample = samp1 + (samp2 - samp1) * frac;
+            // Set frequency and process
+            wavetable_set_frequency(&synth->wavetable_osc, freq, sample_rate);
+            sample = wavetable_process_int8(&synth->wavetable_osc, waveform, wf_len);
         } else {
             // No waveforms available - use built-in saw
-            sample = builtin_waveform(0, synth->phase);
+            sample = builtin_waveform(0, wavetable_get_phase(&synth->wavetable_osc));
+            // Manually advance phase for built-in waveforms
+            float phase_inc = freq / sample_rate;
+            synth->wavetable_osc.phase += phase_inc;
+            if (synth->wavetable_osc.phase >= 1.0f) {
+                synth->wavetable_osc.phase -= (int)synth->wavetable_osc.phase;
+            }
         }
     } else {
         // Use built-in waveforms
@@ -515,14 +516,14 @@ static float synth_instrument_process(SynthInstrument* synth, float freq, float 
             // Default to sine for unknown waveforms
             waveform_type = 2;
         }
-        sample = builtin_waveform(waveform_type, synth->phase);
-    }
+        sample = builtin_waveform(waveform_type, wavetable_get_phase(&synth->wavetable_osc));
 
-    // Advance phase
-    float phase_inc = freq / sample_rate;
-    synth->phase += phase_inc;
-    if (synth->phase >= 1.0f) {
-        synth->phase -= (int)synth->phase;  // Keep fractional part
+        // Advance phase for built-in waveforms
+        float phase_inc = freq / sample_rate;
+        synth->wavetable_osc.phase += phase_inc;
+        if (synth->wavetable_osc.phase >= 1.0f) {
+            synth->wavetable_osc.phase -= (int)synth->wavetable_osc.phase;
+        }
     }
 
     // Apply volume (OctaMED synth volumes are 0-127)
@@ -936,8 +937,8 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
 
                 // fprintf(stderr, "med_player:   Envelope: hold=%u, decay=%u\n", hold, decay);
 
-                // Initialize phase for wavetable playback
-                synth->phase = 0.0f;
+                // Initialize wavetable oscillator
+                wavetable_init(&synth->wavetable_osc);
 
                 // Load waveforms (pointer array follows variable-length script tables)
                 // MMDSynthInstr header is 16 bytes, then vol_table_len bytes, then wave_table_len bytes

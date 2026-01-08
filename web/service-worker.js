@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v79';
+const CACHE_NAME = 'rfx-effects-v86';
 const ASSETS = [
     './',
     './index.html',
@@ -17,6 +17,9 @@ const ASSETS = [
     './pad-knob.js',
     './svg-slider.js',
     './fader-components.js',
+    // MOD/MED Player
+    './players/modmed-player.js',
+    './players/modmed-player.wasm',
     // Synth test page dependencies
     './external/midi-rtc/midi-codec.js',
     './external/midi-rtc/midi-utils.js',

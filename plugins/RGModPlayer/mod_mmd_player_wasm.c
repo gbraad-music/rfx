@@ -274,7 +274,12 @@ int modmed_player_get_song_length(const ModMedPlayer* player) {
 EMSCRIPTEN_KEEPALIVE
 int modmed_player_get_num_channels(const ModMedPlayer* player) {
     if (!player) return 0;
-    return 4;  // Both MOD and MED expose 4 channels for simplicity
+    if (player->type == PLAYER_TYPE_MOD) {
+        return 4;  // MOD files are always 4 channels
+    } else if (player->type == PLAYER_TYPE_MED) {
+        return med_player_get_num_channels(player->med_player);  // MED: 4-64 channels
+    }
+    return 0;
 }
 
 EMSCRIPTEN_KEEPALIVE

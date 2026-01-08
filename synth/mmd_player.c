@@ -1767,3 +1767,8 @@ void med_player_set_disable_looping(MedPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
 }
+
+uint8_t med_player_get_num_channels(const MedPlayer* player) {
+    if (!player) return 0;
+    return player->num_tracks;
+}

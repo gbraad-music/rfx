@@ -23,6 +23,13 @@ class AudioEffectsProcessor {
         this.mediaElementSource = null;
         this.audioElement = null;
         this.isStreaming = false;
+
+        // MOD/MED player
+        this.modMedModule = null;
+        this.modMedPlayer = null;
+        this.modMedScriptNode = null;
+        this.isModMedPlaying = false;
+        this.modMedAnimationFrame = null;
     }
 
     async init() {
@@ -108,6 +115,28 @@ class AudioEffectsProcessor {
 
         console.log('🎉 COMPLETE!');
         console.log('🔊 Audio: Source → WASM → Master Gain → Speakers');
+    }
+
+    async initModMedPlayer() {
+        console.log('📡 Loading MOD/MED Player WASM...');
+
+        try {
+            const createModMedPlayerModule = await import('./players/modmed-player.js').then(m => m.default);
+            this.modMedModule = await createModMedPlayerModule();
+
+            console.log('Module keys:', Object.keys(this.modMedModule).filter(k => !k.startsWith('_')));
+            console.log('Has HEAPU8:', !!this.modMedModule.HEAPU8);
+            console.log('Has wasmMemory:', !!this.modMedModule.wasmMemory);
+            console.log('Has _malloc:', typeof this.modMedModule._malloc);
+
+            this.modMedPlayer = this.modMedModule._modmed_player_create(this.audioContext.sampleRate);
+
+            console.log('✅ MOD/MED Player ready!');
+            return true;
+        } catch (error) {
+            console.warn('⚠️ MOD/MED Player not available:', error.message);
+            return false;
+        }
     }
 
     async enumerateDevices() {
@@ -263,6 +292,13 @@ class AudioEffectsProcessor {
     async loadAudioFile(file) {
         console.log(`📂 Loading: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
+        // Check if it's a MOD/MED file
+        const ext = file.name.toLowerCase().split('.').pop();
+        if (ext === 'mod' || ext === 'med' || ext === 'mmd' || ext === 'mmd2' || ext === 'mmd3') {
+            await this.loadModMedFile(file);
+            return;
+        }
+
         this.cleanupAudioElement();
 
         this.audioElement = new Audio();
@@ -361,6 +397,248 @@ class AudioEffectsProcessor {
         document.title = 'Regroove Effects Tester';
     }
 
+    async loadModMedFile(file) {
+        console.log(`🎵 Loading MOD/MED file: ${file.name}`);
+
+        // Initialize WASM player if not already done
+        if (!this.modMedModule) {
+            const success = await this.initModMedPlayer();
+            if (!success) {
+                console.error('❌ Failed to initialize MOD/MED player');
+                return;
+            }
+        }
+
+        // Clean up any existing playback
+        this.cleanupAudioElement();
+        this.cleanupModMedPlayer();
+
+        // Read file data
+        const arrayBuffer = await file.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+
+        // Get memory buffer (try wasmMemory first, then HEAPU8)
+        const memoryBuffer = this.modMedModule.wasmMemory ? this.modMedModule.wasmMemory.buffer : this.modMedModule.HEAPU8.buffer;
+
+        // Allocate memory in WASM and copy file data
+        const dataPtr = this.modMedModule._malloc(uint8Array.length);
+        const heap = new Uint8Array(memoryBuffer);
+        heap.set(uint8Array, dataPtr);
+
+        // Allocate filename string
+        const filenameBytes = new TextEncoder().encode(file.name + '\0');
+        const filenamePtr = this.modMedModule._malloc(filenameBytes.length);
+        heap.set(filenameBytes, filenamePtr);
+
+        // Load into player
+        console.log(`Loading ${uint8Array.length} bytes at ptr 0x${dataPtr.toString(16)}`);
+        const success = this.modMedModule._modmed_player_load_from_memory(
+            this.modMedPlayer,
+            dataPtr,
+            uint8Array.length,
+            filenamePtr
+        );
+
+        console.log('Load result:', success);
+
+        // Free temporary memory
+        this.modMedModule._free(dataPtr);
+        this.modMedModule._free(filenamePtr);
+
+        if (!success) {
+            console.error('❌ Failed to load MOD/MED file');
+            return;
+        }
+
+        // Get file info
+        const typeNamePtr = this.modMedModule._modmed_player_get_type_name(this.modMedPlayer);
+        let typeName = '';
+        if (typeNamePtr) {
+            const heap8 = new Uint8Array(memoryBuffer);
+            const typeNameBytes = [];
+            let i = 0;
+            while (heap8[typeNamePtr + i] !== 0) {
+                typeNameBytes.push(heap8[typeNamePtr + i]);
+                i++;
+            }
+            typeName = new TextDecoder().decode(new Uint8Array(typeNameBytes));
+        }
+        const numChannels = this.modMedModule._modmed_player_get_num_channels(this.modMedPlayer);
+        const songLength = this.modMedModule._modmed_player_get_song_length(this.modMedPlayer);
+
+        console.log(`✅ Loaded ${typeName}: ${file.name}`);
+        console.log(`   Channels: ${numChannels}, Song length: ${songLength} patterns`);
+
+        // Update UI
+        document.getElementById('modmedTypeName').textContent = `${typeName}: ${file.name}`;
+        document.getElementById('audioSourceInfo').style.display = 'block';
+        document.getElementById('micDeviceList').style.display = 'none';
+        document.getElementById('currentFileName').style.display = 'none';
+
+        // Show MOD/MED controls
+        document.getElementById('modmedControls').style.display = 'block';
+
+        // Create channel mute buttons
+        const channelMutesContainer = document.getElementById('modmedChannelMutes');
+        channelMutesContainer.innerHTML = '';
+        for (let i = 0; i < numChannels; i++) {
+            const button = document.createElement('button');
+            button.className = 'modmed-channel-button';
+            button.textContent = `CH ${i + 1}`;
+            button.dataset.channel = i;
+            button.onclick = () => {
+                const muted = this.modMedModule._modmed_player_get_channel_mute(this.modMedPlayer, i);
+                this.modMedModule._modmed_player_set_channel_mute(this.modMedPlayer, i, muted ? 0 : 1);
+                button.classList.toggle('muted', !muted);
+            };
+            channelMutesContainer.appendChild(button);
+        }
+
+        // Wire up pattern navigation buttons
+        document.getElementById('modmedPrevPattern').onclick = () => {
+            this.modMedModule._modmed_player_prev_pattern(this.modMedPlayer);
+        };
+        document.getElementById('modmedNextPattern').onclick = () => {
+            this.modMedModule._modmed_player_next_pattern(this.modMedPlayer);
+        };
+
+        let loopPattern = false;
+        document.getElementById('modmedLoopPattern').onclick = () => {
+            loopPattern = !loopPattern;
+            this.modMedModule._modmed_player_set_loop_pattern(this.modMedPlayer, loopPattern ? 1 : 0);
+            document.getElementById('modmedLoopPattern').style.color = loopPattern ? '#0066FF' : '';
+        };
+
+        // Create audio processing node
+        const bufferSize = 4096;
+        this.modMedScriptNode = this.audioContext.createScriptProcessor(bufferSize, 0, 2);
+
+        const audioBufferPtr = this.modMedModule._modmed_create_audio_buffer(bufferSize);
+
+        // Zero the buffer initially
+        const memBuf = this.modMedModule.wasmMemory ? this.modMedModule.wasmMemory.buffer : this.modMedModule.HEAPU8.buffer;
+        const initialBuffer = new Float32Array(memBuf, audioBufferPtr, bufferSize * 2);
+        initialBuffer.fill(0);
+
+        this.modMedScriptNode.onaudioprocess = (e) => {
+            const leftOut = e.outputBuffer.getChannelData(0);
+            const rightOut = e.outputBuffer.getChannelData(1);
+            const actualBufferSize = leftOut.length;
+
+            if (!this.isModMedPlaying) {
+                // Output silence if not playing
+                leftOut.fill(0);
+                rightOut.fill(0);
+                return;
+            }
+
+            // Get fresh memory buffer reference
+            const currentMemBuffer = this.modMedModule.wasmMemory ? this.modMedModule.wasmMemory.buffer : this.modMedModule.HEAPU8.buffer;
+
+            // Generate audio from WASM player
+            this.modMedModule._modmed_player_process_f32(
+                this.modMedPlayer,
+                audioBufferPtr,
+                actualBufferSize,
+                this.audioContext.sampleRate
+            );
+
+            // Copy planar stereo data to output buffers
+            // C outputs: LEFT in first half, RIGHT in second half
+            const audioData = new Float32Array(
+                currentMemBuffer,
+                audioBufferPtr,
+                actualBufferSize * 2
+            );
+
+            // Copy planar data directly
+            for (let i = 0; i < actualBufferSize; i++) {
+                leftOut[i] = audioData[i];                    // First half = LEFT
+                rightOut[i] = audioData[actualBufferSize + i]; // Second half = RIGHT
+            }
+        };
+
+        // Connect to audio graph
+        this.modMedScriptNode.connect(this.workletNode);
+
+        // Start UI update loop
+        this.updateModMedUI();
+
+        // Update page title
+        document.title = `RFX: ${file.name}`;
+
+        // Enable play button
+        updatePlaybackButtons();
+
+        console.log('✅ MOD/MED player ready');
+    }
+
+    cleanupModMedPlayer() {
+        // Stop playback
+        if (this.isModMedPlaying) {
+            this.stopModMed();
+        }
+
+        // Cancel animation frame
+        if (this.modMedAnimationFrame) {
+            cancelAnimationFrame(this.modMedAnimationFrame);
+            this.modMedAnimationFrame = null;
+        }
+
+        // Disconnect audio node
+        if (this.modMedScriptNode) {
+            this.modMedScriptNode.disconnect();
+            this.modMedScriptNode = null;
+        }
+
+        // Hide UI
+        const modmedControls = document.getElementById('modmedControls');
+        if (modmedControls) {
+            modmedControls.style.display = 'none';
+        }
+    }
+
+    playModMed() {
+        if (!this.modMedPlayer) return;
+
+        this.modMedModule._modmed_player_start(this.modMedPlayer);
+        this.isModMedPlaying = true;
+        this.isPlaying = true;
+        console.log('▶️ MOD/MED playback started');
+    }
+
+    stopModMed() {
+        if (!this.modMedPlayer) return;
+
+        this.modMedModule._modmed_player_stop(this.modMedPlayer);
+        this.isModMedPlaying = false;
+        this.isPlaying = false;
+        console.log('⏹ MOD/MED playback stopped');
+    }
+
+    updateModMedUI() {
+        if (!this.modMedPlayer || !this.isModMedPlaying) {
+            // Schedule next update even if not playing (for UI responsiveness)
+            if (this.modMedPlayer) {
+                this.modMedAnimationFrame = requestAnimationFrame(() => this.updateModMedUI());
+            }
+            return;
+        }
+
+        // Get current position
+        const order = this.modMedModule._modmed_player_get_current_order(this.modMedPlayer);
+        const row = this.modMedModule._modmed_player_get_current_row(this.modMedPlayer);
+        const bpm = this.modMedModule._modmed_player_get_bpm(this.modMedPlayer);
+
+        // Update display
+        document.getElementById('modmedOrderPos').textContent = order.toString().padStart(2, '0');
+        document.getElementById('modmedRowPos').textContent = row.toString().padStart(3, '0');
+        document.getElementById('modmedBpm').textContent = bpm.toString().padStart(3, ' ');
+
+        // Schedule next update
+        this.modMedAnimationFrame = requestAnimationFrame(() => this.updateModMedUI());
+    }
+
     async startMicrophone() {
         // Stop any playing audio first
         if (this.sourceNode && this.sourceNode.stop) {
@@ -442,6 +720,13 @@ class AudioEffectsProcessor {
     pause() {
         if (!this.isPlaying) return;
 
+        // Handle MOD/MED playback
+        if (this.modMedPlayer && this.isModMedPlaying) {
+            this.stopModMed();
+            console.log('⏸ Paused (MOD/MED)');
+            return;
+        }
+
         if (this.isStreaming && this.audioElement) {
             // Pause streaming audio
             this.audioElement.pause();
@@ -457,6 +742,13 @@ class AudioEffectsProcessor {
 
     async resume() {
         if (this.isPlaying) return;
+
+        // Handle MOD/MED playback
+        if (this.modMedPlayer && this.modMedScriptNode) {
+            this.playModMed();
+            console.log('▶️ Resumed (MOD/MED)');
+            return;
+        }
 
         if (this.isStreaming && this.audioElement) {
             // Resume streaming audio
@@ -491,6 +783,12 @@ class AudioEffectsProcessor {
         if (this.audioContext.state !== 'running') {
             await this.audioContext.resume();
             console.log('✅ AudioContext resumed');
+        }
+
+        // Handle MOD/MED playback
+        if (this.modMedPlayer && this.modMedScriptNode) {
+            this.playModMed();
+            return;
         }
 
         if (this.isStreaming && this.audioElement) {
@@ -584,9 +882,15 @@ class AudioEffectsProcessor {
     }
 
     stop() {
+        // Handle MOD/MED playback
+        if (this.modMedPlayer && this.isModMedPlaying) {
+            this.stopModMed();
+            return;
+        }
+
         // Clean up audio file/stream
         this.cleanupAudioElement();
-        
+
         if (this.sourceNode && this.sourceNode.stop) {
             try {
                 // Create a fade-out gain node
@@ -1420,7 +1724,7 @@ function drawVisualizer() {
 }
 
 function updatePlaybackButtons() {
-    const hasAudio = processor.audioBuffer !== null || processor.isStreaming;
+    const hasAudio = processor.audioBuffer !== null || processor.isStreaming || processor.modMedPlayer;
     const playBtn = document.getElementById('playBtn');
     const stopBtn = document.getElementById('stopBtn');
 

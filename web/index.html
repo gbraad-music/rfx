@@ -12,7 +12,7 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg">
     <link rel="icon" type="image/png" sizes="96x96" href="./favicon-96x96.png">
     <link rel="apple-touch-icon" href="./apple-touch-icon.png">
-    <title>Regroove Effects Tester</title>
+    <title>Regroove Player</title>
     <style>
         :root {
             --bg-primary: #0a0a0a;
@@ -299,6 +299,62 @@
             width: 100%;
         }
 
+        /* MOD/MED Player button styles */
+        .modmed-button {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 8px 16px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .modmed-button:hover {
+            background: var(--bg-secondary);
+            border-color: #0066FF;
+        }
+
+        .modmed-button:active {
+            transform: scale(0.95);
+        }
+
+        /* Channel mute button states (matching RegrooveMod colors) */
+        .modmed-channel-button {
+            background: var(--bg-tertiary);
+            border: 2px solid #00FF00;  /* GREEN = unmuted */
+            color: var(--text-primary);
+            padding: 10px 20px;
+            font-size: 0.85em;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            min-width: 60px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+
+        .modmed-channel-button:hover {
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.5);
+        }
+
+        .modmed-channel-button.muted {
+            border-color: #FF0000;  /* RED = muted */
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.3);
+        }
+
+        .modmed-channel-button.muted:hover {
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.5);
+        }
+
+        .modmed-channel-button:active {
+            transform: scale(0.95);
+        }
+
         @media (max-width: 768px) {
             h1 {
                 font-size: 1.5em;
@@ -380,7 +436,7 @@
                 <div class="controls-grid">
                     <div class="file-input">
                         <button>📁 Load File</button>
-                        <input type="file" id="audioFile" accept="audio/*">
+                        <input type="file" id="audioFile" accept="audio/*,.mod,.med,.mmd,.mmd2,.mmd3">
                     </div>
 
                     <button id="micBtn">🎤 Input/Mic</button>
@@ -455,6 +511,46 @@
                     <select id="outputDeviceList" style="width: 120px; font-size: 0.6em; padding: 4px 6px;">
                         <option value="">Default Output</option>
                     </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- MOD/MED Player Controls -->
+        <div id="modmedControls" class="control-section" style="display: none;">
+            <div class="section-title">MOD/MED Player</div>
+
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center; justify-content: center;">
+                <!-- File info -->
+                <div id="modmedFileInfo" style="flex: 1 0 100%; text-align: center; color: var(--text-secondary); font-size: 0.85em; margin-bottom: 10px;">
+                    <span id="modmedTypeName" style="color: #0066FF;">No file loaded</span>
+                </div>
+
+                <!-- Position display -->
+                <div style="flex: 0 0 auto; display: flex; gap: 10px; font-family: monospace; font-size: 0.9em;">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">ORDER</span>
+                        <span id="modmedOrderPos" style="color: var(--text-primary); font-weight: bold; min-width: 2ch;">00</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">ROW</span>
+                        <span id="modmedRowPos" style="color: var(--text-primary); font-weight: bold; min-width: 3ch;">000</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">BPM</span>
+                        <span id="modmedBpm" style="color: var(--text-primary); font-weight: bold; min-width: 3ch;">125</span>
+                    </div>
+                </div>
+
+                <!-- Pattern navigation -->
+                <div style="flex: 0 0 auto; display: flex; gap: 6px;">
+                    <button id="modmedPrevPattern" class="modmed-button" title="Previous Pattern">◄</button>
+                    <button id="modmedNextPattern" class="modmed-button" title="Next Pattern">►</button>
+                    <button id="modmedLoopPattern" class="modmed-button" title="Loop Current Pattern">⟲</button>
+                </div>
+
+                <!-- Channel mute buttons (will be populated dynamically based on file channels) -->
+                <div id="modmedChannelMutes" style="display: flex; gap: 6px; justify-content: center; margin-top: 10px;">
+                    <!-- Buttons added dynamically -->
                 </div>
             </div>
         </div>

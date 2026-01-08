@@ -28,7 +28,7 @@ BUILD_CXX_FLAGS += -I.. -I../.. -I../../synth
 ifeq ($(WINDOWS),true)
 BUILD_C_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
 BUILD_CXX_FLAGS += -fno-builtin-pow -fno-builtin-powf -fno-builtin-exp2f
-LINK_FLAGS += -static-libgcc -static-libstdc++ -lopengl32 -lgdi32
+LINK_FLAGS += -static-libgcc -static-libstdc++ -lopengl32 -lgdi32 -Wl,--defsym,__ImageBase=0
 else
 LINK_FLAGS += -lGL
 endif

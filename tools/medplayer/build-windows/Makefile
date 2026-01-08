@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /mnt/c/Users/gbraad/Projects/rfx/tools/medplayer
+CMAKE_SOURCE_DIR = /home/gbraad/Projects/rfx/tools/medplayer
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /mnt/c/Users/gbraad/Projects/rfx/tools/medplayer/build-windows
+CMAKE_BINARY_DIR = /home/gbraad/Projects/rfx/tools/medplayer/build-windows
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -132,9 +132,9 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gbraad/Projects/rfx/tools/medplayer/build-windows/CMakeFiles /mnt/c/Users/gbraad/Projects/rfx/tools/medplayer/build-windows//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gbraad/Projects/rfx/tools/medplayer/build-windows/CMakeFiles /home/gbraad/Projects/rfx/tools/medplayer/build-windows//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /mnt/c/Users/gbraad/Projects/rfx/tools/medplayer/build-windows/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/gbraad/Projects/rfx/tools/medplayer/build-windows/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -174,6 +174,102 @@ med_player_synth/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/build
 .PHONY : med_player_synth/fast
 
+home/gbraad/Projects/rfx/synth/mmd_player.obj: home/gbraad/Projects/rfx/synth/mmd_player.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/mmd_player.obj
+
+# target to build an object file
+home/gbraad/Projects/rfx/synth/mmd_player.c.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/mmd_player.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/mmd_player.c.obj
+
+home/gbraad/Projects/rfx/synth/mmd_player.i: home/gbraad/Projects/rfx/synth/mmd_player.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/mmd_player.i
+
+# target to preprocess a source file
+home/gbraad/Projects/rfx/synth/mmd_player.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/mmd_player.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/mmd_player.c.i
+
+home/gbraad/Projects/rfx/synth/mmd_player.s: home/gbraad/Projects/rfx/synth/mmd_player.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/mmd_player.s
+
+# target to generate assembly for a file
+home/gbraad/Projects/rfx/synth/mmd_player.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/mmd_player.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/mmd_player.c.s
+
+home/gbraad/Projects/rfx/synth/synth_envelope.obj: home/gbraad/Projects/rfx/synth/synth_envelope.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/synth_envelope.obj
+
+# target to build an object file
+home/gbraad/Projects/rfx/synth/synth_envelope.c.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_envelope.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/synth_envelope.c.obj
+
+home/gbraad/Projects/rfx/synth/synth_envelope.i: home/gbraad/Projects/rfx/synth/synth_envelope.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/synth_envelope.i
+
+# target to preprocess a source file
+home/gbraad/Projects/rfx/synth/synth_envelope.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_envelope.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/synth_envelope.c.i
+
+home/gbraad/Projects/rfx/synth/synth_envelope.s: home/gbraad/Projects/rfx/synth/synth_envelope.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/synth_envelope.s
+
+# target to generate assembly for a file
+home/gbraad/Projects/rfx/synth/synth_envelope.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_envelope.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/synth_envelope.c.s
+
+home/gbraad/Projects/rfx/synth/synth_lfo.obj: home/gbraad/Projects/rfx/synth/synth_lfo.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/synth_lfo.obj
+
+# target to build an object file
+home/gbraad/Projects/rfx/synth/synth_lfo.c.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_lfo.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/synth_lfo.c.obj
+
+home/gbraad/Projects/rfx/synth/synth_lfo.i: home/gbraad/Projects/rfx/synth/synth_lfo.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/synth_lfo.i
+
+# target to preprocess a source file
+home/gbraad/Projects/rfx/synth/synth_lfo.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_lfo.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/synth_lfo.c.i
+
+home/gbraad/Projects/rfx/synth/synth_lfo.s: home/gbraad/Projects/rfx/synth/synth_lfo.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/synth_lfo.s
+
+# target to generate assembly for a file
+home/gbraad/Projects/rfx/synth/synth_lfo.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_lfo.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/synth_lfo.c.s
+
+home/gbraad/Projects/rfx/synth/synth_oscillator.obj: home/gbraad/Projects/rfx/synth/synth_oscillator.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/synth_oscillator.obj
+
+# target to build an object file
+home/gbraad/Projects/rfx/synth/synth_oscillator.c.obj:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_oscillator.c.obj
+.PHONY : home/gbraad/Projects/rfx/synth/synth_oscillator.c.obj
+
+home/gbraad/Projects/rfx/synth/synth_oscillator.i: home/gbraad/Projects/rfx/synth/synth_oscillator.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/synth_oscillator.i
+
+# target to preprocess a source file
+home/gbraad/Projects/rfx/synth/synth_oscillator.c.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_oscillator.c.i
+.PHONY : home/gbraad/Projects/rfx/synth/synth_oscillator.c.i
+
+home/gbraad/Projects/rfx/synth/synth_oscillator.s: home/gbraad/Projects/rfx/synth/synth_oscillator.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/synth_oscillator.s
+
+# target to generate assembly for a file
+home/gbraad/Projects/rfx/synth/synth_oscillator.c.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/home/gbraad/Projects/rfx/synth/synth_oscillator.c.s
+.PHONY : home/gbraad/Projects/rfx/synth/synth_oscillator.c.s
+
 med_player_test.obj: med_player_test.c.obj
 .PHONY : med_player_test.obj
 
@@ -198,102 +294,6 @@ med_player_test.c.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/med_player_test.c.s
 .PHONY : med_player_test.c.s
 
-mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.obj: mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.obj
-
-# target to build an object file
-mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.obj:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.obj
-
-mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.i: mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.i
-
-# target to preprocess a source file
-mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.i
-
-mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.s: mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.s
-
-# target to generate assembly for a file
-mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.c.s
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.obj: mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.obj
-
-# target to build an object file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.obj:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.obj
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.i: mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.i
-
-# target to preprocess a source file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.i
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.s: mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.s
-
-# target to generate assembly for a file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.c.s
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.obj: mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.obj
-
-# target to build an object file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.obj:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.obj
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.i: mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.i
-
-# target to preprocess a source file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.i
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.s: mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.s
-
-# target to generate assembly for a file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.c.s
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.obj: mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.obj
-
-# target to build an object file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.obj:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.obj
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.obj
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.i: mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.i
-
-# target to preprocess a source file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.i
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.i
-
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.s: mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.s
-
-# target to generate assembly for a file
-mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/med_player_synth.dir/build.make CMakeFiles/med_player_synth.dir/mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.s
-.PHONY : mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.c.s
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -307,21 +307,21 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... med_player_synth"
+	@echo "... home/gbraad/Projects/rfx/synth/mmd_player.obj"
+	@echo "... home/gbraad/Projects/rfx/synth/mmd_player.i"
+	@echo "... home/gbraad/Projects/rfx/synth/mmd_player.s"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_envelope.obj"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_envelope.i"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_envelope.s"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_lfo.obj"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_lfo.i"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_lfo.s"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_oscillator.obj"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_oscillator.i"
+	@echo "... home/gbraad/Projects/rfx/synth/synth_oscillator.s"
 	@echo "... med_player_test.obj"
 	@echo "... med_player_test.i"
 	@echo "... med_player_test.s"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.obj"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.i"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/mmd_player.s"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.obj"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.i"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_envelope.s"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.obj"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.i"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_lfo.s"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.obj"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.i"
-	@echo "... mnt/c/Users/gbraad/Projects/rfx/synth/synth_oscillator.s"
 .PHONY : help
 
 

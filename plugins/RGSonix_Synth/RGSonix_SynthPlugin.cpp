@@ -1,6 +1,7 @@
 #include "DistrhoPlugin.hpp"
 #include "../../synth/synth_envelope.h"
 #include "../../synth/synth_voice_manager.h"
+#include "../../synth/wavetable.h"
 #include <cstring>
 #include <cmath>
 
@@ -11,7 +12,7 @@ START_NAMESPACE_DISTRHO
 struct SonixOscillator {
     SynthEnvelope* amp_env;
     SynthEnvelope* pitch_env;
-    float phase;
+    WavetableOscillator wavetable_osc;
     int waveform_index;
     float level;
     float detune;
@@ -50,7 +51,7 @@ public:
             for (int o = 0; o < NUM_OSCILLATORS; o++) {
                 fVoices[v].oscillators[o].amp_env = synth_envelope_create();
                 fVoices[v].oscillators[o].pitch_env = synth_envelope_create();
-                fVoices[v].oscillators[o].phase = 0.0f;
+                wavetable_init(&fVoices[v].oscillators[o].wavetable_osc);
                 fVoices[v].oscillators[o].waveform_index = 0;
                 fVoices[v].oscillators[o].level = 0.0f;
                 fVoices[v].oscillators[o].detune = 0.0f;
@@ -391,7 +392,7 @@ private:
             voice->oscillators[o].level = fParameters[base + 1];
             voice->oscillators[o].detune = fParameters[base + 2];
             voice->oscillators[o].phase_offset = fParameters[base + 3];
-            voice->oscillators[o].phase = voice->oscillators[o].phase_offset * WAVETABLE_SIZE;
+            wavetable_reset_phase(&voice->oscillators[o].wavetable_osc, voice->oscillators[o].phase_offset);
 
             // Trigger amp envelope with velocity-modulated attack
             if (voice->oscillators[o].amp_env) {
@@ -466,9 +467,6 @@ private:
                 osc_freq *= powf(2.0f, voice->oscillators[o].detune / 12.0f);
                 osc_freq *= powf(2.0f, (pitch_env * fParameters[base_param + 10]) / 12.0f);
 
-                // Calculate phase increment
-                float phase_inc = (osc_freq / sampleRate) * WAVETABLE_SIZE;
-
                 // Waveform selection with velocity modulation
                 int wave_idx = voice->oscillators[o].waveform_index;
                 float vel_wave_mod = fParameters[kParameterVelToWave] * (voice->velocity / 127.0f);
@@ -476,20 +474,10 @@ private:
                 if (wave_idx < 0) wave_idx = 0;
                 if (wave_idx >= NUM_WAVEFORMS) wave_idx = NUM_WAVEFORMS - 1;
 
-                // Read from wavetable with linear interpolation
-                float int_part;
-                float frac = modff(voice->oscillators[o].phase, &int_part);
-                int idx1 = (int)int_part % WAVETABLE_SIZE;
-                int idx2 = (idx1 + 1) % WAVETABLE_SIZE;
-
-                float sample = fWaveforms[wave_idx][idx1] * (1.0f - frac) +
-                              fWaveforms[wave_idx][idx2] * frac;
-
-                // Advance phase
-                voice->oscillators[o].phase += phase_inc;
-                while (voice->oscillators[o].phase >= WAVETABLE_SIZE) {
-                    voice->oscillators[o].phase -= WAVETABLE_SIZE;
-                }
+                // Process wavetable using shared component
+                wavetable_set_frequency(&voice->oscillators[o].wavetable_osc, osc_freq, sampleRate);
+                float sample = wavetable_process_float(&voice->oscillators[o].wavetable_osc,
+                                                       fWaveforms[wave_idx], WAVETABLE_SIZE);
 
                 // Apply amplitude envelope and level
                 sample *= amp_env * voice->oscillators[o].level;

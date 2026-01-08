@@ -484,7 +484,7 @@ class AudioEffectsProcessor {
         for (let i = 0; i < numChannels; i++) {
             const button = document.createElement('button');
             button.className = 'modmed-channel-button';
-            button.textContent = `CH ${i + 1}`;
+            button.textContent = `${i + 1}`;
             button.dataset.channel = i;
             button.onclick = () => {
                 const muted = this.modMedModule._modmed_player_get_channel_mute(this.modMedPlayer, i);
@@ -506,7 +506,7 @@ class AudioEffectsProcessor {
         document.getElementById('modmedLoopPattern').onclick = () => {
             loopPattern = !loopPattern;
             this.modMedModule._modmed_player_set_loop_pattern(this.modMedPlayer, loopPattern ? 1 : 0);
-            document.getElementById('modmedLoopPattern').style.color = loopPattern ? '#0066FF' : '';
+            document.getElementById('modmedLoopPattern').classList.toggle('active', loopPattern);
         };
 
         // Create audio processing node
@@ -536,11 +536,17 @@ class AudioEffectsProcessor {
             const currentMemBuffer = this.modMedModule.wasmMemory ? this.modMedModule.wasmMemory.buffer : this.modMedModule.HEAPU8.buffer;
 
             // Generate audio from WASM player
+            // Apply tempo via pitch: pitch = 1.0 / playbackRate
+            // Lower pitch (< 1.0) = lower sample rate to player = faster playback
+            // Higher pitch (> 1.0) = higher sample rate to player = slower playback
+            const pitch = 1.0 / this.playbackRate;
+            const adjustedSampleRate = this.audioContext.sampleRate * pitch;
+
             this.modMedModule._modmed_player_process_f32(
                 this.modMedPlayer,
                 audioBufferPtr,
                 actualBufferSize,
-                this.audioContext.sampleRate
+                adjustedSampleRate
             );
 
             // Copy planar stereo data to output buffers

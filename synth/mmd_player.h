@@ -159,6 +159,13 @@ void med_player_set_loop_range(MedPlayer* player, uint16_t start_order, uint16_t
  */
 void med_player_set_disable_looping(MedPlayer* player, bool disable);
 
+/**
+ * Get number of channels/tracks in loaded song
+ * @param player Player instance
+ * @return Number of channels (4-64)
+ */
+uint8_t med_player_get_num_channels(const MedPlayer* player);
+
 #ifdef __cplusplus
 }
 #endif

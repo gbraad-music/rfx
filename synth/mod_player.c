@@ -193,10 +193,10 @@ ModPlayer* mod_player_create(void) {
     player->loop_end = 0;
 
     // Initialize channels with default panning (Amiga style)
-    player->channels[0].panning = -0.5f;  // Left
-    player->channels[1].panning = 0.5f;   // Right
-    player->channels[2].panning = 0.5f;   // Right
-    player->channels[3].panning = -0.5f;  // Left
+    player->channels[0].panning = -1.0f;  // Hard Left
+    player->channels[1].panning = 1.0f;   // Hard Right
+    player->channels[2].panning = 1.0f;   // Hard Right
+    player->channels[3].panning = -1.0f;  // Hard Left
 
     for (int i = 0; i < MOD_MAX_CHANNELS; i++) {
         player->channels[i].user_volume = 1.0f;

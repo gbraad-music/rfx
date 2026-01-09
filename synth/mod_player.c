@@ -99,6 +99,7 @@ struct ModPlayer {
     // Loop control
     uint8_t loop_start;
     uint8_t loop_end;
+    bool disable_looping;   // If true, stop playback instead of looping
 
     // Pattern loop (E6x effect)
     uint8_t pattern_loop_row;
@@ -227,6 +228,9 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     if (!player || !data) return false;
     if (!is_valid_mod(data, size)) return false;
 
+    // fprintf(stderr, "=== MOD PLAYER DEBUG OUTPUT ENABLED ===\n");
+    // fflush(stderr);
+
     // Parse title
     memcpy(player->title, data, MOD_TITLE_LENGTH);
     player->title[MOD_TITLE_LENGTH] = '\0';
@@ -263,6 +267,12 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
         sample->repeat_length = ((uint32_t)data[offset] << 8) | data[offset + 1];
         offset += 2;
 
+        // // Debug: show sample metadata for samples 14, 15, 20
+        // if (i == 13 || i == 14 || i == 19) {
+        //     fprintf(stderr, "[LOAD] Sample %d (index %d): len=%d words, vol=%d, loop_start=%d, loop_len=%d\n",
+        //             i + 1, i, sample->length, sample->volume, sample->repeat_start, sample->repeat_length);
+        // }
+
         sample->data = NULL;  // Will be loaded later
     }
 
@@ -273,9 +283,9 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     // Song positions (at offset 952, NOT 1082!)
     memcpy(player->song_positions, data + 952, 128);
 
-    // Find highest pattern number (only scan valid song positions!)
+    // Find highest pattern number - scan ALL 128 positions because file contains all patterns!
     player->num_patterns = 0;
-    for (int i = 0; i < player->song_length; i++) {
+    for (int i = 0; i < 128; i++) {
         if (player->song_positions[i] > player->num_patterns) {
             player->num_patterns = player->song_positions[i];
         }
@@ -314,12 +324,12 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
                 note->effect = b2 & 0x0F;
                 note->effect_param = b3;
 
-                // Debug first pattern (disabled)
-                // static int debug_count = 0;
-                // if (debug_count < 4 && (note->sample > 0 || note->period > 0)) {
-                //     fprintf(stderr, "[PARSE] p=%d r=%d c=%d: bytes=%02X %02X %02X %02X -> sample=%d period=%d\n",
-                //             p, r, c, b0, b1, b2, b3, note->sample, note->period);
-                //     debug_count++;
+                // Debug notes with C (volume) effect or B/D (jump) effects
+                // Show pattern 0 AND pattern 33
+                // if ((note->effect == 0xC || note->effect == 0xB || note->effect == 0xD || note->sample > 0) && (p == 0 || p == 33) && r < 10) {
+                //     fprintf(stderr, "[PARSE] p=%d r=%2d c=%d: bytes=%02X %02X %02X %02X -> sample=%d period=%d effect=%X param=%02X\n",
+                //             p, r, c, b0, b1, b2, b3, note->sample, note->period, note->effect, note->effect_param);
+                //     fflush(stderr);
                 // }
             }
         }
@@ -348,6 +358,10 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     player->loop_start = 0;
     player->loop_end = player->song_length > 0 ? player->song_length - 1 : 0;
 
+    // fprintf(stderr, "[LOAD] Song length: %d patterns, loop: %d-%d\n",
+    //         player->song_length, player->loop_start, player->loop_end);
+    // fflush(stderr);
+
     // Debug: print first pattern data that's actually stored (pattern 0, not song_positions[0])
     // fprintf(stderr, "[STORED] Pattern 0 Row 0:\n");
     // for (int c = 0; c < 4; c++) {
@@ -367,6 +381,11 @@ void mod_player_start(ModPlayer* player) {
     player->current_row = 0;
     player->tick = 0;
     player->sample_accumulator = 0.0f;
+
+    // fprintf(stderr, "[START] Starting at order %d (pattern %d)\n",
+    //         player->current_pattern_index,
+    //         player->song_positions[player->current_pattern_index]);
+    // fflush(stderr);
 
     // Process the first row immediately
     if (player->current_pattern_index < player->song_length) {
@@ -500,27 +519,69 @@ uint8_t mod_player_get_song_length(const ModPlayer* player) {
     return player ? player->song_length : 0;
 }
 
+void mod_player_set_disable_looping(ModPlayer* player, bool disable) {
+    if (!player) return;
+    player->disable_looping = disable;
+}
+
 // Process note for a channel
 static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note) {
     ModChannel* chan = &player->channels[channel];
 
     // Handle sample trigger
+    // In ProTracker:
+    // - If there's a sample number AND a period: trigger new sample
+    // - If there's a sample number but NO period: set sample but don't retrigger (rare case)
+    // - If there's NO sample number but there IS a period: change pitch of current sample (if any)
     if (note->sample > 0 && note->sample <= MOD_MAX_SAMPLES) {
         const ModSample* sample = &player->samples[note->sample - 1];
-        chan->sample = sample;
-        chan->finetune = sample->finetune;
-        chan->volume = sample->volume;  // Always set volume when sample changes
+
+        // Only trigger sample if there's a period (note) as well
+        if (note->period > 0) {
+            chan->sample = sample;
+            chan->finetune = sample->finetune;
+            chan->volume = sample->volume;  // Set to sample default, C command will override if present
+            // Set default playback - will play the FULL sample from start to end, then loop
+            // (This will be adjusted by sample offset effect 9 if present)
+            chan->playback_length = sample->length * 2;  // in bytes
+            chan->playback_end = sample->length * 2;     // absolute end position
+        } else {
+            // Sample number without period - just remember the sample, don't retrigger
+            // This is used by some effects (like porta + volume slide)
+            chan->sample = sample;
+            chan->finetune = sample->finetune;
+            // Don't reset volume - keep current volume
+        }
     }
 
     // Handle period (pitch)
     if (note->period > 0) {
+        // Warn if trying to play without a sample
+        // if (note->sample == 0 && chan->sample == NULL) {
+        //     fprintf(stderr, "[WARN] Ch%d: Period %d but no sample! (sample was never set)\n",
+        //             channel, note->period);
+        //     fflush(stderr);
+        // }
+
         // Effect 0x3 (tone portamento) sets target instead of changing period
-        if (note->effect == 0x3) {
+        if (note->effect == 0x3 || note->effect == 0x5) {
+            // Set portamento target
             chan->portamento_target = note->period;
-            // Don't reset position for portamento
+            // In ProTracker: if there's no note currently playing (period=0),
+            // tone portamento with a new note should NOT slide, it should just
+            // play the note normally (this is the first note on the channel)
+            if (chan->period == 0 && note->sample > 0) {
+                // First note with portamento effect - treat as normal note
+                chan->period = note->period;
+                chan->position = 0.0f;
+            }
+            // Otherwise: current note keeps playing and slides toward target
         } else {
             chan->period = note->period;
-            chan->position = 0.0f;  // Reset playback position
+            // Reset playback position (unless sample offset will override it)
+            if (note->effect != 0x9) {
+                chan->position = 0.0f;
+            }
 
             // Reset vibrato/tremolo phase when new note triggered (not for portamento/vibrato)
             if (note->effect != 0x4 && note->effect != 0x6) {
@@ -582,19 +643,46 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
         case 0x9:  // Sample offset - start sample at offset
             {
-                uint8_t offset_param = note->effect_param;
-                if (offset_param == 0) {
-                    offset_param = chan->last_sample_offset;  // Use last offset
-                } else {
-                    chan->last_sample_offset = offset_param;  // Remember for next time
+                // Sample offset is ONLY applied when a note is triggered (has period)
+                if (note->period > 0 && chan->sample) {
+                    uint8_t offset_param = note->effect_param;
+                    if (offset_param == 0) {
+                        offset_param = chan->last_sample_offset;  // Use last offset
+                    } else {
+                        chan->last_sample_offset = offset_param;  // Remember for next time
+                    }
+
+                    // ProTracker sample offset: offset in 256-byte units
+                    // offset_param << 8 would be * 256, but ProTracker uses * 128 words = * 256 bytes
+                    // BUT some sources suggest it's actually (param-1)*256 + 256 or similar?
+                    // Standard: offset_param * 256 bytes
+                    uint32_t byte_offset = offset_param * 256;
+                    uint32_t offset_words = byte_offset / 2;
+
+                    // Reduce playback length like PT2 does - play from offset to original end
+                    // After reaching the end, it wraps to the loop point
+                    uint32_t sample_len_words = chan->sample->length;
+                    if (offset_words < sample_len_words) {
+                        // Reduce the playback length by the offset amount
+                        chan->playback_length = (sample_len_words - offset_words) * 2;  // convert to bytes
+                        chan->playback_end = byte_offset + chan->playback_length;       // absolute end position
+                    } else {
+                        // Offset beyond sample - play minimal length
+                        chan->playback_length = 2;
+                        chan->playback_end = byte_offset + 2;
+                    }
+
+                    chan->position = (float)byte_offset;
+                } else if (note->effect_param > 0) {
+                    // Remember offset param even without period
+                    chan->last_sample_offset = note->effect_param;
                 }
-                // Offset is in 256-byte units
-                chan->position = (float)(offset_param * 256);
             }
             break;
 
         case 0xB:  // Position jump - jump to pattern
             // Store for potential B+D combination
+            // fprintf(stderr, "[JUMP B] Position jump to pattern %d\n", note->effect_param);
             player->position_jump_pending = true;
             player->jump_to_pattern = note->effect_param;
             player->jump_to_row = 0;  // Default to row 0 if no D effect
@@ -618,6 +706,7 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                         player->jump_to_pattern = player->loop_start;
                     }
                 }
+                // fprintf(stderr, "[JUMP D] Pattern break to pattern %d row %d\n", player->jump_to_pattern, row);
                 player->jump_to_row = row;
                 player->position_jump_pending = true;
             }
@@ -719,6 +808,15 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             }
             break;
     }
+
+    // Debug: show channel state AFTER processing
+    // if (player->current_row < 10 && (channel == 1 || channel == 2 || channel == 3)) {
+    //     if (note->sample > 0 || note->period > 0 || note->effect != 0) {
+    //         fprintf(stderr, "  -> AFTER: chan->sample=%s chan->period=%d chan->volume=%d\n",
+    //                 chan->sample ? "SET" : "NULL", chan->period, chan->volume);
+    //         fflush(stderr);
+    //     }
+    // }
 }
 
 // Process effects per tick
@@ -940,48 +1038,51 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     chan->increment = amiga_playback_rate / (float)sample_rate;
 
     // Debug: print first few render calls
-    // if (render_debug_counter < 5) {
-    //     fprintf(stderr, "[RENDER] period=%d freq=%.1f inc=%.6f pos=%.2f vol=%d\n",
-    //             chan->period, amiga_playback_rate, chan->increment, chan->position, chan->volume);
-    //     render_debug_counter++;
+    // static int total_renders = 0;
+    // if (total_renders < 20 && chan->period > 0) {
+    //     fprintf(stderr, "[RENDER] period=%d vib_depth=%d effective_period=%d freq=%.1f inc=%.6f\n",
+    //             chan->period, chan->vibrato_depth, effective_period, amiga_playback_rate, chan->increment);
+    //     total_renders++;
     // }
 
-    // Get current sample
+    // Get current sample position
     uint32_t pos = (uint32_t)chan->position;
-    uint32_t sample_len_bytes = sample->length * 2;
 
-    if (pos >= sample_len_bytes) {
-        // Handle looping
-        if (sample->repeat_length > 1) {
-            uint32_t loop_start = sample->repeat_start * 2;
-            uint32_t loop_len = sample->repeat_length * 2;
-
-            if (loop_len > 0 && loop_start + loop_len <= sample_len_bytes) {
-                // Wrap within loop
-                chan->position = loop_start + fmodf(chan->position - loop_start, (float)loop_len);
-                pos = (uint32_t)chan->position;
-            } else {
-                return 0.0f;  // End of sample
-            }
+    // Check if we've reached or passed the playback end
+    // Use > not >= to avoid off-by-one error
+    if (pos > chan->playback_end - 1) {
+        // For one-shot samples (repeat_length <= 1), immediately stop
+        // This prevents clicks from wrapping to a tiny loop
+        if (sample->repeat_length <= 1) {
+            // Stop playback immediately - clear sample pointer
+            return 0.0f;
         } else {
-            return 0.0f;  // End of sample
+            // Wrap to loop start for looping samples
+            uint32_t loop_start = sample->repeat_start * 2;
+            chan->position = (float)loop_start;
+            pos = loop_start;
         }
     }
 
-    // Get sample value (8-bit signed)
+    // If we have a loop, also check for normal loop wrapping during loop playback
+    if (sample->repeat_length > 1) {
+        uint32_t loop_start = sample->repeat_start * 2;
+        uint32_t loop_end = loop_start + (sample->repeat_length * 2);
+
+        // If we're past the loop end, wrap within the loop
+        if (pos >= loop_end) {
+            chan->position = loop_start + fmodf(chan->position - loop_start, (float)(sample->repeat_length * 2));
+            pos = (uint32_t)chan->position;
+        }
+    }
+
+    // Get sample value (8-bit signed, no interpolation - ProTracker uses nearest neighbor)
     int8_t sample_val = sample->data[pos];
     float output = (float)sample_val / 128.0f;
 
-    // Debug: print first few sample values
-    // static uint64_t sample_debug_counter = 0;
-    // if (sample_debug_counter < 10) {
-    //     fprintf(stderr, "[SAMPLE] pos=%u val=%d output=%.6f vol=%d\n",
-    //             pos, sample_val, output, chan->volume);
-    //     sample_debug_counter++;
-    // }
-
     // Apply volume with tremolo
     uint8_t effective_volume = chan->volume;
+
     if (chan->tremolo_depth > 0) {
         uint8_t tremolo_val = sine_table[chan->tremolo_pos & 0x3F];
         // Sine table values 0-127 are positive, 128-255 are negative (signed int8)
@@ -996,7 +1097,8 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     output *= (float)effective_volume / 64.0f;
     output *= chan->user_volume;
 
-    // Advance position
+    // Advance position for NEXT sample - this happens even when volume is 0
+    // (like a tape deck: volume fader affects output immediately, but tape keeps running!)
     chan->position += chan->increment;
 
     return output;
@@ -1043,6 +1145,9 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                             player->current_row = 0;
                             player->current_pattern_index++;
 
+                            // fprintf(stderr, "[END PATTERN] Pattern done, moving to pattern %d (loop_end=%d, song_length=%d)\n",
+                            //         player->current_pattern_index, player->loop_end, player->song_length);
+
                             // Reset pattern loop state when changing patterns
                             player->pattern_loop_row = 0;
                             player->pattern_loop_count = 0;
@@ -1050,7 +1155,15 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
 
                             // Handle loop
                             if (player->current_pattern_index > player->loop_end) {
-                                player->current_pattern_index = player->loop_start;
+                                if (player->disable_looping) {
+                                    // Stop playback instead of looping
+                                    // fprintf(stderr, "[STOP] Reached end of song, stopping playback\n");
+                                    player->playing = false;
+                                    return;
+                                } else {
+                                    // fprintf(stderr, "[LOOP] Looping back to pattern %d\n", player->loop_start);
+                                    player->current_pattern_index = player->loop_start;
+                                }
                             }
                         }
 
@@ -1060,6 +1173,15 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                     // Process notes for this row
                     if (player->current_pattern_index < player->song_length) {
                         uint8_t pattern_num = player->song_positions[player->current_pattern_index];
+
+                        // Debug first few rows
+                        // static int row_debug_count = 0;
+                        // if (row_debug_count < 5) {
+                        //     fprintf(stderr, "[PLAY ROW] Order %d -> Pattern %d, Row %d\n",
+                        //             player->current_pattern_index, pattern_num, player->current_row);
+                        //     fflush(stderr);
+                        //     row_debug_count++;
+                        // }
 
                         if (pattern_num < player->num_patterns) {
                             // Clear position jump flag at start of row
@@ -1075,6 +1197,18 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
 
                             // Apply position jump if B or D was triggered
                             if (player->position_jump_pending) {
+                                // Check if we're jumping backwards (looping)
+                                if (player->disable_looping && player->jump_to_pattern <= player->current_pattern_index) {
+                                    // fprintf(stderr, "[STOP] Jump would loop (from %d to %d), stopping due to disable_looping\n",
+                                    //         player->current_pattern_index, player->jump_to_pattern);
+                                    player->playing = false;
+                                    return;
+                                }
+
+                                // fprintf(stderr, "[JUMP APPLY] Jumping from pattern %d row %d to pattern %d row %d\n",
+                                //         player->current_pattern_index, player->current_row,
+                                //         player->jump_to_pattern, player->jump_to_row);
+
                                 player->current_pattern_index = player->jump_to_pattern;
                                 player->current_row = player->jump_to_row;
                                 player->position_jump_pending = false;
@@ -1120,8 +1254,9 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
             right_sample += sample * right_gain;
         }
 
-        // Output with some headroom
-        left[i] = left_sample * 0.25f;
-        right[i] = right_sample * 0.25f;
+        // Output with headroom to prevent clipping
+        // ProTracker uses less aggressive scaling than 0.25
+        left[i] = left_sample * 0.5f;
+        right[i] = right_sample * 0.5f;
     }
 }

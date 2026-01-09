@@ -484,20 +484,21 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
         if (note->period > 0 || note->effect == 0x9) {
             chan->sample = sample;
             chan->finetune = sample->finetune;
-            // Only reset volume if there's a new period (new note)
-            if (note->period > 0) {
-                chan->volume = sample->volume;  // Set to sample default, C command will override if present
-            }
+            chan->volume = sample->volume;  // Always set volume when sample changes
             // Set default playback - will play the FULL sample from start to end, then loop
             // (This will be adjusted by sample offset effect 9 if present)
             chan->playback_length = sample->length * 2;  // in bytes
             chan->playback_end = sample->length * 2;     // absolute end position
+            // Reset position to start (unless offset effect 9 will override it)
+            if (note->effect != 0x9) {
+                chan->position = 0.0f;
+            }
         } else {
             // Sample number without period and without offset - just remember the sample, don't retrigger
             // This is used by some effects (like porta + volume slide)
             chan->sample = sample;
             chan->finetune = sample->finetune;
-            // Don't reset volume - keep current volume
+            chan->volume = sample->volume;  // Reset volume to sample default
         }
     }
 

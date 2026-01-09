@@ -129,12 +129,6 @@ bool render_to_wav(ModPlayer* player, const char* output_file) {
     // Disable looping so playback stops at end instead of looping
     mod_player_set_disable_looping(player, true);
 
-    if (!use_stdout) {
-        fprintf(stderr, "Debug output enabled. Rendering to WAV file...\n");
-    } else {
-        fprintf(stderr, "Debug output enabled. Rendering to stdout...\n");
-    }
-
     mod_player_start(player);
 
     uint32_t total_samples = 0;

@@ -1,9 +1,9 @@
 /*
  * Simple SDL2-based MOD Player Test
  *
- * Usage: ./mod_player_test <filename.mod>
+ * Usage: ./mod_player_test <filename.mod> [-o output.wav]
  *
- * Controls:
+ * Controls (interactive mode):
  *   Space - Play/Pause
  *   Q - Quit
  *   1-4 - Toggle channel mute
@@ -12,8 +12,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <string.h>
 #include <SDL2/SDL.h>
-#include "../synth/mod_player.h"
+#include "../../synth/mod_player.h"
+
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
 
 #define SAMPLE_RATE 48000
 #define BUFFER_SIZE 2048
@@ -23,6 +29,165 @@ typedef struct {
     bool playing;
     SDL_AudioDeviceID audio_device;
 } PlayerContext;
+
+// WAV file header structures
+typedef struct {
+    char riff[4];           // "RIFF"
+    uint32_t file_size;     // File size - 8
+    char wave[4];           // "WAVE"
+} WAVHeader;
+
+typedef struct {
+    char fmt[4];            // "fmt "
+    uint32_t chunk_size;    // 16 for PCM
+    uint16_t format;        // 1 = PCM, 3 = IEEE float
+    uint16_t channels;      // 2 for stereo
+    uint32_t sample_rate;   // 48000
+    uint32_t byte_rate;     // sample_rate * channels * bytes_per_sample
+    uint16_t block_align;   // channels * bytes_per_sample
+    uint16_t bits_per_sample; // 16 or 32
+} WAVFmtChunk;
+
+typedef struct {
+    char data[4];           // "data"
+    uint32_t data_size;     // Size of audio data
+} WAVDataChunk;
+
+// Write WAV header (16-bit PCM)
+void write_wav_header(FILE* f, uint32_t num_samples) {
+    uint32_t data_size = num_samples * 2 * 2;  // 2 channels * 2 bytes per sample
+
+    WAVHeader header = {
+        .riff = {'R', 'I', 'F', 'F'},
+        .file_size = 36 + data_size,
+        .wave = {'W', 'A', 'V', 'E'}
+    };
+
+    WAVFmtChunk fmt = {
+        .fmt = {'f', 'm', 't', ' '},
+        .chunk_size = 16,
+        .format = 1,  // PCM
+        .channels = 2,
+        .sample_rate = SAMPLE_RATE,
+        .byte_rate = SAMPLE_RATE * 2 * 2,
+        .block_align = 4,
+        .bits_per_sample = 16
+    };
+
+    WAVDataChunk data = {
+        .data = {'d', 'a', 't', 'a'},
+        .data_size = data_size
+    };
+
+    fwrite(&header, sizeof(header), 1, f);
+    fwrite(&fmt, sizeof(fmt), 1, f);
+    fwrite(&data, sizeof(data), 1, f);
+}
+
+// Render MOD file to WAV
+bool render_to_wav(ModPlayer* player, const char* output_file) {
+    FILE* f = NULL;
+    bool use_stdout = (strcmp(output_file, "-") == 0);
+
+    if (use_stdout) {
+        f = stdout;
+        // Set binary mode on Windows
+        #ifdef _WIN32
+        _setmode(_fileno(stdout), _O_BINARY);
+        #endif
+    } else {
+        f = fopen(output_file, "wb");
+        if (!f) {
+            fprintf(stderr, "Error: Could not create output file '%s'\n", output_file);
+            return false;
+        }
+    }
+
+    // Reserve space for header (we'll update it later with actual size)
+    long header_pos = ftell(f);
+    write_wav_header(f, 0);
+
+    // Render audio
+    const size_t render_frames = 4096;
+    float* left = (float*)malloc(render_frames * sizeof(float));
+    float* right = (float*)malloc(render_frames * sizeof(float));
+    int16_t* output = (int16_t*)malloc(render_frames * 2 * sizeof(int16_t));
+
+    if (!left || !right || !output) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        if (!use_stdout) fclose(f);
+        free(left);
+        free(right);
+        free(output);
+        return false;
+    }
+
+    // Disable looping so playback stops at end instead of looping
+    mod_player_set_disable_looping(player, true);
+
+    if (!use_stdout) {
+        fprintf(stderr, "Debug output enabled. Rendering to WAV file...\n");
+    } else {
+        fprintf(stderr, "Debug output enabled. Rendering to stdout...\n");
+    }
+
+    mod_player_start(player);
+
+    uint32_t total_samples = 0;
+    uint32_t max_samples = SAMPLE_RATE * 60 * 5;  // Max 5 minutes to prevent infinite loops
+
+    if (!use_stdout) {
+        fprintf(stderr, "Rendering");
+    }
+
+    while (mod_player_is_playing(player) && total_samples < max_samples) {
+        // Process audio
+        mod_player_process(player, left, right, render_frames, SAMPLE_RATE);
+
+        // Convert float to 16-bit PCM and interleave
+        for (size_t i = 0; i < render_frames; i++) {
+            // Clamp to [-1.0, 1.0] and convert to 16-bit
+            float l = left[i];
+            float r = right[i];
+
+            if (l > 1.0f) l = 1.0f;
+            if (l < -1.0f) l = -1.0f;
+            if (r > 1.0f) r = 1.0f;
+            if (r < -1.0f) r = -1.0f;
+
+            output[i * 2] = (int16_t)(l * 32767.0f);
+            output[i * 2 + 1] = (int16_t)(r * 32767.0f);
+        }
+
+        // Write to file
+        fwrite(output, sizeof(int16_t), render_frames * 2, f);
+        total_samples += render_frames;
+
+        if (!use_stdout && (total_samples % (SAMPLE_RATE * 2)) == 0) {
+            fprintf(stderr, ".");
+            fflush(stderr);
+        }
+    }
+
+    if (!use_stdout) {
+        fprintf(stderr, "\n");
+
+        // Update header with actual size
+        fseek(f, header_pos, SEEK_SET);
+        write_wav_header(f, total_samples);
+
+        fprintf(stderr, "Rendered %u samples (%.1f seconds) to %s\n",
+                total_samples, (float)total_samples / SAMPLE_RATE, output_file);
+
+        fclose(f);
+    }
+
+    free(left);
+    free(right);
+    free(output);
+
+    return true;
+}
 
 // SDL audio callback
 void audio_callback(void* userdata, Uint8* stream, int len) {
@@ -109,7 +274,8 @@ void print_info(ModPlayer* player) {
 }
 
 void print_status(ModPlayer* player, bool playing) {
-    uint8_t order, row;
+    uint8_t order;
+    uint16_t row;
     mod_player_get_position(player, &order, &row);
 
     printf("\r[%s] Song order: %3d  Row: %2d  | Ch: ",
@@ -126,31 +292,59 @@ void print_status(ModPlayer* player, bool playing) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        printf("Usage: %s <filename.mod>\n", argv[0]);
-        printf("\nPlays a ProTracker MOD file using SDL2 audio.\n");
+        printf("Usage: %s <filename.mod> [-o output.wav]\n", argv[0]);
+        printf("\nPlays or renders a ProTracker MOD file.\n");
+        printf("\nOptions:\n");
+        printf("  -o <file>    Render to WAV file (use '-' for stdout)\n");
+        printf("\nInteractive mode (no -o):\n");
+        printf("  Plays the file using SDL2 audio with keyboard controls.\n");
         return 1;
     }
 
     const char* filename = argv[1];
+    const char* output_file = NULL;
+    bool render_mode = false;
 
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_AUDIO) < 0) {
-        fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
-        return 1;
+    // Parse command-line arguments
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) {
+                output_file = argv[i + 1];
+                render_mode = true;
+                i++;  // Skip next argument
+            } else {
+                fprintf(stderr, "Error: -o requires an output filename\n");
+                return 1;
+            }
+        }
     }
 
     // Create MOD player
     ModPlayer* player = mod_player_create();
     if (!player) {
         fprintf(stderr, "Failed to create MOD player\n");
-        SDL_Quit();
         return 1;
     }
 
     // Load MOD file
     if (!load_mod_file(filename, player)) {
+        fprintf(stderr, "Failed to load MOD file\n");
         mod_player_destroy(player);
-        SDL_Quit();
+        return 1;
+    }
+
+    // Render mode
+    if (render_mode) {
+        bool success = render_to_wav(player, output_file);
+        mod_player_destroy(player);
+        return success ? 0 : 1;
+    }
+
+    // Interactive playback mode
+    // Initialize SDL
+    if (SDL_Init(SDL_INIT_AUDIO) < 0) {
+        fprintf(stderr, "SDL initialization failed: %s\n", SDL_GetError());
+        mod_player_destroy(player);
         return 1;
     }
 

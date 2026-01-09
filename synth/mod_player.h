@@ -63,8 +63,8 @@ typedef struct {
 typedef struct {
     // Sample playback
     const ModSample* sample;
-    float position;           // Current position in sample (fractional)
-    float increment;          // Sample increment per output sample
+    double position;          // Current position in sample (fractional) - double for precision
+    double increment;         // Sample increment per output sample - double for precision
     uint32_t playback_length; // Effective playback length in bytes (reduced by sample offset)
     uint32_t playback_end;    // Absolute byte position where playback ends and loops to loop_start
 

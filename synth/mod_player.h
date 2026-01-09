@@ -65,6 +65,8 @@ typedef struct {
     const ModSample* sample;
     float position;           // Current position in sample (fractional)
     float increment;          // Sample increment per output sample
+    uint32_t playback_length; // Effective playback length in bytes (reduced by sample offset)
+    uint32_t playback_end;    // Absolute byte position where playback ends and loops to loop_start
 
     // Note state
     uint16_t period;          // Current period
@@ -205,6 +207,13 @@ const char* mod_player_get_title(const ModPlayer* player);
  * Get number of patterns in song
  */
 uint8_t mod_player_get_song_length(const ModPlayer* player);
+
+/**
+ * Enable or disable looping
+ * @param player Player instance
+ * @param disable If true, playback stops at end instead of looping
+ */
+void mod_player_set_disable_looping(ModPlayer* player, bool disable);
 
 #ifdef __cplusplus
 }

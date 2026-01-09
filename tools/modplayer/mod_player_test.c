@@ -1,7 +1,11 @@
 /*
  * Simple SDL2-based MOD Player Test
  *
- * Usage: ./mod_player_test <filename.mod> [-o output.wav]
+ * Usage: ./mod_player_test <filename.mod> [-o output.wav] [-c channels]
+ *
+ * Options:
+ *   -o <file>     Render to WAV file (use '-' for stdout)
+ *   -c <1234>     Render only specified channels (e.g., -c 13 for channels 1 and 3)
  *
  * Controls (interactive mode):
  *   Space - Play/Pause
@@ -292,10 +296,11 @@ void print_status(ModPlayer* player, bool playing) {
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        printf("Usage: %s <filename.mod> [-o output.wav]\n", argv[0]);
+        printf("Usage: %s <filename.mod> [-o output.wav] [-c channels]\n", argv[0]);
         printf("\nPlays or renders a ProTracker MOD file.\n");
         printf("\nOptions:\n");
-        printf("  -o <file>    Render to WAV file (use '-' for stdout)\n");
+        printf("  -o <file>      Render to WAV file (use '-' for stdout)\n");
+        printf("  -c <1234>      Render only specified channels (e.g., -c 13 for channels 1 and 3)\n");
         printf("\nInteractive mode (no -o):\n");
         printf("  Plays the file using SDL2 audio with keyboard controls.\n");
         return 1;
@@ -303,6 +308,7 @@ int main(int argc, char* argv[]) {
 
     const char* filename = argv[1];
     const char* output_file = NULL;
+    const char* channel_spec = NULL;
     bool render_mode = false;
 
     // Parse command-line arguments
@@ -314,6 +320,14 @@ int main(int argc, char* argv[]) {
                 i++;  // Skip next argument
             } else {
                 fprintf(stderr, "Error: -o requires an output filename\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-c") == 0) {
+            if (i + 1 < argc) {
+                channel_spec = argv[i + 1];
+                i++;  // Skip next argument
+            } else {
+                fprintf(stderr, "Error: -c requires a channel specification (e.g., 1234 or 13)\n");
                 return 1;
             }
         }
@@ -331,6 +345,23 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "Failed to load MOD file\n");
         mod_player_destroy(player);
         return 1;
+    }
+
+    // Apply channel selection
+    if (channel_spec) {
+        // First mute all channels
+        for (int ch = 0; ch < 4; ch++) {
+            mod_player_set_channel_mute(player, ch, true);
+        }
+
+        // Then unmute specified channels
+        for (const char* p = channel_spec; *p; p++) {
+            if (*p >= '1' && *p <= '4') {
+                int ch = *p - '1';  // Convert '1'-'4' to 0-3
+                mod_player_set_channel_mute(player, ch, false);
+                fprintf(stderr, "Enabled channel %d\n", ch + 1);
+            }
+        }
     }
 
     // Render mode

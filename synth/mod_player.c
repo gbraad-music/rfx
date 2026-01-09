@@ -115,9 +115,9 @@ struct ModPlayer {
     uint8_t jump_to_pattern;
     uint8_t jump_to_row;
 
-    // Timing
-    float samples_per_tick;
-    float sample_accumulator;
+    // Timing - use double for precise accumulation
+    double samples_per_tick;
+    double sample_accumulator;
 
     // Position callback
     ModPlayerPositionCallback position_callback;
@@ -484,14 +484,25 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
         if (note->period > 0 || note->effect == 0x9) {
             chan->sample = sample;
             chan->finetune = sample->finetune;
-            chan->volume = sample->volume;  // Always set volume when sample changes
+
+            // Set volume to sample default UNLESS there's a C (set volume) effect
+            if (note->effect == 0xC) {
+                chan->volume = note->effect_param;  // Use effect volume immediately
+                if (chan->volume > 64) chan->volume = 64;
+            } else {
+                chan->volume = sample->volume;  // Use sample's default volume
+            }
+
+            // ALWAYS reset position when triggering - effect 9 will override if needed
+            chan->position = 0.0;
             // Set default playback - will play the FULL sample from start to end, then loop
             // (This will be adjusted by sample offset effect 9 if present)
             chan->playback_length = sample->length * 2;  // in bytes
             chan->playback_end = sample->length * 2;     // absolute end position
-            // Reset position to start (unless offset effect 9 will override it)
-            if (note->effect != 0x9) {
-                chan->position = 0.0f;
+
+            // If sample triggered without period (offset-only trigger), clear period to prevent playback
+            if (note->period == 0) {
+                chan->period = 0;  // Will be set when actual period arrives
             }
         } else {
             // Sample number without period and without offset - just remember the sample, don't retrigger
@@ -504,24 +515,13 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
     // Handle period (pitch)
     if (note->period > 0) {
-        // ProTracker: period without sample number = retrigger last sample at last offset
+        // ProTracker: period without sample number = retrigger last sample from start
         // This must happen BEFORE we process tone portamento
         if (note->sample == 0 && chan->sample != NULL && note->effect != 0x3 && note->effect != 0x5) {
-            // Retrigger: reset playback to last offset position
-            if (chan->last_sample_offset > 0) {
-                chan->position = (float)(chan->last_sample_offset * 256);
-                // Also need to update playback_length and playback_end for the offset
-                uint32_t offset_words = chan->last_sample_offset << 7;
-                uint32_t sample_len_words = chan->sample->length;
-                if (offset_words < sample_len_words) {
-                    chan->playback_length = (sample_len_words - offset_words) * 2;
-                    chan->playback_end = (chan->last_sample_offset * 256) + chan->playback_length;
-                }
-            } else {
-                chan->position = 0.0f;
-                chan->playback_length = chan->sample->length * 2;
-                chan->playback_end = chan->sample->length * 2;
-            }
+            // Retrigger: reset playback to position 0 (NOT last offset!)
+            chan->position = 0.0;
+            chan->playback_length = chan->sample->length * 2;
+            chan->playback_end = chan->sample->length * 2;
         }
 
         // Effect 0x3 (tone portamento) sets target instead of changing period
@@ -613,9 +613,6 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                     }
 
                     // ProTracker sample offset: offset in 256-byte units
-                    // offset_param << 8 would be * 256, but ProTracker uses * 128 words = * 256 bytes
-                    // BUT some sources suggest it's actually (param-1)*256 + 256 or similar?
-                    // Standard: offset_param * 256 bytes
                     uint32_t byte_offset = offset_param * 256;
                     uint32_t offset_words = byte_offset / 2;
 
@@ -632,7 +629,7 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                         chan->playback_end = byte_offset + 2;
                     }
 
-                    chan->position = (float)byte_offset;
+                    chan->position = (double)byte_offset;
                 } else if (note->effect_param > 0) {
                     // Remember offset param even without period
                     chan->last_sample_offset = note->effect_param;
@@ -999,8 +996,7 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     uint32_t pos = (uint32_t)chan->position;
 
     // Check if we've reached or passed the playback end
-    // Use > not >= to avoid off-by-one error
-    if (pos > chan->playback_end - 1) {
+    if (pos >= chan->playback_end) {
         // For one-shot samples (repeat_length <= 1), immediately stop
         // This prevents clicks from wrapping to a tiny loop
         if (sample->repeat_length <= 1) {
@@ -1009,7 +1005,7 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
         } else {
             // Wrap to loop start for looping samples
             uint32_t loop_start = sample->repeat_start * 2;
-            chan->position = (float)loop_start;
+            chan->position = (double)loop_start;
             pos = loop_start;
         }
     }
@@ -1021,7 +1017,7 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
 
         // If we're past the loop end, wrap within the loop
         if (pos >= loop_end) {
-            chan->position = loop_start + fmodf(chan->position - loop_start, (float)(sample->repeat_length * 2));
+            chan->position = loop_start + fmod(chan->position - loop_start, (double)(sample->repeat_length * 2));
             pos = (uint32_t)chan->position;
         }
     }

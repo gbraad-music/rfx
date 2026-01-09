@@ -228,9 +228,6 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     if (!player || !data) return false;
     if (!is_valid_mod(data, size)) return false;
 
-    // fprintf(stderr, "=== MOD PLAYER DEBUG OUTPUT ENABLED ===\n");
-    // fflush(stderr);
-
     // Parse title
     memcpy(player->title, data, MOD_TITLE_LENGTH);
     player->title[MOD_TITLE_LENGTH] = '\0';
@@ -266,12 +263,6 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
         // Repeat length (in words)
         sample->repeat_length = ((uint32_t)data[offset] << 8) | data[offset + 1];
         offset += 2;
-
-        // // Debug: show sample metadata for samples 14, 15, 20
-        // if (i == 13 || i == 14 || i == 19) {
-        //     fprintf(stderr, "[LOAD] Sample %d (index %d): len=%d words, vol=%d, loop_start=%d, loop_len=%d\n",
-        //             i + 1, i, sample->length, sample->volume, sample->repeat_start, sample->repeat_length);
-        // }
 
         sample->data = NULL;  // Will be loaded later
     }
@@ -323,21 +314,11 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
                 note->period = ((b0 & 0x0F) << 8) | b1;
                 note->effect = b2 & 0x0F;
                 note->effect_param = b3;
-
-                // Debug notes with C (volume) effect or B/D (jump) effects
-                // Show pattern 0 AND pattern 33
-                // if ((note->effect == 0xC || note->effect == 0xB || note->effect == 0xD || note->sample > 0) && (p == 0 || p == 33) && r < 10) {
-                //     fprintf(stderr, "[PARSE] p=%d r=%2d c=%d: bytes=%02X %02X %02X %02X -> sample=%d period=%d effect=%X param=%02X\n",
-                //             p, r, c, b0, b1, b2, b3, note->sample, note->period, note->effect, note->effect_param);
-                //     fflush(stderr);
-                // }
             }
         }
     }
 
     // Load sample data
-    // fprintf(stderr, "[OFFSET] After patterns, offset=%u\n", offset);
-    // fprintf(stderr, "[LOAD] Loading %d samples...\n", MOD_MAX_SAMPLES);
     for (int i = 0; i < MOD_MAX_SAMPLES; i++) {
         ModSample* sample = &player->samples[i];
         uint32_t sample_length_bytes = sample->length * 2;  // Convert words to bytes
@@ -346,9 +327,6 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
             sample->data = (int8_t*)malloc(sample_length_bytes);
             if (sample->data) {
                 memcpy(sample->data, data + offset, sample_length_bytes);
-                // fprintf(stderr, "[LOAD] Sample %2d: %5d bytes, vol=%d, repeat=%d+%d\n",
-                //         i+1, sample_length_bytes, sample->volume,
-                //         sample->repeat_start, sample->repeat_length);
             }
             offset += sample_length_bytes;
         }
@@ -357,19 +335,6 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     // Set default loop range
     player->loop_start = 0;
     player->loop_end = player->song_length > 0 ? player->song_length - 1 : 0;
-
-    // fprintf(stderr, "[LOAD] Song length: %d patterns, loop: %d-%d\n",
-    //         player->song_length, player->loop_start, player->loop_end);
-    // fflush(stderr);
-
-    // Debug: print first pattern data that's actually stored (pattern 0, not song_positions[0])
-    // fprintf(stderr, "[STORED] Pattern 0 Row 0:\n");
-    // for (int c = 0; c < 4; c++) {
-    //     uint32_t idx = 0 * (MOD_MAX_CHANNELS * MOD_PATTERN_ROWS) + 0 * MOD_MAX_CHANNELS + c;
-    //     ModNote* n = &player->patterns[idx];
-    //     fprintf(stderr, "[STORED] Ch%d: sample=%d period=%d effect=%X param=%02X\n",
-    //             c, n->sample, n->period, n->effect, n->effect_param);
-    // }
 
     return true;
 }
@@ -382,11 +347,6 @@ void mod_player_start(ModPlayer* player) {
     player->tick = 0;
     player->sample_accumulator = 0.0f;
 
-    // fprintf(stderr, "[START] Starting at order %d (pattern %d)\n",
-    //         player->current_pattern_index,
-    //         player->song_positions[player->current_pattern_index]);
-    // fflush(stderr);
-
     // Process the first row immediately
     if (player->current_pattern_index < player->song_length) {
         uint8_t pattern_num = player->song_positions[player->current_pattern_index];
@@ -397,23 +357,7 @@ void mod_player_start(ModPlayer* player) {
                                         player->current_row * MOD_MAX_CHANNELS + c;
                 const ModNote* note = &player->patterns[pattern_index];
 
-                // Debug: print first row notes
-                // if (note->sample > 0 || note->period > 0) {
-                //     fprintf(stderr, "[NOTE] Ch%d: sample=%d period=%d effect=%X param=%02X\n",
-                //             c, note->sample, note->period, note->effect, note->effect_param);
-                // }
-
                 process_note(player, c, note);
-
-                // Debug: print channel state after processing
-                // ModChannel* chan = &player->channels[c];
-                // if (chan->sample && chan->sample->data) {
-                //     fprintf(stderr, "[NOTE] Ch%d -> vol=%d period=%d sample_len=%d bytes\n",
-                //             c, chan->volume, chan->period, chan->sample->length * 2);
-                // } else if (chan->sample) {
-                //     fprintf(stderr, "[NOTE] Ch%d -> vol=%d period=%d NO DATA!\n",
-                //             c, chan->volume, chan->period);
-                // }
             }
         }
     }
@@ -697,7 +641,6 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
         case 0xB:  // Position jump - jump to pattern
             // Store for potential B+D combination
-            // fprintf(stderr, "[JUMP B] Position jump to pattern %d\n", note->effect_param);
             player->position_jump_pending = true;
             player->jump_to_pattern = note->effect_param;
             player->jump_to_row = 0;  // Default to row 0 if no D effect
@@ -721,7 +664,6 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                         player->jump_to_pattern = player->loop_start;
                     }
                 }
-                // fprintf(stderr, "[JUMP D] Pattern break to pattern %d row %d\n", player->jump_to_pattern, row);
                 player->jump_to_row = row;
                 player->position_jump_pending = true;
             }
@@ -1052,14 +994,6 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate) {
     float amiga_playback_rate = period_to_frequency(effective_period);
     chan->increment = amiga_playback_rate / (float)sample_rate;
 
-    // Debug: print first few render calls
-    // static int total_renders = 0;
-    // if (total_renders < 20 && chan->period > 0) {
-    //     fprintf(stderr, "[RENDER] period=%d vib_depth=%d effective_period=%d freq=%.1f inc=%.6f\n",
-    //             chan->period, chan->vibrato_depth, effective_period, amiga_playback_rate, chan->increment);
-    //     total_renders++;
-    // }
-
     // Get current sample position
     uint32_t pos = (uint32_t)chan->position;
 
@@ -1160,9 +1094,6 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                             player->current_row = 0;
                             player->current_pattern_index++;
 
-                            // fprintf(stderr, "[END PATTERN] Pattern done, moving to pattern %d (loop_end=%d, song_length=%d)\n",
-                            //         player->current_pattern_index, player->loop_end, player->song_length);
-
                             // Reset pattern loop state when changing patterns
                             player->pattern_loop_row = 0;
                             player->pattern_loop_count = 0;
@@ -1172,11 +1103,9 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                             if (player->current_pattern_index > player->loop_end) {
                                 if (player->disable_looping) {
                                     // Stop playback instead of looping
-                                    // fprintf(stderr, "[STOP] Reached end of song, stopping playback\n");
                                     player->playing = false;
                                     return;
                                 } else {
-                                    // fprintf(stderr, "[LOOP] Looping back to pattern %d\n", player->loop_start);
                                     player->current_pattern_index = player->loop_start;
                                 }
                             }
@@ -1188,15 +1117,6 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                     // Process notes for this row
                     if (player->current_pattern_index < player->song_length) {
                         uint8_t pattern_num = player->song_positions[player->current_pattern_index];
-
-                        // Debug first few rows
-                        // static int row_debug_count = 0;
-                        // if (row_debug_count < 5) {
-                        //     fprintf(stderr, "[PLAY ROW] Order %d -> Pattern %d, Row %d\n",
-                        //             player->current_pattern_index, pattern_num, player->current_row);
-                        //     fflush(stderr);
-                        //     row_debug_count++;
-                        // }
 
                         if (pattern_num < player->num_patterns) {
                             // Clear position jump flag at start of row
@@ -1214,15 +1134,9 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
                             if (player->position_jump_pending) {
                                 // Check if we're jumping backwards (looping)
                                 if (player->disable_looping && player->jump_to_pattern <= player->current_pattern_index) {
-                                    // fprintf(stderr, "[STOP] Jump would loop (from %d to %d), stopping due to disable_looping\n",
-                                    //         player->current_pattern_index, player->jump_to_pattern);
                                     player->playing = false;
                                     return;
                                 }
-
-                                // fprintf(stderr, "[JUMP APPLY] Jumping from pattern %d row %d to pattern %d row %d\n",
-                                //         player->current_pattern_index, player->current_row,
-                                //         player->jump_to_pattern, player->jump_to_row);
 
                                 player->current_pattern_index = player->jump_to_pattern;
                                 player->current_row = player->jump_to_row;

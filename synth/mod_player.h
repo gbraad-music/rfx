@@ -92,6 +92,7 @@ typedef struct {
     uint8_t last_tone_portamento;
     uint8_t last_volume_slide;
     uint8_t last_sample_offset;
+    const ModSample* last_sample_with_offset;  // Which sample the offset belongs to
 
     // User controls
     bool muted;               // Channel muted by user

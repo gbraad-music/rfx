@@ -485,13 +485,16 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             chan->sample = sample;
             chan->finetune = sample->finetune;
 
-            // Set volume to sample default UNLESS there's a C (set volume) effect
+            // Volume handling
             if (note->effect == 0xC) {
-                chan->volume = note->effect_param;  // Use effect volume immediately
+                // Explicit C effect - always use it
+                chan->volume = note->effect_param;
                 if (chan->volume > 64) chan->volume = 64;
-            } else {
-                chan->volume = sample->volume;  // Use sample's default volume
+            } else if (note->period > 0) {
+                // New note (with or without offset) - reset to sample default volume
+                chan->volume = sample->volume;
             }
+            // else: offset-only retrigger (no period, no C effect) - keep current volume
 
             // ALWAYS reset position when triggering - effect 9 will override if needed
             chan->position = 0.0;
@@ -500,10 +503,8 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             chan->playback_length = sample->length * 2;  // in bytes
             chan->playback_end = sample->length * 2;     // absolute end position
 
-            // If sample triggered without period (offset-only trigger), clear period to prevent playback
-            if (note->period == 0) {
-                chan->period = 0;  // Will be set when actual period arrives
-            }
+            // Don't clear period when offset effect is present - offset just repositions playback
+            // Period will be set by period handling code below if note has a period value
         } else {
             // Sample number without period and without offset - just remember the sample, don't retrigger
             // This is used by some effects (like porta + volume slide)
@@ -515,13 +516,30 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
     // Handle period (pitch)
     if (note->period > 0) {
-        // ProTracker: period without sample number = retrigger last sample from start
+        // ProTracker: period without sample number = retrigger last sample
         // This must happen BEFORE we process tone portamento
         if (note->sample == 0 && chan->sample != NULL && note->effect != 0x3 && note->effect != 0x5) {
-            // Retrigger: reset playback to position 0 (NOT last offset!)
-            chan->position = 0.0;
-            chan->playback_length = chan->sample->length * 2;
-            chan->playback_end = chan->sample->length * 2;
+            // Retrigger: Use last offset ONLY if it belongs to the current sample
+            if (chan->last_sample_offset > 0 && chan->sample == chan->last_sample_with_offset) {
+                uint32_t byte_offset = chan->last_sample_offset * 256;
+                uint32_t offset_words = byte_offset / 2;
+                uint32_t sample_len_words = chan->sample->length;
+
+                if (offset_words < sample_len_words) {
+                    chan->position = (double)byte_offset;
+                    chan->playback_length = (sample_len_words - offset_words) * 2;
+                    chan->playback_end = byte_offset + chan->playback_length;
+                } else {
+                    chan->position = 0.0;
+                    chan->playback_length = chan->sample->length * 2;
+                    chan->playback_end = chan->sample->length * 2;
+                }
+            } else {
+                // Different sample or no offset - start from 0
+                chan->position = 0.0;
+                chan->playback_length = chan->sample->length * 2;
+                chan->playback_end = chan->sample->length * 2;
+            }
         }
 
         // Effect 0x3 (tone portamento) sets target instead of changing period
@@ -610,6 +628,7 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                         offset_param = chan->last_sample_offset;  // Use last offset
                     } else {
                         chan->last_sample_offset = offset_param;  // Remember for next time
+                        chan->last_sample_with_offset = chan->sample;  // Track which sample this offset is for
                     }
 
                     // ProTracker sample offset: offset in 256-byte units
@@ -631,8 +650,9 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
                     chan->position = (double)byte_offset;
                 } else if (note->effect_param > 0) {
-                    // Remember offset param even without period
+                    // Remember offset param even without period (for future use)
                     chan->last_sample_offset = note->effect_param;
+                    // Don't set last_sample_with_offset here - we don't have a sample yet
                 }
             }
             break;
@@ -961,12 +981,13 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
 static uint64_t render_debug_counter = 0;
 
 // Render one sample for a channel
-static float render_channel(ModChannel* chan, uint32_t sample_rate) {
+static float render_channel(ModChannel* chan, uint32_t sample_rate, ModPlayer* player, uint8_t channel_num) {
     if (!chan->sample || chan->period == 0 || chan->muted) {
         return 0.0f;
     }
 
     const ModSample* sample = chan->sample;
+
     if (!sample->data || sample->length == 0) {
         return 0.0f;
     }
@@ -1169,7 +1190,7 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
         float right_sample = 0.0f;
 
         for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
-            float sample = render_channel(&player->channels[c], sample_rate);
+            float sample = render_channel(&player->channels[c], sample_rate, player, c);
 
             // Apply panning
             float pan = player->channels[c].panning;

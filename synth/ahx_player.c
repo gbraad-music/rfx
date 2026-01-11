@@ -801,6 +801,9 @@ static void player_process_step(AhxPlayer* player, int v) {
             player->Voices[v].SquarePos = fx_param >> (5 - player->Voices[v].WaveLength);
             player->Voices[v].PlantSquare = 1;
             player->Voices[v].IgnoreSquare = 1;
+
+            // Sync position to generic square modulator
+            tracker_modulator_set_position(&player->Voices[v].square_mod, player->Voices[v].SquarePos);
             break;
         case 0x5: // Tone Portamento + Volume Slide
         case 0x3: // Tone Portamento
@@ -1204,6 +1207,9 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
         case 3: // Init Square Modulation
             if (!player->Voices[v].IgnoreSquare) {
                 player->Voices[v].SquarePos = fx_param >> (5 - player->Voices[v].WaveLength);
+
+                // Sync position to generic square modulator
+                tracker_modulator_set_position(&player->Voices[v].square_mod, player->Voices[v].SquarePos);
             } else {
                 player->Voices[v].IgnoreSquare = 0;
             }
@@ -1213,9 +1219,8 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
                 player->Voices[v].SquareInit = (player->Voices[v].SquareOn ^= 1);
                 player->Voices[v].SquareSign = 1;
 
-                // Activate/configure generic square modulator
+                // Activate generic square modulator (direction determined automatically by init)
                 tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
-                tracker_modulator_set_direction(&player->Voices[v].square_mod, player->Voices[v].SquareSign);
             } else {
                 if (fx_param & 0x0f) {
                     player->Voices[v].SquareInit = (player->Voices[v].SquareOn ^= 1);
@@ -1223,9 +1228,8 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
                     if ((fx_param & 0x0f) == 0x0f)
                         player->Voices[v].SquareSign = -1;
 
-                    // Activate/configure generic square modulator
+                    // Activate generic square modulator (direction determined automatically by init)
                     tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
-                    tracker_modulator_set_direction(&player->Voices[v].square_mod, player->Voices[v].SquareSign);
                 }
                 if (fx_param & 0xf0) {
                     player->Voices[v].FilterInit = (player->Voices[v].FilterOn ^= 1);

@@ -29,6 +29,7 @@ include_directories(
 add_executable(mod_player_test
     mod_player_test.c
     ../../synth/mod_player.c
+    ../../synth/tracker_voice.c
 )
 
 # Link libraries

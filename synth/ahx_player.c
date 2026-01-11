@@ -112,6 +112,9 @@ struct AhxVoice {
 
     // HVL-style panning
     int PanMultLeft, PanMultRight;
+
+    // Per-voice white noise random state
+    int WNRandom;
 };
 
 struct AhxWaves {
@@ -137,7 +140,6 @@ struct AhxPlayer {
     int NoteNr, PosJumpNote;
     int PlayingTime;
     char* WaveformTab[4];
-    int WNRandom;
 
     // Mixing state
     int VolumeTable[65][256];  // Kept for compatibility but not used in HVL mode
@@ -352,6 +354,8 @@ static void voice_init(AhxVoice* voice) {
     memset(voice->VoiceBuffer, 0, 0x281);
     voice->TrackOn = 1;
     voice->TrackMasterVolume = 0x40;
+    voice->WNRandom = 0x280;
+    voice->Delta = 1;
 }
 
 static void voice_calc_adsr(AhxVoice* voice) {
@@ -1035,7 +1039,7 @@ static void player_process_frame(AhxPlayer* player, int v) {
         }
 
         // NoFilterInit
-        int f_max = (player->Voices[v].FilterSpeed < 3) ? (5 - player->Voices[v].FilterSpeed) : 1;
+        int f_max = (player->Voices[v].FilterSpeed < 4) ? (5 - player->Voices[v].FilterSpeed) : 1;
         for (int i = 0; i < f_max; i++) {
             if (d1 == d3 || d2 == d3) {
                 if (player->Voices[v].FilterSlidingIn) {
@@ -1046,6 +1050,10 @@ static void player_process_frame(AhxPlayer* player, int v) {
             }
             d3 += player->Voices[v].FilterSign;
         }
+
+        // Clamp filter position
+        if (d3 < 1) d3 = 1;
+        if (d3 > 63) d3 = 63;
         player->Voices[v].FilterPos = d3;
         player->Voices[v].NewWaveform = 1;
         player->Voices[v].FilterWait = player->Voices[v].FilterSpeed - 3;
@@ -1064,7 +1072,8 @@ static void player_process_frame(AhxPlayer* player, int v) {
         }
 
         // OkDownSquare
-        if (--x) square_ptr += x << 7;
+        if (x > 0)
+            square_ptr += (x-1) << 7;
         int delta = 32 >> player->Voices[v].WaveLength;
         player->WaveformTab[2] = player->Voices[v].SquareTempBuffer;
 
@@ -1094,10 +1103,10 @@ static void player_process_frame(AhxPlayer* player, int v) {
 
         if (player->Voices[v].Waveform == 4-1) {
             // AddRandomMoving
-            audio_source += (player->WNRandom & (2*0x280-1)) & ~1;
+            audio_source += (player->Voices[v].WNRandom & (2*0x280-1)) & ~1;
             // GoOnRandom
-            player->WNRandom += 2239384;
-            player->WNRandom = ((((player->WNRandom >> 8) | (player->WNRandom << 24)) + 782323) ^ 75) - 6735;
+            player->Voices[v].WNRandom += 2239384;
+            player->Voices[v].WNRandom = ((((player->Voices[v].WNRandom >> 8) | (player->Voices[v].WNRandom << 24)) + 782323) ^ 75) - 6735;
         }
         player->Voices[v].AudioSource = audio_source;
     }
@@ -1155,7 +1164,6 @@ static void player_set_audio(AhxPlayer* player, int v) {
             }
         }
         player->Voices[v].VoiceBuffer[0x280] = player->Voices[v].VoiceBuffer[0];
-        player->Voices[v].NewWaveform = 0;  // Clear the flag!
     }
 }
 

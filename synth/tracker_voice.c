@@ -15,13 +15,23 @@ void tracker_voice_init(TrackerVoice* voice) {
     voice->volume = 64;
     voice->pan_left = 255;
     voice->pan_right = 255;
+    voice->bit_depth = 8;  // Default to 8-bit
 }
 
 void tracker_voice_set_waveform(TrackerVoice* voice,
                                 const int8_t* waveform,
                                 uint32_t length) {
-    voice->waveform = waveform;
+    voice->waveform = (const void*)waveform;
     voice->length = length << 16;  // Convert to fixed-point
+    voice->bit_depth = 8;
+}
+
+void tracker_voice_set_waveform_16bit(TrackerVoice* voice,
+                                      const int16_t* waveform,
+                                      uint32_t length) {
+    voice->waveform = (const void*)waveform;
+    voice->length = length << 16;  // Convert to fixed-point
+    voice->bit_depth = 16;
 }
 
 void tracker_voice_set_period(TrackerVoice* voice,
@@ -69,7 +79,7 @@ void tracker_voice_reset_position(TrackerVoice* voice) {
     voice->sample_pos = 0;
 }
 
-int8_t tracker_voice_get_sample(TrackerVoice* voice) {
+int32_t tracker_voice_get_sample(TrackerVoice* voice) {
     if (!voice->waveform || voice->length == 0) {
         return 0;
     }
@@ -80,7 +90,16 @@ int8_t tracker_voice_get_sample(TrackerVoice* voice) {
     }
 
     // Get sample at integer position (16.16 fixed-point)
-    int8_t sample = voice->waveform[voice->sample_pos >> 16];
+    uint32_t pos = voice->sample_pos >> 16;
+    int32_t sample;
+
+    if (voice->bit_depth == 16) {
+        const int16_t* waveform16 = (const int16_t*)voice->waveform;
+        sample = waveform16[pos];
+    } else {
+        const int8_t* waveform8 = (const int8_t*)voice->waveform;
+        sample = waveform8[pos];
+    }
 
     // Advance position
     voice->sample_pos += voice->delta;
@@ -89,7 +108,7 @@ int8_t tracker_voice_get_sample(TrackerVoice* voice) {
 }
 
 int32_t tracker_voice_get_sample_scaled(TrackerVoice* voice) {
-    int8_t sample = tracker_voice_get_sample(voice);
+    int32_t sample = tracker_voice_get_sample(voice);
     return sample * voice->volume;
 }
 
@@ -107,8 +126,19 @@ void tracker_voice_get_stereo_sample(TrackerVoice* voice,
         voice->sample_pos -= voice->length;
     }
 
-    // Get sample and apply volume
-    int8_t sample = voice->waveform[voice->sample_pos >> 16];
+    // Get sample
+    uint32_t pos = voice->sample_pos >> 16;
+    int32_t sample;
+
+    if (voice->bit_depth == 16) {
+        const int16_t* waveform16 = (const int16_t*)voice->waveform;
+        sample = waveform16[pos];
+    } else {
+        const int8_t* waveform8 = (const int8_t*)voice->waveform;
+        sample = waveform8[pos];
+    }
+
+    // Apply volume
     int32_t scaled = sample * voice->volume;
 
     // Apply panning

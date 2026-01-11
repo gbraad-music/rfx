@@ -1092,21 +1092,50 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             else if (!is_synth && masked_type >= 0 && masked_type <= 7) {
                 // fprintf(stderr, "med_player:   Old octave-based sample (type %d)\n", masked_type);
 
+                // For one-shot samples (small repeat_length), check if there's more data available
+                // Read repeat info first to determine actual sample size
+                const uint8_t* song_base_temp = read_ptr(base, player->song_offset);
+                const uint8_t* sample_info_temp = song_base_temp + (i * 8);
+                uint16_t rep_words_temp = BE16(*(uint16_t*)(sample_info_temp + 0));
+                uint16_t replen_words_temp = BE16(*(uint16_t*)(sample_info_temp + 2));
+
+                // If repeat_length <= 2 words (one-shot marker), find next instrument to determine real size
+                uint32_t actual_length = length;
+                if (replen_words_temp <= 2) {
+                    // Find next instrument offset
+                    uint32_t next_instr_offset = player->file_size;
+                    for (int j = i + 1; j < MAX_SAMPLES; j++) {
+                        uint32_t next_offset = BE32(*(uint32_t*)(smplarr_ptr + j * 4));
+                        if (next_offset > 0) {
+                            next_instr_offset = next_offset;
+                            break;
+                        }
+                    }
+
+                    // Calculate available space
+                    uint32_t available = next_instr_offset - (instr_offset + 6);
+                    if (available > length && available < player->file_size) {
+                        // InstrHdr length field may be truncated for one-shot samples
+                        // Use actual available space instead
+                        actual_length = available;
+                    }
+                }
+
                 // Bounds check for sample data (comes right after InstrHdr, no InstrExt)
-                if (instr_ptr + 6 + length > base + player->file_size) {
+                if (instr_ptr + 6 + actual_length > base + player->file_size) {
                     fprintf(stderr, "med_player: ERROR: Sample data out of bounds for sample %d (needs %u bytes)\n",
-                            i, length);
+                            i, actual_length);
                     continue;
                 }
 
                 // Allocate and copy sample data (starts right after InstrHdr)
-                player->samples[i].length = length;
-                player->samples[i].data = (int8_t*)malloc(length);
+                player->samples[i].length = actual_length;
+                player->samples[i].data = (int8_t*)malloc(actual_length);
                 if (!player->samples[i].data) {
-                    fprintf(stderr, "med_player: ERROR: Failed to allocate %u bytes for sample %d\n", length, i);
+                    fprintf(stderr, "med_player: ERROR: Failed to allocate %u bytes for sample %d\n", actual_length, i);
                     continue;
                 }
-                memcpy(player->samples[i].data, instr_ptr + 6, length);
+                memcpy(player->samples[i].data, instr_ptr + 6, actual_length);
 
                 // For old samples, get repeat/volume info from MMD0sample array at start of song
                 // song_base + 0 to song_base + 503 is the sample array (63 samples * 8 bytes each)

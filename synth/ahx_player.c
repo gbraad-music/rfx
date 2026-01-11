@@ -1194,6 +1194,9 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
                     player->Voices[v].FilterPos = fx_param;
                 }
                 player->Voices[v].NewWaveform = 1;
+
+                // Sync position to generic filter modulator
+                tracker_modulator_set_position(&player->Voices[v].filter_mod, player->Voices[v].FilterPos);
             }
             break;
         case 1:

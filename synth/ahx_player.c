@@ -82,6 +82,7 @@ struct AhxVoice {
     // Public mixing variables
     int VoiceVolume, VoicePeriod;
     char VoiceBuffer[0x281];
+    uint32_t Delta;  // HVL: Pre-calculated sample delta (16.16 fixed-point)
 
     // Internal state
     int Track, Transpose;
@@ -159,6 +160,9 @@ struct AhxPlayer {
 
     // Looping control
     bool disable_looping;
+
+    // Sample rate for delta calculation
+    int current_sample_rate;
 };
 
 // Vibrato table (from AHX.cpp line 30)
@@ -1131,6 +1135,15 @@ static void player_set_audio(AhxPlayer* player, int v) {
         player->Voices[v].VoicePeriod = player->Voices[v].AudioPeriod;
     }
 
+    // Calculate delta for mixing (HVL: done once per frame, not per sample!)
+    if (player->Voices[v].VoicePeriod) {
+        double freq = Period2Freq(player->Voices[v].VoicePeriod);
+        uint32_t delta = (uint32_t)(freq / (double)player->current_sample_rate);
+        if (delta > (0x280 << 16)) delta -= (0x280 << 16);
+        if (delta == 0) delta = 1;
+        player->Voices[v].Delta = delta;
+    }
+
     if (player->Voices[v].NewWaveform) {
         if (player->Voices[v].Waveform == 4-1) {
             memcpy(player->Voices[v].VoiceBuffer, player->Voices[v].AudioSource, 0x280);
@@ -1316,6 +1329,9 @@ AhxPlayer* ahx_player_create(void) {
     const int defgain[] = { 71, 72, 76, 85, 100 };
     player->mixgain = (defgain[2] * 256) / 100;  // = 194
 
+    // Initialize default sample rate
+    player->current_sample_rate = 48000;
+
     // Initialize voices
     for (int i = 0; i < 4; i++) {
         voice_init(&player->Voices[i]);
@@ -1436,53 +1452,80 @@ void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num
         // Mix a chunk up to next frame boundary
         int chunk_samples = MIN((int)(num_samples - output_pos), player->frame_counter);
 
-        // HVL mixing algorithm (from hvl_mixchunk)
-        // Process this chunk sample by sample
-        for (int s = 0; s < chunk_samples; s++) {
-            int a = 0, b = 0;  // Left and right accumulators
+        // HVL mixing algorithm - exact match to hvl_mixchunk
+        // Pre-load voice parameters into local arrays for efficiency
+        uint32_t delta[4], pos[4];
+        const int8_t* src[4];
+        int vol[4], panl[4], panr[4];
 
-            // Mix all 4 voices for this sample
-            for (int v = 0; v < 4; v++) {
-                if (player->Voices[v].VoiceVolume == 0 || player->channel_muted[v]) continue;
-                if (player->Voices[v].VoicePeriod == 0) continue;
+        for (int i = 0; i < 4; i++) {
+            delta[i] = player->Voices[i].Delta;
+            vol[i] = player->Voices[i].VoiceVolume;
+            pos[i] = player->pos[i];
+            src[i] = (const int8_t*)player->Voices[i].VoiceBuffer;
+            panl[i] = player->Voices[i].PanMultLeft;
+            panr[i] = player->Voices[i].PanMultRight;
+        }
 
-                // Calculate delta: Period2Freq already returns 16.16 fixed-point
-                uint32_t delta = (uint32_t)(Period2Freq(player->Voices[v].VoicePeriod) / sample_rate);
-                if (delta == 0) continue;
+        int samples_left = chunk_samples;
+        int out_idx = 0;
 
-                // Wrap position if needed
-                if (player->pos[v] >= (0x280 << 16))
-                    player->pos[v] -= 0x280 << 16;
+        // Outer loop: batch processing to minimize wraparound checks
+        while (samples_left > 0) {
+            int loops = samples_left;
 
-                // Get sample from buffer (no interpolation for now)
-                int offset = player->pos[v] >> 16;
-                if (offset >= 0x280) offset = 0x27f;
+            // Calculate batch size: minimum samples before ANY voice wraps
+            for (int i = 0; i < 4; i++) {
+                if (player->channel_muted[i] || vol[i] == 0) continue;
 
-                // HVL direct multiplication: sample * volume
-                int8_t sample_byte = (int8_t)player->Voices[v].VoiceBuffer[offset];
-                int j = sample_byte * player->Voices[v].VoiceVolume;
+                if (pos[i] >= (0x280 << 16))
+                    pos[i] -= 0x280 << 16;
 
-                // Apply panning
-                a += (j * player->Voices[v].PanMultLeft) >> 7;
-                b += (j * player->Voices[v].PanMultRight) >> 7;
-
-                // Advance position
-                player->pos[v] += delta;
+                if (delta[i] > 0) {
+                    uint32_t cnt = ((0x280 << 16) - pos[i] - 1) / delta[i] + 1;
+                    if (cnt < (uint32_t)loops) loops = cnt;
+                }
             }
 
-            // Apply mixgain
-            a = (a * player->mixgain) >> 8;
-            b = (b * player->mixgain) >> 8;
+            samples_left -= loops;
 
-            // Clip to 16-bit range
-            if (a < -32768) a = -32768;
-            if (a >  32767) a =  32767;
-            if (b < -32768) b = -32768;
-            if (b >  32767) b =  32767;
+            // Inner loop: process 'loops' samples without any wraparound checks
+            for (int l = 0; l < loops; l++) {
+                int a = 0, b = 0;
 
-            // Convert to float -1.0 to 1.0
-            left[output_pos + s] = a / 32768.0f;
-            right[output_pos + s] = b / 32768.0f;
+                for (int i = 0; i < 4; i++) {
+                    if (player->channel_muted[i] || vol[i] == 0) continue;
+
+                    // Direct multiplication (HVL style)
+                    int j = src[i][pos[i] >> 16] * vol[i];
+
+                    // Apply panning
+                    a += (j * panl[i]) >> 7;
+                    b += (j * panr[i]) >> 7;
+
+                    pos[i] += delta[i];
+                }
+
+                // Apply mixgain
+                a = (a * player->mixgain) >> 8;
+                b = (b * player->mixgain) >> 8;
+
+                // Clip to 16-bit range
+                if (a < -32768) a = -32768;
+                if (a >  32767) a =  32767;
+                if (b < -32768) b = -32768;
+                if (b >  32767) b =  32767;
+
+                // Convert to float
+                left[output_pos + out_idx] = a / 32768.0f;
+                right[output_pos + out_idx] = b / 32768.0f;
+                out_idx++;
+            }
+        }
+
+        // Write back positions
+        for (int i = 0; i < 4; i++) {
+            player->pos[i] = pos[i];
         }
 
         output_pos += chunk_samples;

@@ -19,17 +19,17 @@ extern "C" {
 
 typedef struct {
     // Fixed-point playback state (16.16)
-    uint32_t sample_pos;    // Current position in waveform
+    uint64_t sample_pos;    // Current position in waveform (uint64_t for long samples)
     uint32_t delta;         // Frequency/pitch (added to sample_pos each sample)
 
     // Waveform data
     const void* waveform;   // Pointer to waveform data (int8_t* or int16_t*)
-    uint32_t length;        // Length in samples (in fixed-point: length << 16)
+    uint64_t length;        // Length in samples (in fixed-point: length << 16) - uint64_t to avoid overflow for long samples
     uint8_t bit_depth;      // Bit depth: 8 or 16
 
-    // Loop points (16.16 fixed-point)
-    uint32_t loop_start;    // Loop start position
-    uint32_t loop_end;      // Loop end position
+    // Loop points (16.16 fixed-point) - also uint64_t to match length
+    uint64_t loop_start;    // Loop start position
+    uint64_t loop_end;      // Loop end position
     bool loop_enabled;      // If true: loop, if false: play once and stop
 
     // Volume

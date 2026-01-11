@@ -23,7 +23,7 @@ void tracker_voice_set_waveform(TrackerVoice* voice,
                                 const int8_t* waveform,
                                 uint32_t length) {
     voice->waveform = (const void*)waveform;
-    voice->length = length << 16;  // Convert to fixed-point
+    voice->length = ((uint64_t)length) << 16;  // Convert to fixed-point (uint64_t for long samples)
     voice->bit_depth = 8;
     // Default loop: full sample
     voice->loop_start = 0;
@@ -35,7 +35,7 @@ void tracker_voice_set_waveform_16bit(TrackerVoice* voice,
                                       const int16_t* waveform,
                                       uint32_t length) {
     voice->waveform = (const void*)waveform;
-    voice->length = length << 16;  // Convert to fixed-point
+    voice->length = ((uint64_t)length) << 16;  // Convert to fixed-point (uint64_t for long samples)
     voice->bit_depth = 16;
     // Default loop: full sample
     voice->loop_start = 0;
@@ -96,21 +96,23 @@ void tracker_voice_set_loop(TrackerVoice* voice,
         loop_length_samples /= 2;
     }
 
-    // ProTracker/MOD/MMD convention: loop_length <= 1 word (2 bytes) means
-    // the sample is "one-shot" (plays once, then stops)
-    // For 8-bit: 2 bytes = 2 samples
-    // For 16-bit: 2 bytes = 1 sample
-    uint32_t one_shot_threshold = (voice->bit_depth == 16) ? 1 : 2;
+    // ProTracker/MOD convention: loop_length <= 1 word (2 bytes) means one-shot
+    // MMD/OctaMED convention: loop_length <= 2 words (4 bytes) means one-shot
+    // For 8-bit: 4 bytes = 4 samples
+    // For 16-bit: 4 bytes = 2 samples
+    uint32_t one_shot_threshold = (voice->bit_depth == 16) ? 2 : 4;
 
-    if (loop_length_samples <= one_shot_threshold) {
-        // "One-shot" sample - play once, then return silence
+    bool is_oneshot = (loop_length_samples <= one_shot_threshold);
+
+    if (is_oneshot) {
+        // "One-shot" sample - play full length from 0 to end, then stop
         voice->loop_start = 0;
-        voice->loop_end = voice->length;
+        voice->loop_end = voice->length;  // Play to full sample length
         voice->loop_enabled = false;  // Disable looping - sample plays once and stops
     } else {
-        // Normal looping sample - use specified loop points
-        voice->loop_start = loop_start_samples << 16;
-        voice->loop_end = (loop_start_samples + loop_length_samples) << 16;
+        // Normal looping sample - use specified loop points (uint64_t for long samples)
+        voice->loop_start = ((uint64_t)loop_start_samples) << 16;
+        voice->loop_end = ((uint64_t)(loop_start_samples + loop_length_samples)) << 16;
         voice->loop_enabled = true;
     }
 }
@@ -125,8 +127,8 @@ void tracker_voice_set_position(TrackerVoice* voice, uint32_t byte_offset) {
     if (voice->bit_depth == 16) {
         sample_offset /= 2;
     }
-    // Convert to 16.16 fixed-point
-    voice->sample_pos = sample_offset << 16;
+    // Convert to 16.16 fixed-point (now uint64_t to support long samples)
+    voice->sample_pos = ((uint64_t)sample_offset) << 16;
 }
 
 int32_t tracker_voice_get_sample(TrackerVoice* voice) {
@@ -135,10 +137,10 @@ int32_t tracker_voice_get_sample(TrackerVoice* voice) {
     }
 
     // Get sample at current integer position (16.16 fixed-point)
-    uint32_t pos = voice->sample_pos >> 16;
+    uint64_t pos = voice->sample_pos >> 16;
 
     // Safety clamp to prevent buffer overrun
-    uint32_t max_pos = (voice->length >> 16);
+    uint64_t max_pos = (voice->length >> 16);
     if (pos >= max_pos) {
         // Past end of sample - return silence
         return 0;
@@ -161,7 +163,7 @@ int32_t tracker_voice_get_sample(TrackerVoice* voice) {
     if (voice->sample_pos >= voice->loop_end) {
         if (voice->loop_enabled) {
             // Wrap to loop start
-            uint32_t loop_len = voice->loop_end - voice->loop_start;
+            uint64_t loop_len = voice->loop_end - voice->loop_start;
             if (loop_len > 0) {
                 // Handle case where delta causes multiple wraps
                 while (voice->sample_pos >= voice->loop_end) {

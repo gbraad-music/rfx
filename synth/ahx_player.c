@@ -90,7 +90,7 @@ struct AhxVoice {
 
     // Public mixing variables
     int VoiceVolume, VoicePeriod;
-    char VoiceBuffer[0x281];
+    int16_t VoiceBuffer[0x281];  // 16-bit wavetable for higher quality
     uint32_t Delta;  // HVL: Pre-calculated sample delta (16.16 fixed-point)
 
     // Internal state
@@ -114,10 +114,10 @@ struct AhxVoice {
     int WaveLength;
     AhxPList* PerfList;
     int NoteDelayWait, NoteDelayOn, NoteCutWait, NoteCutOn;
-    char* AudioPointer;
-    char* AudioSource;
+    int16_t* AudioPointer;
+    int16_t* AudioSource;
     int AudioPeriod, AudioVolume;
-    char SquareTempBuffer[0x80];
+    int16_t SquareTempBuffer[0x80];
 
     // HVL-style panning
     int PanMultLeft, PanMultRight;
@@ -127,12 +127,12 @@ struct AhxVoice {
 };
 
 struct AhxWaves {
-    char LowPasses[(0xfc+0xfc+0x80*0x1f+0x80+3*0x280)*31];
-    char Triangle04[0x04], Triangle08[0x08], Triangle10[0x10], Triangle20[0x20], Triangle40[0x40], Triangle80[0x80];
-    char Sawtooth04[0x04], Sawtooth08[0x08], Sawtooth10[0x10], Sawtooth20[0x20], Sawtooth40[0x40], Sawtooth80[0x80];
-    char Squares[0x80*0x20];
-    char WhiteNoiseBig[0x280*3];
-    char HighPasses[(0xfc+0xfc+0x80*0x1f+0x80+3*0x280)*31];
+    int16_t LowPasses[(0xfc+0xfc+0x80*0x1f+0x80+3*0x280)*31];
+    int16_t Triangle04[0x04], Triangle08[0x08], Triangle10[0x10], Triangle20[0x20], Triangle40[0x40], Triangle80[0x80];
+    int16_t Sawtooth04[0x04], Sawtooth08[0x08], Sawtooth10[0x10], Sawtooth20[0x20], Sawtooth40[0x40], Sawtooth80[0x80];
+    int16_t Squares[0x80*0x20];
+    int16_t WhiteNoiseBig[0x280*3];
+    int16_t HighPasses[(0xfc+0xfc+0x80*0x1f+0x80+3*0x280)*31];
 };
 
 struct AhxPlayer {
@@ -148,7 +148,7 @@ struct AhxPlayer {
     int PosNr, PosJump;
     int NoteNr, PosJumpNote;
     int PlayingTime;
-    char* WaveformTab[4];
+    int16_t* WaveformTab[4];
 
     // Mixing state
     int VolumeTable[65][256];  // Kept for compatibility but not used in HVL mode
@@ -329,11 +329,11 @@ static void voice_init(AhxVoice* voice);
 static void voice_calc_adsr(AhxVoice* voice);
 static void gen_panning_tables(AhxPlayer* player);
 static void waves_generate(AhxWaves* waves);
-static void waves_generate_triangle(char* buffer, int len);
-static void waves_generate_square(char* buffer);
-static void waves_generate_sawtooth(char* buffer, int len);
-static void waves_generate_white_noise(char* buffer, int len);
-static void waves_generate_filter_waveforms(char* buffer, char* low, char* high);
+static void waves_generate_triangle(int16_t* buffer, int len);
+static void waves_generate_square(int16_t* buffer);
+static void waves_generate_sawtooth(int16_t* buffer, int len);
+static void waves_generate_white_noise(int16_t* buffer, int len);
+static void waves_generate_filter_waveforms(int16_t* buffer, int16_t* low, int16_t* high);
 static void player_process_step(AhxPlayer* player, int v);
 static void player_process_frame(AhxPlayer* player, int v);
 static void player_set_audio(AhxPlayer* player, int v);
@@ -360,7 +360,7 @@ static void gen_panning_tables(AhxPlayer* player) {
 // Voice functions
 static void voice_init(AhxVoice* voice) {
     memset(voice, 0, sizeof(AhxVoice));
-    memset(voice->VoiceBuffer, 0, 0x281);
+    memset(voice->VoiceBuffer, 0, 0x281 * sizeof(int16_t));
 
     // Initialize generic tracker components
     tracker_modulator_init(&voice->filter_mod);
@@ -386,11 +386,11 @@ static void voice_calc_adsr(AhxVoice* voice) {
 
 // Wave generation functions
 static inline void clip_float(float* x) {
-    if (*x > 127.f) { *x = 127.f; return; }
-    if (*x < -128.f) { *x = -128.f; return; }
+    if (*x > 32767.f) { *x = 32767.f; return; }  // 16-bit range
+    if (*x < -32768.f) { *x = -32768.f; return; }
 }
 
-static void waves_generate_filter_waveforms(char* buffer, char* low, char* high) {
+static void waves_generate_filter_waveforms(int16_t* buffer, int16_t* low, int16_t* high) {
     int length_table[] = { 3, 7, 0xf, 0x1f, 0x3f, 0x7f, 3, 7, 0xf, 0x1f, 0x3f, 0x7f,
         0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,
         0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,0x7f,
@@ -398,7 +398,7 @@ static void waves_generate_filter_waveforms(char* buffer, char* low, char* high)
     };
 
     for (int temp = 0, freq = 8; temp < 31; temp++, freq += 3) {
-        char* a0 = buffer;
+        int16_t* a0 = buffer;
         for (int waves = 0; waves < 6+6+0x20+1; waves++) {
             float fre = (float)freq * 1.25f / 100.f;
             float high_val, mid = 0.f, low_val = 0.f;
@@ -417,62 +417,66 @@ static void waves_generate_filter_waveforms(char* buffer, char* low, char* high)
                 clip_float(&mid);
                 low_val += mid * fre;
                 clip_float(&low_val);
-                *low++ = (char)low_val;
-                *high++ = (char)high_val;
+                *low++ = (int16_t)low_val;  // 16-bit output
+                *high++ = (int16_t)high_val;
             }
             a0 += length_table[waves] + 1;
         }
     }
 }
 
-static void waves_generate_triangle(char* buffer, int len) {
+static void waves_generate_triangle(int16_t* buffer, int len) {
     int d2 = len;
     int d5 = d2 >> 2;
-    int d1 = 128 / d5;
+    int d1 = 32768 / d5;  // 16-bit range: 256x larger than 8-bit
     int d4 = -(d2 >> 1);
-    char* edi = buffer;
+    int16_t* edi = buffer;
     int eax = 0;
 
     for (int ecx = 0; ecx < d5; ecx++) {
         *edi++ = eax;
         eax += d1;
     }
-    *edi++ = 0x7f;
+    *edi++ = 0x7fff;  // Max positive 16-bit
     if (d5 != 1) {
-        eax = 128;
+        eax = 32768;
         for (int ecx = 0; ecx < d5-1; ecx++) {
             eax -= d1;
             *edi++ = eax;
         }
     }
-    char* esi = edi + d4;
+    int16_t* esi = edi + d4;
     for (int ecx = 0; ecx < d5*2; ecx++) {
         *edi++ = *esi++;
-        if (edi[-1] == 0x7f) edi[-1] = 0x80;
+        if (edi[-1] == 0x7fff) edi[-1] = -32768;  // Flip peak to negative
         else edi[-1] = -edi[-1];
     }
 }
 
-static void waves_generate_square(char* buffer) {
-    char* edi = buffer;
+static void waves_generate_square(int16_t* buffer) {
+    int16_t* edi = buffer;
     for (int ebx = 1; ebx <= 0x20; ebx++) {
-        for (int ecx = 0; ecx < (0x40-ebx)*2; ecx++) *edi++ = 0x80;
-        for (int ecx = 0; ecx < ebx*2; ecx++) *edi++ = 0x7f;
+        for (int ecx = 0; ecx < (0x40-ebx)*2; ecx++) *edi++ = -32768;  // Min 16-bit
+        for (int ecx = 0; ecx < ebx*2; ecx++) *edi++ = 0x7fff;  // Max 16-bit
     }
 }
 
-static void waves_generate_sawtooth(char* buffer, int len) {
-    char* edi = buffer;
-    int ebx = 256 / (len-1);
-    int eax = -128;
+static void waves_generate_sawtooth(int16_t* buffer, int len) {
+    int16_t* edi = buffer;
+    int ebx = 65536 / (len-1);  // 16-bit range: 65536 total values
+    int eax = -32768;
     for (int ecx = 0; ecx < len; ecx++) {
         *edi++ = eax;
         eax += ebx;
     }
 }
 
-static void waves_generate_white_noise(char* buffer, int len) {
-    memcpy(buffer, WhiteNoiseBig, len);
+static void waves_generate_white_noise(int16_t* buffer, int len) {
+    // Scale 8-bit noise table to 16-bit (multiply by 256)
+    for (int i = 0; i < len; i++) {
+        int8_t sample8 = (int8_t)WhiteNoiseBig[i];  // Convert to signed
+        buffer[i] = sample8 * 256;  // Scale to 16-bit range
+    }
 }
 
 static void waves_generate(AhxWaves* waves) {
@@ -1077,7 +1081,7 @@ static void player_process_frame(AhxPlayer* player, int v) {
 
     // Calculate square waveform
     if (player->Voices[v].Waveform == 3-1 || player->Voices[v].PlantSquare) {
-        char* square_ptr = &player->Waves->Squares[(player->Voices[v].FilterPos-0x20) *
+        int16_t* square_ptr = &player->Waves->Squares[(player->Voices[v].FilterPos-0x20) *
             (0xfc+0xfc+0x80*0x1f+0x80+0x280*3)];
         int x = player->Voices[v].SquarePos << (5 - player->Voices[v].WaveLength);
 
@@ -1104,7 +1108,7 @@ static void player_process_frame(AhxPlayer* player, int v) {
     if (player->Voices[v].Waveform == 4-1) player->Voices[v].NewWaveform = 1;
 
     if (player->Voices[v].NewWaveform) {
-        char* audio_source = player->WaveformTab[player->Voices[v].Waveform];
+        int16_t* audio_source = player->WaveformTab[player->Voices[v].Waveform];
 
         if (player->Voices[v].Waveform != 3-1) {
             audio_source += (player->Voices[v].FilterPos-0x20) * (0xfc+0xfc+0x80*0x1f+0x80+0x280*3);
@@ -1170,12 +1174,12 @@ static void player_set_audio(AhxPlayer* player, int v) {
 
     if (player->Voices[v].NewWaveform) {
         if (player->Voices[v].Waveform == 4-1) {
-            memcpy(player->Voices[v].VoiceBuffer, player->Voices[v].AudioSource, 0x280);
+            memcpy(player->Voices[v].VoiceBuffer, player->Voices[v].AudioSource, 0x280 * sizeof(int16_t));
         } else {
             int wave_loops = (1 << (5 - player->Voices[v].WaveLength)) * 5;
             for (int i = 0; i < wave_loops; i++) {
                 memcpy(&player->Voices[v].VoiceBuffer[i*4*(1 << player->Voices[v].WaveLength)],
-                    player->Voices[v].AudioSource, 4*(1 << player->Voices[v].WaveLength));
+                    player->Voices[v].AudioSource, 4*(1 << player->Voices[v].WaveLength) * sizeof(int16_t));
             }
         }
         player->Voices[v].VoiceBuffer[0x280] = player->Voices[v].VoiceBuffer[0];
@@ -1496,17 +1500,17 @@ void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num
         // Mix a chunk up to next frame boundary
         int chunk_samples = MIN((int)(num_samples - output_pos), player->frame_counter);
 
-        // HVL mixing algorithm - exact match to hvl_mixchunk
+        // HVL mixing algorithm - using 16-bit wavetables
         // Pre-load voice parameters into local arrays for efficiency
         uint32_t delta[4], pos[4];
-        const int8_t* src[4];
+        const int16_t* src[4];  // 16-bit wavetables
         int vol[4], panl[4], panr[4];
 
         for (int i = 0; i < 4; i++) {
             delta[i] = player->Voices[i].Delta;
             vol[i] = player->Voices[i].VoiceVolume;
             pos[i] = player->pos[i];
-            src[i] = (const int8_t*)player->Voices[i].VoiceBuffer;
+            src[i] = (const int16_t*)player->Voices[i].VoiceBuffer;
             panl[i] = player->Voices[i].PanMultLeft;
             panr[i] = player->Voices[i].PanMultRight;
         }
@@ -1540,8 +1544,9 @@ void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num
                 for (int i = 0; i < 4; i++) {
                     if (player->channel_muted[i] || vol[i] == 0) continue;
 
-                    // Direct multiplication (HVL style)
-                    int j = src[i][pos[i] >> 16] * vol[i];
+                    // Read 16-bit sample and scale down to 8-bit equivalent range
+                    // (16-bit samples are 256x larger, so >>8 to match original behavior)
+                    int j = (src[i][pos[i] >> 16] * vol[i]) >> 8;
 
                     // Apply panning
                     a += (j * panl[i]) >> 7;

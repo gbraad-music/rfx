@@ -4,7 +4,9 @@
 #include <stdio.h>
 #include <math.h>
 
-#define Period2Freq(period) (3579545.25f / (period))
+// HivelyTracker formula - returns 16.16 fixed-point delta value
+#define AMIGA_PAULA_PAL_CLK 3546895
+#define Period2Freq(period) ((AMIGA_PAULA_PAL_CLK * 65536.0f) / (period))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
@@ -106,6 +108,9 @@ struct AhxVoice {
     char* AudioSource;
     int AudioPeriod, AudioVolume;
     char SquareTempBuffer[0x80];
+
+    // HVL-style panning
+    int PanMultLeft, PanMultRight;
 };
 
 struct AhxWaves {
@@ -134,11 +139,14 @@ struct AhxPlayer {
     int WNRandom;
 
     // Mixing state
-    int VolumeTable[65][256];
+    int VolumeTable[65][256];  // Kept for compatibility but not used in HVL mode
     float Boost;
     int Oversampling;
     int pos[4];  // Sample positions for each voice
     int frame_counter;  // Frame timing counter for 50Hz IRQ
+    int mixgain;  // HVL mixing gain
+    int panning_left[256];   // HVL panning table
+    int panning_right[256];  // HVL panning table
 
     // Callback
     AhxPositionCallback position_callback;
@@ -297,9 +305,14 @@ static const unsigned char WhiteNoiseBig[] = {
     0xa1,0xa0,0x9e,0x7f,0x4d,0x55,0xd5,0x19,0x7f,0x7f,0x7f,0x80,0x13,0xe7,0x2c,0x2c
 };
 
+// Stereo panning positions (HVL)
+static const int stereopan_left[]  = { 128,  96,  64,  32,   0 };
+static const int stereopan_right[] = { 128, 160, 193, 225, 255 };
+
 // Forward declarations of internal functions
 static void voice_init(AhxVoice* voice);
 static void voice_calc_adsr(AhxVoice* voice);
+static void gen_panning_tables(AhxPlayer* player);
 static void waves_generate(AhxWaves* waves);
 static void waves_generate_triangle(char* buffer, int len);
 static void waves_generate_square(char* buffer);
@@ -312,6 +325,22 @@ static void player_set_audio(AhxPlayer* player, int v);
 static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_param);
 static void player_play_irq(AhxPlayer* player);
 static void init_volume_table(AhxPlayer* player, float boost);
+
+// Generate HVL panning tables (from HVL replay.c)
+static void gen_panning_tables(AhxPlayer* player) {
+    double aa = (3.14159265 * 2.0) / 4.0;  // Quarter of the way through the sinewave
+    double ab = 0.0;                         // Start of the climb from zero
+
+    for (int i = 0; i < 256; i++) {
+        player->panning_left[i]  = (int)(sin(aa) * 255.0);
+        player->panning_right[i] = (int)(sin(ab) * 255.0);
+
+        aa += (3.14159265 * 2.0 / 4.0) / 256.0;
+        ab += (3.14159265 * 2.0 / 4.0) / 256.0;
+    }
+    player->panning_left[255] = 0;
+    player->panning_right[0] = 0;
+}
 
 // Voice functions
 static void voice_init(AhxVoice* voice) {
@@ -582,6 +611,19 @@ static void init_subsong(AhxPlayer* player, int nr) {
     for (int v = 0; v < 4; v++) {
         voice_init(&player->Voices[v]);
     }
+
+    // Set HVL-style panning (stereo mode 2 = standard stereo)
+    int defpanleft = stereopan_left[2];   // 64
+    int defpanright = stereopan_right[2]; // 193
+
+    player->Voices[0].PanMultLeft = player->panning_left[defpanleft];
+    player->Voices[0].PanMultRight = player->panning_right[defpanleft];
+    player->Voices[1].PanMultLeft = player->panning_left[defpanright];
+    player->Voices[1].PanMultRight = player->panning_right[defpanright];
+    player->Voices[2].PanMultLeft = player->panning_left[defpanright];
+    player->Voices[2].PanMultRight = player->panning_right[defpanright];
+    player->Voices[3].PanMultLeft = player->panning_left[defpanleft];
+    player->Voices[3].PanMultRight = player->panning_right[defpanleft];
 }
 
 // ProcessStep - from AHX.cpp line 399
@@ -1263,9 +1305,16 @@ AhxPlayer* ahx_player_create(void) {
     player->WaveformTab[1] = player->Waves->Sawtooth04;
     player->WaveformTab[3] = player->Waves->WhiteNoiseBig;
 
-    // Initialize volume table
+    // Initialize volume table (for compatibility, but not used in HVL mode)
     init_volume_table(player, 1.0f);
     player->Oversampling = 1;
+
+    // Initialize HVL panning tables
+    gen_panning_tables(player);
+
+    // Initialize HVL mixgain (stereo mode 2 = standard stereo, defgain = 76)
+    const int defgain[] = { 71, 72, 76, 85, 100 };
+    player->mixgain = (defgain[2] * 256) / 100;  // = 194
 
     // Initialize voices
     for (int i = 0; i < 4; i++) {
@@ -1375,90 +1424,68 @@ void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num
     if (!player->Playing) return;
 
     int samples_per_frame = sample_rate / 50 / player->Song.SpeedMultiplier;
-    size_t sample = 0;
+    size_t output_pos = 0;
 
-    while (sample < num_samples) {
-        // Check if we need to process next frame (50Hz default)
+    while (output_pos < num_samples) {
+        // Check if we need to process next frame (50Hz IRQ)
         if (player->frame_counter <= 0) {
             player_play_irq(player);
             player->frame_counter = samples_per_frame;
         }
 
         // Mix a chunk up to next frame boundary
-        int chunk_samples = MIN((int)(num_samples - sample), player->frame_counter);
+        int chunk_samples = MIN((int)(num_samples - output_pos), player->frame_counter);
 
-        // Mix all 4 voices - exactly matching xmms-ahx-0.6 MixChunkStereo
-        for (int v = 0; v < 4; v++) {
-            if (player->Voices[v].VoiceVolume == 0 || player->channel_muted[v]) continue;
-            if (player->Voices[v].VoicePeriod == 0) continue;
+        // HVL mixing algorithm (from hvl_mixchunk)
+        // Process this chunk sample by sample
+        for (int s = 0; s < chunk_samples; s++) {
+            int a = 0, b = 0;  // Left and right accumulators
 
-            // Calculate delta once per voice (xmms-ahx-0.6 line 220)
-            float freq = Period2Freq(player->Voices[v].VoicePeriod);
-            int delta = (int)(freq * (1 << 16) / sample_rate);
+            // Mix all 4 voices for this sample
+            for (int v = 0; v < 4; v++) {
+                if (player->Voices[v].VoiceVolume == 0 || player->channel_muted[v]) continue;
+                if (player->Voices[v].VoicePeriod == 0) continue;
 
-            if (delta <= 0) continue;
+                // Calculate delta: Period2Freq already returns 16.16 fixed-point
+                uint32_t delta = (uint32_t)(Period2Freq(player->Voices[v].VoicePeriod) / sample_rate);
+                if (delta == 0) continue;
 
-            int samples_to_mix = chunk_samples;
-            int mixpos = 0;
-
-            // Hard pan: voices 0,3 = left, 1,2 = right (xmms-ahx-0.6 line 223)
-            float* output = (v == 0 || v == 3) ? &left[sample] : &right[sample];
-
-            // Mix in batches until buffer wrap (xmms-ahx-0.6 line 225-244)
-            while (samples_to_mix > 0) {
-                // Wrap position when needed (xmms-ahx-0.6 line 227)
-                if (player->pos[v] > (0x280 << 16))
+                // Wrap position if needed
+                if (player->pos[v] >= (0x280 << 16))
                     player->pos[v] -= 0x280 << 16;
 
-                // Calculate samples until next buffer wrap (xmms-ahx-0.6 line 229)
-                int max_samples = ((0x280 << 16) - player->pos[v] - 1) / delta + 1;
-                int thiscount = MIN(samples_to_mix, max_samples);
+                // Get sample from buffer (no interpolation for now)
+                int offset = player->pos[v] >> 16;
+                if (offset >= 0x280) offset = 0x27f;
 
-                // Safety check to prevent infinite loop
-                if (thiscount <= 0) {
-                    thiscount = 1;
-                }
+                // HVL direct multiplication: sample * volume
+                int8_t sample_byte = (int8_t)player->Voices[v].VoiceBuffer[offset];
+                int j = sample_byte * player->Voices[v].VoiceVolume;
 
-                samples_to_mix -= thiscount;
+                // Apply panning
+                a += (j * player->Voices[v].PanMultLeft) >> 7;
+                b += (j * player->Voices[v].PanMultRight) >> 7;
 
-                // Get volume table pointer (xmms-ahx-0.6 line 231)
-                int volume = CLAMP(player->Voices[v].VoiceVolume, 0, 64);
-                int* VolTab = &player->VolumeTable[volume][128];
-
-                // Inner loop - mix samples with interpolation (xmms AHX.cpp line 1168-1183)
-                if (player->Oversampling) {
-                    // Linear interpolation for better quality
-                    for (int i = 0; i < thiscount && mixpos < chunk_samples; i++) {
-                        int offset = player->pos[v] >> 16;
-                        if (offset >= 0x280) offset = 0x27f;
-
-                        int sample1 = VolTab[(int8_t)player->Voices[v].VoiceBuffer[offset]];
-                        int sample2 = VolTab[(int8_t)player->Voices[v].VoiceBuffer[offset + 1]];
-                        int frac1 = player->pos[v] & ((1 << 16) - 1);  // Fractional part
-                        int frac2 = (1 << 16) - frac1;                   // Inverse fraction
-                        int mixed = ((sample1 * frac2) + (sample2 * frac1)) >> 16;
-
-                        output[mixpos] += mixed / 512.0f;
-                        mixpos++;
-                        player->pos[v] += delta;
-                    }
-                } else {
-                    // No interpolation - simpler but lower quality
-                    for (int i = 0; i < thiscount && mixpos < chunk_samples; i++) {
-                        int offset = player->pos[v] >> 16;
-                        if (offset >= 0x280) offset = 0;
-
-                        int mixed = VolTab[(int8_t)player->Voices[v].VoiceBuffer[offset]];
-
-                        output[mixpos] += mixed / 512.0f;
-                        mixpos++;
-                        player->pos[v] += delta;
-                    }
-                }
+                // Advance position
+                player->pos[v] += delta;
             }
+
+            // Apply mixgain
+            a = (a * player->mixgain) >> 8;
+            b = (b * player->mixgain) >> 8;
+
+            // Clip to 16-bit range
+            if (a < -32768) a = -32768;
+            if (a >  32767) a =  32767;
+            if (b < -32768) b = -32768;
+            if (b >  32767) b =  32767;
+
+            // Convert to float -1.0 to 1.0
+            left[output_pos + s] = a / 32768.0f;
+            right[output_pos + s] = b / 32768.0f;
         }
 
-        sample += chunk_samples;
+        output_pos += chunk_samples;
         player->frame_counter -= chunk_samples;
     }
 }

@@ -1439,6 +1439,9 @@ void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num
 
     if (!player->Playing) return;
 
+    // Update sample rate for delta calculations
+    player->current_sample_rate = sample_rate;
+
     int samples_per_frame = sample_rate / 50 / player->Song.SpeedMultiplier;
     size_t output_pos = 0;
 

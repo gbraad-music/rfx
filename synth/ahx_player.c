@@ -1,4 +1,7 @@
 #include "ahx_player.h"
+#include "tracker_modulator.h"
+#include "tracker_sequence.h"
+#include "tracker_voice.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -79,6 +82,12 @@ struct AhxSong {
 };
 
 struct AhxVoice {
+    // Generic tracker components
+    TrackerModulator filter_mod;
+    TrackerModulator square_mod;
+    TrackerSequence plist_seq;
+    TrackerVoice voice_playback;
+
     // Public mixing variables
     int VoiceVolume, VoicePeriod;
     char VoiceBuffer[0x281];
@@ -352,6 +361,13 @@ static void gen_panning_tables(AhxPlayer* player) {
 static void voice_init(AhxVoice* voice) {
     memset(voice, 0, sizeof(AhxVoice));
     memset(voice->VoiceBuffer, 0, 0x281);
+
+    // Initialize generic tracker components
+    tracker_modulator_init(&voice->filter_mod);
+    tracker_modulator_init(&voice->square_mod);
+    tracker_sequence_init(&voice->plist_seq);
+    tracker_voice_init(&voice->voice_playback);
+
     voice->TrackOn = 1;
     voice->TrackMasterVolume = 0x40;
     voice->WNRandom = 0x280;
@@ -730,6 +746,11 @@ static void player_process_step(AhxPlayer* player, int v) {
         player->Voices[v].SquareUpperLimit = square_upper;
         player->Voices[v].SquareLowerLimit = square_lower;
 
+        // Initialize generic square modulator
+        tracker_modulator_set_limits(&player->Voices[v].square_mod, square_lower, square_upper);
+        tracker_modulator_set_position(&player->Voices[v].square_mod, 0);
+        tracker_modulator_set_active(&player->Voices[v].square_mod, false);
+
         // InitFilter
         player->Voices[v].IgnoreFilter = player->Voices[v].FilterWait = player->Voices[v].FilterOn = 0;
         player->Voices[v].FilterSlidingIn = 0;
@@ -750,10 +771,24 @@ static void player_process_step(AhxPlayer* player, int v) {
         player->Voices[v].FilterLowerLimit = d3;
         player->Voices[v].FilterPos = 32;
 
+        // Initialize generic filter modulator
+        tracker_modulator_set_limits(&player->Voices[v].filter_mod, d3, d4);
+        tracker_modulator_set_position(&player->Voices[v].filter_mod, 32);
+        tracker_modulator_set_active(&player->Voices[v].filter_mod, false);
+
         // Init PerfList
         player->Voices[v].PerfWait = player->Voices[v].PerfCurrent = 0;
         player->Voices[v].PerfSpeed = player->Voices[v].Instrument->PList.Speed;
         player->Voices[v].PerfList = &player->Voices[v].Instrument->PList;
+
+        // Initialize generic sequence (pointing to existing PList data)
+        // Note: We cast AhxPListEntry to TrackerSequenceEntry - they have compatible layout
+        player->Voices[v].plist_seq.entries = (TrackerSequenceEntry*)player->Voices[v].Instrument->PList.Entries;
+        player->Voices[v].plist_seq.length = player->Voices[v].Instrument->PList.Length;
+        player->Voices[v].plist_seq.speed = player->Voices[v].Instrument->PList.Speed;
+        player->Voices[v].plist_seq.current = 0;
+        player->Voices[v].plist_seq.wait = player->Voices[v].Instrument->PList.Speed;
+        player->Voices[v].plist_seq.active = true;
     }
 
     // NoInstrument
@@ -947,38 +982,45 @@ static void player_process_frame(AhxPlayer* player, int v) {
         }
     }
 
-    // PList
-    if (player->Voices[v].Instrument && player->Voices[v].PerfCurrent < player->Voices[v].Instrument->PList.Length) {
-        if (--player->Voices[v].PerfWait <= 0) {
-            int cur = player->Voices[v].PerfCurrent++;
-            player->Voices[v].PerfWait = player->Voices[v].PerfSpeed;
-
-            if (player->Voices[v].PerfList->Entries[cur].Waveform) {
-                player->Voices[v].Waveform = player->Voices[v].PerfList->Entries[cur].Waveform - 1;
-                player->Voices[v].NewWaveform = 1;
-                player->Voices[v].PeriodPerfSlideSpeed = player->Voices[v].PeriodPerfSlidePeriod = 0;
-            }
-
-            // Holdwave
-            player->Voices[v].PeriodPerfSlideOn = 0;
-            for (int i = 0; i < 2; i++) {
-                player_plist_command_parse(player, v,
-                    player->Voices[v].PerfList->Entries[cur].FX[i],
-                    player->Voices[v].PerfList->Entries[cur].FXParam[i]);
-            }
-
-            // GetNote
-            if (player->Voices[v].PerfList->Entries[cur].Note) {
-                player->Voices[v].InstrPeriod = player->Voices[v].PerfList->Entries[cur].Note;
-                player->Voices[v].PlantPeriod = 1;
-                player->Voices[v].FixedNote = player->Voices[v].PerfList->Entries[cur].Fixed;
-            }
+    // PList (using generic sequence component)
+    const TrackerSequenceEntry* entry = tracker_sequence_update(&player->Voices[v].plist_seq);
+    if (entry) {
+        // Process waveform change
+        if (entry->waveform) {
+            player->Voices[v].Waveform = entry->waveform - 1;
+            player->Voices[v].NewWaveform = 1;
+            player->Voices[v].PeriodPerfSlideSpeed = player->Voices[v].PeriodPerfSlidePeriod = 0;
         }
+
+        // Holdwave
+        player->Voices[v].PeriodPerfSlideOn = 0;
+
+        // Execute FX commands
+        for (int i = 0; i < 2; i++) {
+            player_plist_command_parse(player, v, entry->fx[i], entry->fx_param[i]);
+        }
+
+        // GetNote
+        if (entry->note) {
+            player->Voices[v].InstrPeriod = entry->note;
+            player->Voices[v].PlantPeriod = 1;
+            player->Voices[v].FixedNote = entry->fixed;
+        }
+
+        // Sync old fields for compatibility
+        player->Voices[v].PerfCurrent = player->Voices[v].plist_seq.current;
+        player->Voices[v].PerfWait = player->Voices[v].plist_seq.wait;
     } else {
-        if (player->Voices[v].PerfWait)
-            player->Voices[v].PerfWait--;
-        else
-            player->Voices[v].PeriodPerfSlideSpeed = 0;
+        // No entry this frame - handle wait countdown
+        if (player->Voices[v].plist_seq.current >= player->Voices[v].plist_seq.length) {
+            if (player->Voices[v].PerfWait)
+                player->Voices[v].PerfWait--;
+            else
+                player->Voices[v].PeriodPerfSlideSpeed = 0;
+        }
+
+        // Sync old fields for compatibility
+        player->Voices[v].PerfWait = player->Voices[v].plist_seq.wait;
     }
 
     // PerfPortamento
@@ -988,72 +1030,42 @@ static void player_process_frame(AhxPlayer* player, int v) {
             player->Voices[v].PlantPeriod = 1;
     }
 
-    // Square modulation
+    // Square modulation (using generic tracker modulator)
     if (player->Voices[v].Waveform == 3-1 && player->Voices[v].SquareOn) {
         if (--player->Voices[v].SquareWait <= 0) {
-            int d1 = player->Voices[v].SquareLowerLimit;
-            int d2 = player->Voices[v].SquareUpperLimit;
-            int d3 = player->Voices[v].SquarePos;
+            // Use generic modulator for position updates
+            tracker_modulator_update(&player->Voices[v].square_mod);
 
-            if (player->Voices[v].SquareInit) {
-                player->Voices[v].SquareInit = 0;
-                if (d3 <= d1) {
-                    player->Voices[v].SquareSlidingIn = 1;
-                    player->Voices[v].SquareSign = 1;
-                } else if (d3 >= d2) {
-                    player->Voices[v].SquareSlidingIn = 1;
-                    player->Voices[v].SquareSign = -1;
-                }
-            }
+            // Get updated position
+            int d3 = tracker_modulator_get_position(&player->Voices[v].square_mod);
 
-            // NoSquareInit
-            if (d1 == d3 || d2 == d3) {
-                if (player->Voices[v].SquareSlidingIn) {
-                    player->Voices[v].SquareSlidingIn = 0;
-                } else {
-                    player->Voices[v].SquareSign = -player->Voices[v].SquareSign;
-                }
-            }
-            d3 += player->Voices[v].SquareSign;
+            // Sync old field for compatibility
             player->Voices[v].SquarePos = d3;
             player->Voices[v].PlantSquare = 1;
             player->Voices[v].SquareWait = player->Voices[v].Instrument->SquareSpeed;
         }
     }
 
-    // Filter modulation
+    // Filter modulation (using generic tracker modulator)
     if (player->Voices[v].FilterOn && --player->Voices[v].FilterWait <= 0) {
-        int d1 = player->Voices[v].FilterLowerLimit;
-        int d2 = player->Voices[v].FilterUpperLimit;
-        int d3 = player->Voices[v].FilterPos;
-
-        if (player->Voices[v].FilterInit) {
-            player->Voices[v].FilterInit = 0;
-            if (d3 <= d1) {
-                player->Voices[v].FilterSlidingIn = 1;
-                player->Voices[v].FilterSign = 1;
-            } else if (d3 >= d2) {
-                player->Voices[v].FilterSlidingIn = 1;
-                player->Voices[v].FilterSign = -1;
-            }
-        }
-
-        // NoFilterInit
+        // Use generic modulator for position updates
         int f_max = (player->Voices[v].FilterSpeed < 4) ? (5 - player->Voices[v].FilterSpeed) : 1;
         for (int i = 0; i < f_max; i++) {
-            if (d1 == d3 || d2 == d3) {
-                if (player->Voices[v].FilterSlidingIn) {
-                    player->Voices[v].FilterSlidingIn = 0;
-                } else {
-                    player->Voices[v].FilterSign = -player->Voices[v].FilterSign;
-                }
-            }
-            d3 += player->Voices[v].FilterSign;
+            tracker_modulator_update(&player->Voices[v].filter_mod);
         }
 
-        // Clamp filter position
-        if (d3 < 1) d3 = 1;
-        if (d3 > 63) d3 = 63;
+        // Get updated position and clamp for AHX
+        int d3 = tracker_modulator_get_position(&player->Voices[v].filter_mod);
+        if (d3 < 1) {
+            d3 = 1;
+            tracker_modulator_set_position(&player->Voices[v].filter_mod, d3);
+        }
+        if (d3 > 63) {
+            d3 = 63;
+            tracker_modulator_set_position(&player->Voices[v].filter_mod, d3);
+        }
+
+        // Sync old field for compatibility
         player->Voices[v].FilterPos = d3;
         player->Voices[v].NewWaveform = 1;
         player->Voices[v].FilterWait = player->Voices[v].FilterSpeed - 3;
@@ -1200,23 +1212,36 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
             if (player->Song.Revision == 0 || fx_param == 0) {
                 player->Voices[v].SquareInit = (player->Voices[v].SquareOn ^= 1);
                 player->Voices[v].SquareSign = 1;
+
+                // Activate/configure generic square modulator
+                tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
+                tracker_modulator_set_direction(&player->Voices[v].square_mod, player->Voices[v].SquareSign);
             } else {
                 if (fx_param & 0x0f) {
                     player->Voices[v].SquareInit = (player->Voices[v].SquareOn ^= 1);
                     player->Voices[v].SquareSign = 1;
                     if ((fx_param & 0x0f) == 0x0f)
                         player->Voices[v].SquareSign = -1;
+
+                    // Activate/configure generic square modulator
+                    tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
+                    tracker_modulator_set_direction(&player->Voices[v].square_mod, player->Voices[v].SquareSign);
                 }
                 if (fx_param & 0xf0) {
                     player->Voices[v].FilterInit = (player->Voices[v].FilterOn ^= 1);
                     player->Voices[v].FilterSign = 1;
                     if ((fx_param & 0xf0) == 0xf0)
                         player->Voices[v].FilterSign = -1;
+
+                    // Activate/configure generic filter modulator
+                    tracker_modulator_set_active(&player->Voices[v].filter_mod, player->Voices[v].FilterOn);
+                    tracker_modulator_set_direction(&player->Voices[v].filter_mod, player->Voices[v].FilterSign);
                 }
             }
             break;
         case 5: // Jump to Step
             player->Voices[v].PerfCurrent = fx_param;
+            tracker_sequence_jump(&player->Voices[v].plist_seq, fx_param);
             break;
         case 6: // Set Volume
             if (fx_param > 0x40) {
@@ -1236,6 +1261,7 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
             break;
         case 7: // Set speed
             player->Voices[v].PerfSpeed = player->Voices[v].PerfWait = fx_param;
+            tracker_sequence_set_speed(&player->Voices[v].plist_seq, fx_param);
             break;
     }
 }

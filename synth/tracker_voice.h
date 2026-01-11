@@ -1,0 +1,112 @@
+/*
+ * Generic Tracker Voice
+ *
+ * Fixed-point wavetable playback used in Amiga-style trackers.
+ * Uses 16.16 fixed-point arithmetic for sub-sample precision.
+ *
+ * Based on patterns from ProTracker, AHX/HVL, OctaMED, etc.
+ */
+
+#ifndef TRACKER_VOICE_H
+#define TRACKER_VOICE_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct {
+    // Fixed-point playback state (16.16)
+    uint32_t sample_pos;    // Current position in waveform
+    uint32_t delta;         // Frequency/pitch (added to sample_pos each sample)
+
+    // Waveform data
+    const int8_t* waveform; // Pointer to waveform data
+    uint32_t length;        // Length in samples (in fixed-point: length << 16)
+
+    // Volume
+    int32_t volume;         // 0-64 (tracker-style volume)
+
+    // Panning (0-255, 128 = center)
+    int32_t pan_left;       // Left channel multiplier
+    int32_t pan_right;      // Right channel multiplier
+} TrackerVoice;
+
+/**
+ * Initialize voice
+ */
+void tracker_voice_init(TrackerVoice* voice);
+
+/**
+ * Set waveform data
+ * @param waveform Pointer to int8_t waveform data
+ * @param length Length in samples
+ */
+void tracker_voice_set_waveform(TrackerVoice* voice,
+                                const int8_t* waveform,
+                                uint32_t length);
+
+/**
+ * Set frequency using period (Amiga-style)
+ * @param period Amiga period value
+ * @param clock_rate Paula clock rate (e.g. 3546895 for PAL)
+ * @param sample_rate Output sample rate
+ */
+void tracker_voice_set_period(TrackerVoice* voice,
+                              uint32_t period,
+                              uint32_t clock_rate,
+                              uint32_t sample_rate);
+
+/**
+ * Set frequency using delta directly (16.16 fixed-point)
+ * @param delta Fixed-point delta value
+ */
+void tracker_voice_set_delta(TrackerVoice* voice, uint32_t delta);
+
+/**
+ * Set volume (0-64)
+ */
+void tracker_voice_set_volume(TrackerVoice* voice, int32_t volume);
+
+/**
+ * Set panning using pre-calculated multipliers
+ * @param pan_left Left multiplier (0-255)
+ * @param pan_right Right multiplier (0-255)
+ */
+void tracker_voice_set_panning(TrackerVoice* voice,
+                               int32_t pan_left,
+                               int32_t pan_right);
+
+/**
+ * Reset playback position
+ */
+void tracker_voice_reset_position(TrackerVoice* voice);
+
+/**
+ * Get next sample (no interpolation)
+ * @return Sample value (-128 to 127)
+ */
+int8_t tracker_voice_get_sample(TrackerVoice* voice);
+
+/**
+ * Get next sample with volume applied
+ * @return Sample value scaled by volume
+ */
+int32_t tracker_voice_get_sample_scaled(TrackerVoice* voice);
+
+/**
+ * Get stereo sample pair (volume + panning applied)
+ * @param out_left Output for left channel
+ * @param out_right Output for right channel
+ */
+void tracker_voice_get_stereo_sample(TrackerVoice* voice,
+                                     int32_t* out_left,
+                                     int32_t* out_right);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // TRACKER_VOICE_H

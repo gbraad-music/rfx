@@ -510,6 +510,12 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
             // Initialize TrackerVoice for sample playback
             tracker_voice_set_waveform(&chan->voice_playback, sample->data, sample->length * 2);
+
+            // Set loop points (MOD stores in words, need bytes for samples)
+            tracker_voice_set_loop(&chan->voice_playback,
+                                  sample->repeat_start * 2,  // Convert words to bytes
+                                  sample->repeat_length * 2);
+
             tracker_voice_reset_position(&chan->voice_playback);
 
             // Don't clear period when offset effect is present - offset just repositions playback

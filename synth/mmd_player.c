@@ -8,6 +8,7 @@
  */
 
 #include "mmd_player.h"
+#include "tracker_voice.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -231,6 +232,9 @@ typedef struct {
     bool volume_set;        // True if volume has been set (prevents reinit on fade to 0)
     float user_volume;      // User volume (0.0-1.0)
     int8_t panning;         // Panning (-16 to +16)
+
+    // Generic voice playback (replaces manual loop handling)
+    TrackerVoice voice_playback;
 
     // Effect state
     uint8_t vibrato_pos;
@@ -1236,6 +1240,42 @@ static bool trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
         chan->period = get_note_period((uint8_t)transposed_note, chan->finetune);
         chan->position = 0.0f;
 
+        // Initialize TrackerVoice for sample playback (non-synth samples only)
+#ifndef MMD_SYNTH_SUPPORT
+        if (chan->sample->data != NULL) {
+            if (chan->sample->is_16bit) {
+                tracker_voice_set_waveform_16bit(&chan->voice_playback,
+                                                 (const int16_t*)chan->sample->data,
+                                                 chan->sample->length / 2);
+            } else {
+                tracker_voice_set_waveform(&chan->voice_playback,
+                                          (const int8_t*)chan->sample->data,
+                                          chan->sample->length);
+            }
+            tracker_voice_set_loop(&chan->voice_playback,
+                                  chan->sample->repeat_start,
+                                  chan->sample->repeat_length);
+            tracker_voice_reset_position(&chan->voice_playback);
+        }
+#else
+        // Initialize TrackerVoice for non-synth samples
+        if (!chan->sample->is_synth && chan->sample->data != NULL) {
+            if (chan->sample->is_16bit) {
+                tracker_voice_set_waveform_16bit(&chan->voice_playback,
+                                                 (const int16_t*)chan->sample->data,
+                                                 chan->sample->length / 2);
+            } else {
+                tracker_voice_set_waveform(&chan->voice_playback,
+                                          (const int8_t*)chan->sample->data,
+                                          chan->sample->length);
+            }
+            tracker_voice_set_loop(&chan->voice_playback,
+                                  chan->sample->repeat_start,
+                                  chan->sample->repeat_length);
+            tracker_voice_reset_position(&chan->voice_playback);
+        }
+#endif
+
 #ifdef MMD_SYNTH_SUPPORT
         // Reset synth envelope and scripts when note triggers
         if (chan->sample->is_synth && chan->sample->synth) {
@@ -1616,59 +1656,38 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
             // Regular sample playback
             if (!chan->sample->data) continue;
 
-            // Get sample
-            int sample_idx = (int)chan->position;
-            uint32_t sample_len = chan->sample->length;
-
-            // For 16-bit samples, length is in bytes but we need sample count
-            if (chan->sample->is_16bit) {
-                sample_len /= 2;
-            }
-
-            if (sample_idx >= 0 && sample_idx < (int)sample_len) {
-                float sample;
-                if (chan->sample->is_16bit) {
-                    // Read 16-bit sample (stored as big-endian int16)
-                    int16_t* data16 = (int16_t*)chan->sample->data;
-                    int16_t sample16 = BE16(data16[sample_idx]);
-                    sample = sample16 / 32768.0f;
-                } else {
-                    // Read 8-bit sample
-                    sample = chan->sample->data[sample_idx] / 128.0f;
-                }
-
-                // Apply volume: channel volume * sample volume * track volume * user volume
-                // Channel volume: 0-127 (from pattern commands, smoothly interpolated)
-                // Sample volume: 0-64 (stored in MMD0sample array)
-                // Track volume: 0-127 (127 = full volume / no scaling)
-                float vol = (chan->current_volume / (float)player->max_volume) * (chan->sample->volume / 64.0f) *
-                           (player->track_volumes[ch] / 127.0f) * chan->user_volume;
-
-                // Apply panning (use track panning for classic Amiga hard panning)
-                float pan = (player->track_pans[ch] + 16) / 32.0f;  // -16..+16 -> 0..1
-                // Amiga-style mixing: simple addition without normalization (0.5x scaling)
-                left += sample * vol * (1.0f - pan) * 0.5f;
-                right += sample * vol * pan * 0.5f;
-            }
-
-            // Advance position
+            // Set TrackerVoice frequency based on period
+            // MMD uses PAL Amiga clock: freq = 7093789.2 / (period * 2) = 3546894.6 / period
             if (chan->period > 0) {
-                // For OctaMED, use standard Amiga frequency calculation
-                // Same as MOD player: freq = PAL_CLOCK / (period * 2)
-                float freq = 7093789.2f / ((float)chan->period * 2.0f);
-                chan->increment = freq / sample_rate;
-                chan->position += chan->increment;
-
-                // Handle loop
-                if (chan->sample->repeat_length > 1) {
-                    float loop_end = chan->sample->repeat_start + chan->sample->repeat_length;
-                    if (chan->position >= loop_end) {
-                        chan->position = chan->sample->repeat_start +
-                                       fmodf(chan->position - chan->sample->repeat_start,
-                                            chan->sample->repeat_length);
-                    }
-                }
+                tracker_voice_set_period(&chan->voice_playback, chan->period, 3546895, (uint32_t)sample_rate);
             }
+
+            // Get sample from TrackerVoice (handles both 8-bit and 16-bit, plus looping)
+            int32_t sample_val = tracker_voice_get_sample(&chan->voice_playback);
+
+            // Convert to float based on bit depth
+            float sample;
+            if (chan->sample->is_16bit) {
+                sample = sample_val / 32768.0f;
+            } else {
+                sample = sample_val / 128.0f;
+            }
+
+            // Sync old position field for compatibility
+            chan->position += chan->increment;
+
+            // Apply volume: channel volume * sample volume * track volume * user volume
+            // Channel volume: 0-127 (from pattern commands, smoothly interpolated)
+            // Sample volume: 0-64 (stored in MMD0sample array)
+            // Track volume: 0-127 (127 = full volume / no scaling)
+            float vol = (chan->current_volume / (float)player->max_volume) * (chan->sample->volume / 64.0f) *
+                       (player->track_volumes[ch] / 127.0f) * chan->user_volume;
+
+            // Apply panning (use track panning for classic Amiga hard panning)
+            float pan = (player->track_pans[ch] + 16) / 32.0f;  // -16..+16 -> 0..1
+            // Amiga-style mixing: simple addition without normalization (0.5x scaling)
+            left += sample * vol * (1.0f - pan) * 0.5f;
+            right += sample * vol * pan * 0.5f;
         }
 
         left_out[i] = left;

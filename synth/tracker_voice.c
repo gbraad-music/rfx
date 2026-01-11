@@ -16,6 +16,7 @@ void tracker_voice_init(TrackerVoice* voice) {
     voice->pan_left = 255;
     voice->pan_right = 255;
     voice->bit_depth = 8;  // Default to 8-bit
+    voice->loop_enabled = true;  // Default: loop enabled
 }
 
 void tracker_voice_set_waveform(TrackerVoice* voice,
@@ -24,6 +25,10 @@ void tracker_voice_set_waveform(TrackerVoice* voice,
     voice->waveform = (const void*)waveform;
     voice->length = length << 16;  // Convert to fixed-point
     voice->bit_depth = 8;
+    // Default loop: full sample
+    voice->loop_start = 0;
+    voice->loop_end = voice->length;
+    voice->loop_enabled = true;
 }
 
 void tracker_voice_set_waveform_16bit(TrackerVoice* voice,
@@ -32,6 +37,10 @@ void tracker_voice_set_waveform_16bit(TrackerVoice* voice,
     voice->waveform = (const void*)waveform;
     voice->length = length << 16;  // Convert to fixed-point
     voice->bit_depth = 16;
+    // Default loop: full sample
+    voice->loop_start = 0;
+    voice->loop_end = voice->length;
+    voice->loop_enabled = true;
 }
 
 void tracker_voice_set_period(TrackerVoice* voice,
@@ -75,6 +84,31 @@ void tracker_voice_set_panning(TrackerVoice* voice,
     voice->pan_right = pan_right;
 }
 
+void tracker_voice_set_loop(TrackerVoice* voice,
+                             uint32_t loop_start,
+                             uint32_t loop_length) {
+    // Convert bytes to samples based on bit depth
+    uint32_t loop_start_samples = loop_start;
+    uint32_t loop_length_samples = loop_length;
+
+    if (voice->bit_depth == 16) {
+        loop_start_samples /= 2;
+        loop_length_samples /= 2;
+    }
+
+    voice->loop_start = loop_start_samples << 16;  // Convert to fixed-point
+
+    if (loop_length_samples <= 1) {
+        // One-shot sample (no loop)
+        voice->loop_enabled = false;
+        voice->loop_end = voice->length;
+    } else {
+        // Looping sample
+        voice->loop_enabled = true;
+        voice->loop_end = (loop_start_samples + loop_length_samples) << 16;
+    }
+}
+
 void tracker_voice_reset_position(TrackerVoice* voice) {
     voice->sample_pos = 0;
 }
@@ -84,9 +118,20 @@ int32_t tracker_voice_get_sample(TrackerVoice* voice) {
         return 0;
     }
 
-    // Wrap position if needed
-    if (voice->sample_pos >= voice->length) {
-        voice->sample_pos -= voice->length;
+    // Check if past loop end
+    if (voice->sample_pos >= voice->loop_end) {
+        if (voice->loop_enabled) {
+            // Wrap to loop start
+            uint32_t loop_len = voice->loop_end - voice->loop_start;
+            if (loop_len > 0) {
+                voice->sample_pos = voice->loop_start + ((voice->sample_pos - voice->loop_start) % loop_len);
+            } else {
+                voice->sample_pos = voice->loop_start;
+            }
+        } else {
+            // One-shot sample finished - return silence
+            return 0;
+        }
     }
 
     // Get sample at integer position (16.16 fixed-point)

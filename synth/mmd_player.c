@@ -1283,7 +1283,8 @@ static bool trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
             }
             tracker_voice_set_loop(&chan->voice_playback,
                                   chan->sample->repeat_start,
-                                  chan->sample->repeat_length);
+                                  chan->sample->repeat_length,
+                                  4);  // OctaMED: 2 words (4 bytes) = one-shot
             tracker_voice_reset_position(&chan->voice_playback);
         }
 #else
@@ -1300,7 +1301,8 @@ static bool trigger_note(MedPlayer* player, int channel, uint8_t note, uint8_t i
             }
             tracker_voice_set_loop(&chan->voice_playback,
                                   chan->sample->repeat_start,
-                                  chan->sample->repeat_length);
+                                  chan->sample->repeat_length,
+                                  4);  // OctaMED: 2 words (4 bytes) = one-shot
             tracker_voice_reset_position(&chan->voice_playback);
         }
 #endif

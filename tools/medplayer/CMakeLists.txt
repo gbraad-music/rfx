@@ -34,6 +34,7 @@ include_directories(
 set(MEDPLAYER_SOURCES
     med_player_test.c
     ../../synth/mmd_player.c
+    ../../synth/tracker_voice.c
 )
 
 # Add synth sources if MMD_SYNTH_SUPPORT is enabled

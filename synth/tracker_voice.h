@@ -27,6 +27,11 @@ typedef struct {
     uint32_t length;        // Length in samples (in fixed-point: length << 16)
     uint8_t bit_depth;      // Bit depth: 8 or 16
 
+    // Loop points (16.16 fixed-point)
+    uint32_t loop_start;    // Loop start position
+    uint32_t loop_end;      // Loop end position
+    bool loop_enabled;      // If true: loop, if false: play once and stop
+
     // Volume
     int32_t volume;         // 0-64 (tracker-style volume)
 
@@ -88,6 +93,17 @@ void tracker_voice_set_volume(TrackerVoice* voice, int32_t volume);
 void tracker_voice_set_panning(TrackerVoice* voice,
                                int32_t pan_left,
                                int32_t pan_right);
+
+/**
+ * Set loop points
+ * @param loop_start Loop start position in bytes
+ * @param loop_length Loop length in bytes (if <= 1, disables looping)
+ *
+ * Note: Internally converts bytes to samples based on bit_depth
+ */
+void tracker_voice_set_loop(TrackerVoice* voice,
+                             uint32_t loop_start,
+                             uint32_t loop_length);
 
 /**
  * Reset playback position

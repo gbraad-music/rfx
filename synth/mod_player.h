@@ -66,8 +66,6 @@ typedef struct {
     const ModSample* sample;
     double position;          // Current position in sample (fractional) - double for precision
     double increment;         // Sample increment per output sample - double for precision
-    uint32_t playback_length; // Effective playback length in bytes (reduced by sample offset)
-    uint32_t playback_end;    // Absolute byte position where playback ends and loops to loop_start
 
     // Generic voice playback (replaces manual loop handling)
     TrackerVoice voice_playback;

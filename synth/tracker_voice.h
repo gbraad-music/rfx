@@ -106,9 +106,15 @@ void tracker_voice_set_loop(TrackerVoice* voice,
                              uint32_t loop_length);
 
 /**
- * Reset playback position
+ * Reset playback position to start
  */
 void tracker_voice_reset_position(TrackerVoice* voice);
+
+/**
+ * Set playback position (for sample offset effects)
+ * @param byte_offset Position in bytes
+ */
+void tracker_voice_set_position(TrackerVoice* voice, uint32_t byte_offset);
 
 /**
  * Get next sample (no interpolation)

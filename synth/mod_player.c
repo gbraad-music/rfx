@@ -501,22 +501,15 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             }
             // else: offset-only retrigger (no period, no C effect) - keep current volume
 
-            // ALWAYS reset position when triggering - effect 9 will override if needed
-            chan->position = 0.0;
-            // Set default playback - will play the FULL sample from start to end, then loop
-            // (This will be adjusted by sample offset effect 9 if present)
-            chan->playback_length = sample->length * 2;  // in bytes
-            chan->playback_end = sample->length * 2;     // absolute end position
-
             // Initialize TrackerVoice for sample playback
             tracker_voice_set_waveform(&chan->voice_playback, sample->data, sample->length * 2);
-
-            // Set loop points (MOD stores in words, need bytes for samples)
             tracker_voice_set_loop(&chan->voice_playback,
                                   sample->repeat_start * 2,  // Convert words to bytes
                                   sample->repeat_length * 2);
-
             tracker_voice_reset_position(&chan->voice_playback);
+
+            // Reset old position field for compatibility
+            chan->position = 0.0;
 
             // Don't clear period when offset effect is present - offset just repositions playback
             // Period will be set by period handling code below if note has a period value
@@ -537,32 +530,20 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             // Retrigger: Use last offset ONLY if it belongs to the current sample
             if (chan->last_sample_offset > 0 && chan->sample == chan->last_sample_with_offset) {
                 uint32_t byte_offset = chan->last_sample_offset * 256;
-                uint32_t offset_words = byte_offset / 2;
-                uint32_t sample_len_words = chan->sample->length;
+                uint32_t sample_len_bytes = chan->sample->length * 2;  // Convert words to bytes
 
-                if (offset_words < sample_len_words) {
+                if (byte_offset < sample_len_bytes) {
+                    tracker_voice_set_position(&chan->voice_playback, byte_offset);
                     chan->position = (double)byte_offset;
-                    chan->playback_length = (sample_len_words - offset_words) * 2;
-                    chan->playback_end = byte_offset + chan->playback_length;
-
-                    // Update TrackerVoice position
-                    chan->voice_playback.sample_pos = byte_offset << 16;
                 } else {
-                    chan->position = 0.0;
-                    chan->playback_length = chan->sample->length * 2;
-                    chan->playback_end = chan->sample->length * 2;
-
-                    // Reset TrackerVoice position
+                    // Offset beyond sample - start from 0
                     tracker_voice_reset_position(&chan->voice_playback);
+                    chan->position = 0.0;
                 }
             } else {
                 // Different sample or no offset - start from 0
-                chan->position = 0.0;
-                chan->playback_length = chan->sample->length * 2;
-                chan->playback_end = chan->sample->length * 2;
-
-                // Reset TrackerVoice position
                 tracker_voice_reset_position(&chan->voice_playback);
+                chan->position = 0.0;
             }
         }
 
@@ -657,25 +638,14 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
                     // ProTracker sample offset: offset in 256-byte units
                     uint32_t byte_offset = offset_param * 256;
-                    uint32_t offset_words = byte_offset / 2;
+                    uint32_t sample_len_bytes = chan->sample->length * 2;  // Convert words to bytes
 
-                    // Reduce playback length like PT2 does - play from offset to original end
-                    // After reaching the end, it wraps to the loop point
-                    uint32_t sample_len_words = chan->sample->length;
-                    if (offset_words < sample_len_words) {
-                        // Reduce the playback length by the offset amount
-                        chan->playback_length = (sample_len_words - offset_words) * 2;  // convert to bytes
-                        chan->playback_end = byte_offset + chan->playback_length;       // absolute end position
-                    } else {
-                        // Offset beyond sample - play minimal length
-                        chan->playback_length = 2;
-                        chan->playback_end = byte_offset + 2;
+                    // Bounds check - if offset is beyond sample, clamp to start
+                    if (byte_offset < sample_len_bytes) {
+                        tracker_voice_set_position(&chan->voice_playback, byte_offset);
+                        chan->position = (double)byte_offset;
                     }
-
-                    chan->position = (double)byte_offset;
-
-                    // Update TrackerVoice position (convert to 16.16 fixed-point)
-                    chan->voice_playback.sample_pos = byte_offset << 16;
+                    // If offset is beyond sample, ignore it (keep current position)
                 } else if (note->effect_param > 0) {
                     // Remember offset param even without period (for future use)
                     chan->last_sample_offset = note->effect_param;
@@ -810,15 +780,6 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             }
             break;
     }
-
-    // Debug: show channel state AFTER processing
-    // if (player->current_row < 10 && (channel == 1 || channel == 2 || channel == 3)) {
-    //     if (note->sample > 0 || note->period > 0 || note->effect != 0) {
-    //         fprintf(stderr, "  -> AFTER: chan->sample=%s chan->period=%d chan->volume=%d\n",
-    //                 chan->sample ? "SET" : "NULL", chan->period, chan->volume);
-    //         fflush(stderr);
-    //     }
-    // }
 }
 
 // Process effects per tick
@@ -1007,9 +968,6 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
     }
 }
 
-// Debug counter for render output
-static uint64_t render_debug_counter = 0;
-
 // Render one sample for a channel
 static float render_channel(ModChannel* chan, uint32_t sample_rate, ModPlayer* player, uint8_t channel_num) {
     if (!chan->sample || chan->period == 0 || chan->muted) {
@@ -1043,11 +1001,6 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate, ModPlayer* p
     float amiga_playback_rate = period_to_frequency(effective_period);
     chan->increment = amiga_playback_rate / (float)sample_rate;
 
-    // Check if one-shot sample has finished playing
-    if (sample->repeat_length <= 1 && chan->position >= sample->length * 2) {
-        return 0.0f;  // Stop playback for non-looping samples
-    }
-
     // Set TrackerVoice frequency/delta based on period
     tracker_voice_set_period(&chan->voice_playback, effective_period, AMIGA_CLOCK, sample_rate);
 
@@ -1074,10 +1027,6 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate, ModPlayer* p
 
     output *= (float)effective_volume / 64.0f;
     output *= chan->user_volume;
-
-    // Advance position for NEXT sample - this happens even when volume is 0
-    // (like a tape deck: volume fader affects output immediately, but tape keeps running!)
-    chan->position += chan->increment;
 
     return output;
 }

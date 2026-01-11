@@ -96,16 +96,22 @@ void tracker_voice_set_loop(TrackerVoice* voice,
         loop_length_samples /= 2;
     }
 
-    voice->loop_start = loop_start_samples << 16;  // Convert to fixed-point
+    // ProTracker/MOD/MMD convention: loop_length <= 1 word (2 bytes) means
+    // the sample is "one-shot" (plays once, then stops)
+    // For 8-bit: 2 bytes = 2 samples
+    // For 16-bit: 2 bytes = 1 sample
+    uint32_t one_shot_threshold = (voice->bit_depth == 16) ? 1 : 2;
 
-    if (loop_length_samples <= 1) {
-        // One-shot sample (no loop)
-        voice->loop_enabled = false;
+    if (loop_length_samples <= one_shot_threshold) {
+        // "One-shot" sample - play once, then return silence
+        voice->loop_start = 0;
         voice->loop_end = voice->length;
+        voice->loop_enabled = false;  // Disable looping - sample plays once and stops
     } else {
-        // Looping sample
-        voice->loop_enabled = true;
+        // Normal looping sample - use specified loop points
+        voice->loop_start = loop_start_samples << 16;
         voice->loop_end = (loop_start_samples + loop_length_samples) << 16;
+        voice->loop_enabled = true;
     }
 }
 
@@ -113,29 +119,31 @@ void tracker_voice_reset_position(TrackerVoice* voice) {
     voice->sample_pos = 0;
 }
 
+void tracker_voice_set_position(TrackerVoice* voice, uint32_t byte_offset) {
+    // Convert bytes to samples based on bit depth
+    uint32_t sample_offset = byte_offset;
+    if (voice->bit_depth == 16) {
+        sample_offset /= 2;
+    }
+    // Convert to 16.16 fixed-point
+    voice->sample_pos = sample_offset << 16;
+}
+
 int32_t tracker_voice_get_sample(TrackerVoice* voice) {
     if (!voice->waveform || voice->length == 0) {
         return 0;
     }
 
-    // Check if past loop end
-    if (voice->sample_pos >= voice->loop_end) {
-        if (voice->loop_enabled) {
-            // Wrap to loop start
-            uint32_t loop_len = voice->loop_end - voice->loop_start;
-            if (loop_len > 0) {
-                voice->sample_pos = voice->loop_start + ((voice->sample_pos - voice->loop_start) % loop_len);
-            } else {
-                voice->sample_pos = voice->loop_start;
-            }
-        } else {
-            // One-shot sample finished - return silence
-            return 0;
-        }
+    // Get sample at current integer position (16.16 fixed-point)
+    uint32_t pos = voice->sample_pos >> 16;
+
+    // Safety clamp to prevent buffer overrun
+    uint32_t max_pos = (voice->length >> 16);
+    if (pos >= max_pos) {
+        // Past end of sample - return silence
+        return 0;
     }
 
-    // Get sample at integer position (16.16 fixed-point)
-    uint32_t pos = voice->sample_pos >> 16;
     int32_t sample;
 
     if (voice->bit_depth == 16) {
@@ -146,8 +154,30 @@ int32_t tracker_voice_get_sample(TrackerVoice* voice) {
         sample = waveform8[pos];
     }
 
-    // Advance position
+    // Advance position for NEXT sample
     voice->sample_pos += voice->delta;
+
+    // Check if we need to wrap for next call
+    if (voice->sample_pos >= voice->loop_end) {
+        if (voice->loop_enabled) {
+            // Wrap to loop start
+            uint32_t loop_len = voice->loop_end - voice->loop_start;
+            if (loop_len > 0) {
+                // Handle case where delta causes multiple wraps
+                while (voice->sample_pos >= voice->loop_end) {
+                    voice->sample_pos -= loop_len;
+                }
+                // Ensure we're in the loop region
+                if (voice->sample_pos < voice->loop_start) {
+                    voice->sample_pos += loop_len;
+                }
+            } else {
+                voice->sample_pos = voice->loop_start;
+            }
+        }
+        // For one-shot samples (loop_enabled=false), position stays past the end
+        // and next call will return silence
+    }
 
     return sample;
 }
@@ -160,28 +190,8 @@ int32_t tracker_voice_get_sample_scaled(TrackerVoice* voice) {
 void tracker_voice_get_stereo_sample(TrackerVoice* voice,
                                      int32_t* out_left,
                                      int32_t* out_right) {
-    if (!voice->waveform || voice->length == 0) {
-        *out_left = 0;
-        *out_right = 0;
-        return;
-    }
-
-    // Wrap position if needed
-    if (voice->sample_pos >= voice->length) {
-        voice->sample_pos -= voice->length;
-    }
-
-    // Get sample
-    uint32_t pos = voice->sample_pos >> 16;
-    int32_t sample;
-
-    if (voice->bit_depth == 16) {
-        const int16_t* waveform16 = (const int16_t*)voice->waveform;
-        sample = waveform16[pos];
-    } else {
-        const int8_t* waveform8 = (const int8_t*)voice->waveform;
-        sample = waveform8[pos];
-    }
+    // Use the main get_sample function which handles looping correctly
+    int32_t sample = tracker_voice_get_sample(voice);
 
     // Apply volume
     int32_t scaled = sample * voice->volume;
@@ -189,7 +199,4 @@ void tracker_voice_get_stereo_sample(TrackerVoice* voice,
     // Apply panning
     *out_left = (scaled * voice->pan_left) >> 7;
     *out_right = (scaled * voice->pan_right) >> 7;
-
-    // Advance position
-    voice->sample_pos += voice->delta;
 }

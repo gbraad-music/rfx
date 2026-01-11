@@ -3,6 +3,7 @@ build/
 bin/
 plugins/*/bin/
 rack/*/dist/
+build-windows/
 
 # CMake
 CMakeCache.txt

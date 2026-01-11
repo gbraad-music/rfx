@@ -8,6 +8,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+#define AMIGA_CLOCK 3546895  // PAL clock rate for period-to-frequency conversion
+
 // Forward declarations
 static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note);
 static void trigger_position_callback(ModPlayer* player);
@@ -201,6 +203,9 @@ ModPlayer* mod_player_create(void) {
     for (int i = 0; i < MOD_MAX_CHANNELS; i++) {
         player->channels[i].user_volume = 1.0f;
         player->channels[i].volume = 64;
+
+        // Initialize TrackerVoice for each channel
+        tracker_voice_init(&player->channels[i].voice_playback);
     }
 
     return player;
@@ -503,6 +508,10 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             chan->playback_length = sample->length * 2;  // in bytes
             chan->playback_end = sample->length * 2;     // absolute end position
 
+            // Initialize TrackerVoice for sample playback
+            tracker_voice_set_waveform(&chan->voice_playback, sample->data, sample->length * 2);
+            tracker_voice_reset_position(&chan->voice_playback);
+
             // Don't clear period when offset effect is present - offset just repositions playback
             // Period will be set by period handling code below if note has a period value
         } else {
@@ -529,16 +538,25 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                     chan->position = (double)byte_offset;
                     chan->playback_length = (sample_len_words - offset_words) * 2;
                     chan->playback_end = byte_offset + chan->playback_length;
+
+                    // Update TrackerVoice position
+                    chan->voice_playback.sample_pos = byte_offset << 16;
                 } else {
                     chan->position = 0.0;
                     chan->playback_length = chan->sample->length * 2;
                     chan->playback_end = chan->sample->length * 2;
+
+                    // Reset TrackerVoice position
+                    tracker_voice_reset_position(&chan->voice_playback);
                 }
             } else {
                 // Different sample or no offset - start from 0
                 chan->position = 0.0;
                 chan->playback_length = chan->sample->length * 2;
                 chan->playback_end = chan->sample->length * 2;
+
+                // Reset TrackerVoice position
+                tracker_voice_reset_position(&chan->voice_playback);
             }
         }
 
@@ -649,6 +667,9 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                     }
 
                     chan->position = (double)byte_offset;
+
+                    // Update TrackerVoice position (convert to 16.16 fixed-point)
+                    chan->voice_playback.sample_pos = byte_offset << 16;
                 } else if (note->effect_param > 0) {
                     // Remember offset param even without period (for future use)
                     chan->last_sample_offset = note->effect_param;
@@ -957,6 +978,9 @@ static void process_effects(ModPlayer* player, uint8_t channel) {
                             if (chan->retrigger_count >= sub_param) {
                                 chan->position = 0.0f;  // Restart sample
                                 chan->retrigger_count = 0;
+
+                                // Reset TrackerVoice position
+                                tracker_voice_reset_position(&chan->voice_playback);
                             }
                         }
                         break;
@@ -1013,39 +1037,20 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate, ModPlayer* p
     float amiga_playback_rate = period_to_frequency(effective_period);
     chan->increment = amiga_playback_rate / (float)sample_rate;
 
-    // Get current sample position
-    uint32_t pos = (uint32_t)chan->position;
-
-    // Check if we've reached or passed the playback end
-    if (pos >= chan->playback_end) {
-        // For one-shot samples (repeat_length <= 1), immediately stop
-        // This prevents clicks from wrapping to a tiny loop
-        if (sample->repeat_length <= 1) {
-            // Stop playback immediately - clear sample pointer
-            return 0.0f;
-        } else {
-            // Wrap to loop start for looping samples
-            uint32_t loop_start = sample->repeat_start * 2;
-            chan->position = (double)loop_start;
-            pos = loop_start;
-        }
+    // Check if one-shot sample has finished playing
+    if (sample->repeat_length <= 1 && chan->position >= sample->length * 2) {
+        return 0.0f;  // Stop playback for non-looping samples
     }
 
-    // If we have a loop, also check for normal loop wrapping during loop playback
-    if (sample->repeat_length > 1) {
-        uint32_t loop_start = sample->repeat_start * 2;
-        uint32_t loop_end = loop_start + (sample->repeat_length * 2);
+    // Set TrackerVoice frequency/delta based on period
+    tracker_voice_set_period(&chan->voice_playback, effective_period, AMIGA_CLOCK, sample_rate);
 
-        // If we're past the loop end, wrap within the loop
-        if (pos >= loop_end) {
-            chan->position = loop_start + fmod(chan->position - loop_start, (double)(sample->repeat_length * 2));
-            pos = (uint32_t)chan->position;
-        }
-    }
-
-    // Get sample value (8-bit signed, no interpolation - ProTracker uses nearest neighbor)
-    int8_t sample_val = sample->data[pos];
+    // Get sample from TrackerVoice (handles looping automatically)
+    int32_t sample_val = tracker_voice_get_sample(&chan->voice_playback);
     float output = (float)sample_val / 128.0f;
+
+    // Sync old position field for compatibility with effects
+    chan->position += chan->increment;
 
     // Apply volume with tremolo
     uint8_t effective_volume = chan->volume;

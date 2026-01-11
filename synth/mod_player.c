@@ -505,7 +505,8 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             tracker_voice_set_waveform(&chan->voice_playback, sample->data, sample->length * 2);
             tracker_voice_set_loop(&chan->voice_playback,
                                   sample->repeat_start * 2,  // Convert words to bytes
-                                  sample->repeat_length * 2);
+                                  sample->repeat_length * 2,
+                                  2);  // ProTracker: 1 word (2 bytes) = one-shot
             tracker_voice_reset_position(&chan->voice_playback);
 
             // Reset old position field for compatibility

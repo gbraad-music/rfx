@@ -97,13 +97,16 @@ void tracker_voice_set_panning(TrackerVoice* voice,
 /**
  * Set loop points
  * @param loop_start Loop start position in bytes
- * @param loop_length Loop length in bytes (if <= 1, disables looping)
+ * @param loop_length Loop length in bytes
+ * @param one_shot_threshold_bytes If loop_length <= this (in bytes), sample is one-shot
+ *                                 MOD: 2 bytes (1 word), MMD: 4 bytes (2 words)
  *
  * Note: Internally converts bytes to samples based on bit_depth
  */
 void tracker_voice_set_loop(TrackerVoice* voice,
                              uint32_t loop_start,
-                             uint32_t loop_length);
+                             uint32_t loop_length,
+                             uint32_t one_shot_threshold_bytes);
 
 /**
  * Reset playback position to start

@@ -86,23 +86,20 @@ void tracker_voice_set_panning(TrackerVoice* voice,
 
 void tracker_voice_set_loop(TrackerVoice* voice,
                              uint32_t loop_start,
-                             uint32_t loop_length) {
+                             uint32_t loop_length,
+                             uint32_t one_shot_threshold_bytes) {
     // Convert bytes to samples based on bit depth
     uint32_t loop_start_samples = loop_start;
     uint32_t loop_length_samples = loop_length;
+    uint32_t threshold_samples = one_shot_threshold_bytes;
 
     if (voice->bit_depth == 16) {
         loop_start_samples /= 2;
         loop_length_samples /= 2;
+        threshold_samples /= 2;
     }
 
-    // ProTracker/MOD convention: loop_length <= 1 word (2 bytes) means one-shot
-    // MMD/OctaMED convention: loop_length <= 2 words (4 bytes) means one-shot
-    // For 8-bit: 4 bytes = 4 samples
-    // For 16-bit: 4 bytes = 2 samples
-    uint32_t one_shot_threshold = (voice->bit_depth == 16) ? 2 : 4;
-
-    bool is_oneshot = (loop_length_samples <= one_shot_threshold);
+    bool is_oneshot = (loop_length_samples <= threshold_samples);
 
     if (is_oneshot) {
         // "One-shot" sample - play full length from 0 to end, then stop

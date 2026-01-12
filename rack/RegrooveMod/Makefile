@@ -16,9 +16,16 @@ VPATH += ../../synth
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
 
-# Add MOD and MED player C files
+# Add tracker player C files
 SOURCES += ../../synth/mod_player.c
 SOURCES += ../../synth/mmd_player.c
+SOURCES += ../../synth/ahx_player.c
+
+# Add shared tracker components
+SOURCES += ../../synth/tracker_mixer.c
+SOURCES += ../../synth/tracker_voice.c
+SOURCES += ../../synth/tracker_modulator.c
+SOURCES += ../../synth/tracker_sequence.c
 
 # Add dependencies
 DISTRIBUTABLES += res

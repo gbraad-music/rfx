@@ -114,6 +114,14 @@ ModPlayer* mod_player_create(void);
 void mod_player_destroy(ModPlayer* player);
 
 /**
+ * Check if data is a valid MOD file
+ * data: Pointer to file data
+ * size: Size of file in bytes
+ * Returns true if data appears to be a valid MOD file
+ */
+bool mod_player_detect(const uint8_t* data, uint32_t size);
+
+/**
  * Load a MOD file from memory
  * data: Pointer to MOD file data
  * size: Size of MOD file in bytes

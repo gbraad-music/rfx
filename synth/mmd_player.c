@@ -543,6 +543,17 @@ static const uint8_t* read_ptr(const uint8_t* base, uint32_t offset) {
     return base + offset;
 }
 
+// Check if data is a valid MMD file
+bool med_player_detect(const uint8_t* data, size_t size) {
+    if (!data || size < 52) return false;
+
+    // Read ID from header (first 4 bytes, big-endian)
+    uint32_t id = BE32(*(uint32_t*)(data + 0));
+
+    // Check for MMD2 or MMD3 magic number
+    return (id == MMD2_ID || id == MMD3_ID);
+}
+
 // Load MMD2 file
 bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
     if (!player || !data || size < 52) return false;

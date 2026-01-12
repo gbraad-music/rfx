@@ -30,6 +30,7 @@ add_executable(mod_player_test
     mod_player_test.c
     ../../synth/mod_player.c
     ../../synth/tracker_voice.c
+    ../../synth/tracker_mixer.c
 )
 
 # Link libraries

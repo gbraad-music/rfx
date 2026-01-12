@@ -32,6 +32,7 @@ add_executable(ahx_player_test
     ../../synth/tracker_modulator.c
     ../../synth/tracker_sequence.c
     ../../synth/tracker_voice.c
+    ../../synth/tracker_mixer.c
 )
 
 # Link libraries

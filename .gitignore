@@ -3,6 +3,7 @@ build/
 bin/
 plugins/*/bin/
 rack/*/dist/
+build-linux/
 build-windows/
 
 # CMake

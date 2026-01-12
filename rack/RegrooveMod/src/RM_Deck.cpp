@@ -163,6 +163,16 @@ struct RM_Deck : Module {
 		modPlayer = mod_player_create();
 		medPlayer = med_player_create();
 		ahxPlayer = ahx_player_create();
+
+		// Safety check - ensure all players were created successfully
+		if (!modPlayer || !medPlayer || !ahxPlayer) {
+			INFO("ERROR: Failed to create one or more players!");
+			if (modPlayer) { mod_player_destroy(modPlayer); modPlayer = nullptr; }
+			if (medPlayer) { med_player_destroy(medPlayer); medPlayer = nullptr; }
+			if (ahxPlayer) { ahx_player_destroy(ahxPlayer); ahxPlayer = nullptr; }
+			return;
+		}
+
 		initialized = true;
 	}
 
@@ -218,25 +228,38 @@ struct RM_Deck : Module {
 		}
 		shouldStopLoading = false;
 
+		INFO("=== STARTING LOAD THREAD for: %s ===", path.c_str());
 		loadingThread = std::thread([this, path]() {
+			INFO("[LOAD] Thread started");
 			{
 				std::lock_guard<std::mutex> lock(swapMutex);
 				fileLoaded = false;
 				loading = true;
 				playing = false;
 				singlePatternLoop = false;  // Reset loop flag
+				currentFileName = "Opening file...";  // Stage 1
+				INFO("[LOAD] Stage 1: Opening file...");
 				// Reset channel mute states
 				for (int i = 0; i < 4; i++) {
 					setChannelMuted(i, false);
 				}
 			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Visible delay
 
 			// Read file into memory first
+			INFO("[LOAD] About to fopen");
 			FILE* f = fopen(path.c_str(), "rb");
 			if (!f) {
+				INFO("[LOAD] ERROR: fopen failed!");
+				currentFileName = "ERROR: Cannot open";
 				loading = false;
 				return;
 			}
+			INFO("[LOAD] fopen successful");
+
+			currentFileName = "Reading file...";  // Stage 2
+			INFO("[LOAD] Stage 2: Reading file...");
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 			fseek(f, 0, SEEK_END);
 			long fileSize = ftell(f);
@@ -247,77 +270,154 @@ struct RM_Deck : Module {
 			fclose(f);
 
 			if (bytesRead != (size_t)fileSize) {
+				INFO("[LOAD] ERROR: fread failed! Expected %ld, got %zu", fileSize, bytesRead);
+				currentFileName = "ERROR: Read failed";
 				loading = false;
 				return;
 			}
+			INFO("[LOAD] File read successful: %zu bytes", bytesRead);
+
+			currentFileName = "Detecting format...";  // Stage 3
+			INFO("[LOAD] Stage 3: Detecting format...");
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 			// Detect file type from content
 			PlayerType detectedType = detectFileType(fileData);
 			if (detectedType == PlayerType::NONE) {
+				INFO("File type detection failed");
+				currentFileName = "ERROR: Unknown format";
 				loading = false;
 				return;
 			}
+
+			INFO("Detected file type: %d (1=MOD, 2=MED, 3=AHX)", (int)detectedType);
 
 			// Load file using appropriate player
 			bool success = false;
 			{
 				std::lock_guard<std::mutex> lock(swapMutex);
 				if (!shouldStopLoading) {
-					if (detectedType == PlayerType::MOD && modPlayer) {
-						success = mod_player_load(modPlayer, fileData.data(), fileData.size());
-						if (success) {
-							playerType = PlayerType::MOD;
-							mod_player_set_position_callback(modPlayer, playerPositionCallback, this);
+					try {
+						if (detectedType == PlayerType::MOD && modPlayer) {
+							currentFileName = "Loading MOD...";  // Stage 4a
+							INFO("Loading MOD file...");
+							success = mod_player_load(modPlayer, fileData.data(), fileData.size());
+							if (success) {
+								currentFileName = "MOD: Set callback";  // Stage 5a
+								playerType = PlayerType::MOD;
+								mod_player_set_position_callback(modPlayer, playerPositionCallback, this);
+								INFO("MOD load successful");
+							} else {
+								currentFileName = "ERROR: MOD load fail";
+								INFO("MOD load failed");
+							}
+						} else if (detectedType == PlayerType::MED && medPlayer) {
+							currentFileName = "Loading MED...";  // Stage 4b
+							INFO("[LOAD] Stage 4b: Loading MED...");
+							std::this_thread::sleep_for(std::chrono::milliseconds(500));
+							INFO("[LOAD] About to call med_player_load");
+							success = med_player_load(medPlayer, fileData.data(), fileData.size());
+							INFO("[LOAD] med_player_load returned: %d", success);
+							if (success) {
+								currentFileName = "MED: Set callback";  // Stage 5b
+								INFO("[LOAD] Stage 5b: MED loaded, setting callback...");
+								std::this_thread::sleep_for(std::chrono::milliseconds(500));
+								playerType = PlayerType::MED;
+								INFO("[LOAD] About to call med_player_set_position_callback");
+								med_player_set_position_callback(medPlayer, playerPositionCallback, this);
+								INFO("[LOAD] Callback set successfully");
+								currentFileName = "MED: Callback done";  // Stage 6b
+								std::this_thread::sleep_for(std::chrono::milliseconds(500));
+								INFO("[LOAD] MED load complete!");
+							} else {
+								currentFileName = "ERROR: MED load fail";
+								INFO("[LOAD] ERROR: MED load failed!");
+							}
+						} else if (detectedType == PlayerType::AHX && ahxPlayer) {
+							currentFileName = "Loading AHX...";  // Stage 4c
+							INFO("Loading AHX file...");
+							success = ahx_player_load(ahxPlayer, fileData.data(), fileData.size());
+							if (success) {
+								currentFileName = "AHX: Set callback";  // Stage 5c
+								playerType = PlayerType::AHX;
+								ahx_player_set_position_callback(ahxPlayer, ahxPositionCallback, this);
+								INFO("AHX load successful");
+							} else {
+								currentFileName = "ERROR: AHX load fail";
+								INFO("AHX load failed");
+							}
 						}
-					} else if (detectedType == PlayerType::MED && medPlayer) {
-						success = med_player_load(medPlayer, fileData.data(), fileData.size());
-						if (success) {
-							playerType = PlayerType::MED;
-							med_player_set_position_callback(medPlayer, playerPositionCallback, this);
-						}
-					} else if (detectedType == PlayerType::AHX && ahxPlayer) {
-						success = ahx_player_load(ahxPlayer, fileData.data(), fileData.size());
-						if (success) {
-							playerType = PlayerType::AHX;
-							ahx_player_set_position_callback(ahxPlayer, ahxPositionCallback, this);
-						}
+					} catch (...) {
+						// Catch any exceptions during load to prevent crash
+						currentFileName = "ERROR: Exception!";
+						DEBUG("Exception caught during load!");
+						success = false;
+						playerType = PlayerType::NONE;
 					}
 				}
 			}
 
+			INFO("[LOAD] Load success: %d", success);
+
 			if (success && !shouldStopLoading) {
+				INFO("[LOAD] Entering finalization");
 				std::lock_guard<std::mutex> lock(swapMutex);
+
+				currentFileName = "Finalizing...";  // Stage 7
+				INFO("[LOAD] Stage 7: Finalizing...");
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 				// Extract filename
 				size_t lastSlash = path.find_last_of("/\\");
-				currentFileName = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+				std::string actualFileName = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+
+				currentFileName = "Resetting mutes...";  // Stage 8
+				INFO("[LOAD] Stage 8: Resetting channel mutes...");
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
 				// Reset all channel mutes in the player
+				INFO("[LOAD] About to reset %d channel mutes for playerType=%d", 4, (int)playerType);
 				for (int i = 0; i < 4; i++) {
 					if (playerType == PlayerType::MOD) {
 						mod_player_set_channel_mute(modPlayer, i, false);
 					} else if (playerType == PlayerType::MED) {
+						INFO("[LOAD] Calling med_player_set_channel_mute for channel %d", i);
 						med_player_set_channel_mute(medPlayer, i, false);
+						INFO("[LOAD] Channel %d mute reset OK", i);
 					} else if (playerType == PlayerType::AHX) {
 						ahx_player_set_channel_mute(ahxPlayer, i, false);
 					}
 				}
+				INFO("[LOAD] All channel mutes reset");
 
+				currentFileName = actualFileName;  // Stage 9 - show actual filename
+				INFO("[LOAD] Stage 9: Success! Filename: %s", actualFileName.c_str());
 				fileLoaded = true;
 				bufferValid = false;
 			}
 
+			INFO("[LOAD] Setting loading=false");
 			loading = false;
+			INFO("[LOAD] === LOAD THREAD COMPLETE ===");
 		});
 	}
 
 	void renderBuffer() {
+		// Lock mutex BEFORE checking state to prevent race condition
+		std::lock_guard<std::mutex> lock(swapMutex);
+
 		if (!fileLoaded || loading || playerType == PlayerType::NONE) {
 			bufferValid = false;
 			return;
 		}
 
-		std::lock_guard<std::mutex> lock(swapMutex);
+		// Additional safety check: ensure player instance is valid
+		if ((playerType == PlayerType::MOD && !modPlayer) ||
+		    (playerType == PlayerType::MED && !medPlayer) ||
+		    (playerType == PlayerType::AHX && !ahxPlayer)) {
+			bufferValid = false;
+			return;
+		}
 
 		// Create array of channel output pointers
 		float* channelOutputs[4] = {
@@ -332,13 +432,21 @@ struct RM_Deck : Module {
 			                            channelOutputs, BUFFER_SIZE,
 			                            APP->engine->getSampleRate());
 		} else if (playerType == PlayerType::MED && medPlayer) {
+			// For MED files with more than 4 channels, only request first 4 channels
+			// This prevents buffer overflow when files have 8+ channels
+			uint8_t num_channels = med_player_get_num_channels(medPlayer);
+			uint8_t channels_to_output = (num_channels > 4) ? 4 : num_channels;
 			med_player_process_channels(medPlayer, leftBuffer, rightBuffer,
-			                            channelOutputs, 4, BUFFER_SIZE,
+			                            channelOutputs, channels_to_output, BUFFER_SIZE,
 			                            APP->engine->getSampleRate());
 		} else if (playerType == PlayerType::AHX && ahxPlayer) {
 			ahx_player_process_channels(ahxPlayer, leftBuffer, rightBuffer,
 			                            channelOutputs, BUFFER_SIZE,
 			                            APP->engine->getSampleRate());
+		} else {
+			// Should not happen, but clear buffer as safety
+			bufferValid = false;
+			return;
 		}
 
 		bufferPos = 0;
@@ -686,7 +794,14 @@ struct ModInfoDisplay : TransparentWidget {
 			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
 			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
 			nvgFillColor(args.vg, nvgRGB(0x55, 0x55, 0x55));
-			const char* text = (!module || !module->fileLoaded) ? "Right-click to load file" : "Loading...";
+
+			// Read currentFileName with mutex protection to see loading progress
+			std::string displayText;
+			if (module) {
+				std::lock_guard<std::mutex> lock(module->swapMutex);
+				displayText = module->currentFileName;
+			}
+			const char* text = (!module || !module->fileLoaded) ? "Right-click to load file" : displayText.c_str();
 			nvgText(args.vg, box.size.x / 2, box.size.y / 2, text, NULL);
 			Widget::draw(args);
 			return;

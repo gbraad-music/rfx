@@ -4,6 +4,7 @@
 
 #include "tracker_voice.h"
 #include <string.h>
+#include <stdio.h>
 
 // Convert period to frequency (16.16 fixed-point delta)
 #define Period2Delta(period, clock_rate, sample_rate) \

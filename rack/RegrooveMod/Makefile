@@ -3,6 +3,7 @@ RACK_DIR ?= $(HOME)/Applications/VCVRack/Rack-SDK
 
 # FLAGS will be passed to both the C and C++ compiler
 FLAGS += -I../../synth
+FLAGS += -DMMD_SYNTH_SUPPORT
 CFLAGS +=
 CXXFLAGS +=
 
@@ -26,6 +27,11 @@ SOURCES += ../../synth/tracker_mixer.c
 SOURCES += ../../synth/tracker_voice.c
 SOURCES += ../../synth/tracker_modulator.c
 SOURCES += ../../synth/tracker_sequence.c
+
+# Add OctaMED synth support components
+SOURCES += ../../synth/synth_oscillator.c
+SOURCES += ../../synth/synth_envelope.c
+SOURCES += ../../synth/synth_lfo.c
 
 # Add dependencies
 DISTRIBUTABLES += res

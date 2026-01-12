@@ -1,3 +1,14 @@
+/*
+ * AHX/HVL Player - Abyss' Highest eXperience / HivelyTracker Player
+ * Supports AHX and HVL format files with synthetic waveform generation
+ *
+ * Features:
+ * - 4-channel synthetic waveform playback
+ * - Multiple subsongs
+ * - Frame-based processing (50Hz IRQ timing)
+ * - Shared stereo mixer with per-channel outputs
+ */
+
 #include "ahx_player.h"
 #include "tracker_modulator.h"
 #include "tracker_sequence.h"

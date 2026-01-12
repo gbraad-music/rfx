@@ -1,6 +1,18 @@
 #ifndef AHX_PLAYER_H
 #define AHX_PLAYER_H
 
+/**
+ * AHX/HVL Player - Abyss' Highest eXperience / HivelyTracker Player
+ *
+ * Features:
+ * - 4-channel AHX/HVL file playback
+ * - Multiple subsong support
+ * - Synthetic waveform generation
+ * - Per-channel mute control
+ * - Per-channel output for VCV Rack integration
+ * - Frame-based processing with shared mixer
+ */
+
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>

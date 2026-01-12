@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v95';
+const CACHE_NAME = 'rfx-effects-v112';
 const ASSETS = [
     './',
     './index.html',
@@ -34,12 +34,15 @@ const ASSETS = [
     './external/midi-audio-synth.js',
     './external/rgresonate1-synth.js',
     './external/rg909-drum.js',
+    './external/rgsfz-synth.js',
     './synths/synth-worklet-processor.js',
     './synths/drum-worklet-processor.js',
     './synths/rgresonate1-synth.js',
     './synths/rgresonate1-synth.wasm',
     './synths/rg909-drum.js',
-    './synths/rg909-drum.wasm'
+    './synths/rg909-drum.wasm',
+    './synths/rgsfz-player.js',
+    './synths/rgsfz-player.wasm'
 ];
 
 // Install event - cache assets

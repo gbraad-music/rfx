@@ -34,3 +34,9 @@ endif
 LINK_FLAGS += -lm
 
 include ../../dpf/Makefile.plugins.mk
+
+# WASM build target
+.PHONY: wasm
+wasm:
+	@echo "Building RGSFZ Player WASM module..."
+	source /opt/emsdk/emsdk_env.sh && ./build-rgsfz-wasm.sh

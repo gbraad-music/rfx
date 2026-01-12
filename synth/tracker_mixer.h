@@ -1,20 +1,13 @@
 /*
  * Tracker Mixer - Shared stereo mixing for tracker-based players
  *
- * Provides common stereo mixing functionality for MOD and MMD players.
+ * Provides common stereo mixing functionality for MOD, MMD, and AHX players.
  *
- * NOTE: AHX player does NOT use this shared mixer because it uses a different
- * optimization strategy:
- * - Batch processing: Calculates how many samples can be rendered before any
- *   voice wraps, then processes that batch in a tight inner loop
- * - Fixed-point integer math: Uses >>7, >>8 shifts instead of float division
- * - Constant parameters: AHX effects don't change per-sample like MOD vibrato
- * - Pre-computed sin tables: Uses lookup tables for panning calculations
- *
- * This shared mixer is designed for frame-based players (MOD/MMD) where:
+ * All three players use a frame-based approach:
  * - Effects can change parameters every sample (vibrato, tremolo)
  * - Tick boundaries require frequent effect processing
- * - Float-based processing is acceptable for clarity
+ * - Float-based processing for clarity and consistency
+ * - Per-channel outputs for VCV Rack integration
  */
 
 #pragma once

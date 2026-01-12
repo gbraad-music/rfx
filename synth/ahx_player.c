@@ -2,6 +2,7 @@
 #include "tracker_modulator.h"
 #include "tracker_sequence.h"
 #include "tracker_voice.h"
+#include "tracker_mixer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -1475,7 +1476,12 @@ void ahx_player_get_position(const AhxPlayer* player, uint16_t* position, uint16
     if (row) *row = player->NoteNr;
 }
 
-void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num_samples, int sample_rate) {
+void ahx_player_process_channels(AhxPlayer* player,
+                                   float* left,
+                                   float* right,
+                                   float* channel_outputs[4],
+                                   size_t num_samples,
+                                   int sample_rate) {
     if (!player || !left || !right) return;
 
     // Clear output buffers
@@ -1488,98 +1494,72 @@ void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num
     player->current_sample_rate = sample_rate;
 
     int samples_per_frame = sample_rate / 50 / player->Song.SpeedMultiplier;
-    size_t output_pos = 0;
 
-    while (output_pos < num_samples) {
+    for (size_t i = 0; i < num_samples; i++) {
         // Check if we need to process next frame (50Hz IRQ)
         if (player->frame_counter <= 0) {
             player_play_irq(player);
             player->frame_counter = samples_per_frame;
         }
 
-        // Mix a chunk up to next frame boundary
-        int chunk_samples = MIN((int)(num_samples - output_pos), player->frame_counter);
+        // Render each voice and prepare for mixing
+        TrackerMixerChannel mix_channels[4];
 
-        // HVL mixing algorithm - using 16-bit wavetables
-        // Pre-load voice parameters into local arrays for efficiency
-        uint32_t delta[4], pos[4];
-        const int16_t* src[4];  // 16-bit wavetables
-        int vol[4], panl[4], panr[4];
+        for (int v = 0; v < 4; v++) {
+            float sample = 0.0f;
 
-        for (int i = 0; i < 4; i++) {
-            delta[i] = player->Voices[i].Delta;
-            vol[i] = player->Voices[i].VoiceVolume;
-            pos[i] = player->pos[i];
-            src[i] = (const int16_t*)player->Voices[i].VoiceBuffer;
-            panl[i] = player->Voices[i].PanMultLeft;
-            panr[i] = player->Voices[i].PanMultRight;
-        }
+            if (!player->channel_muted[v] && player->Voices[v].VoiceVolume > 0) {
+                // Wrap position if needed
+                if (player->pos[v] >= (0x280 << 16))
+                    player->pos[v] -= 0x280 << 16;
 
-        int samples_left = chunk_samples;
-        int out_idx = 0;
+                // Read 16-bit sample from wavetable
+                const int16_t* waveform = (const int16_t*)player->Voices[v].VoiceBuffer;
+                int16_t sample_val = waveform[player->pos[v] >> 16];
 
-        // Outer loop: batch processing to minimize wraparound checks
-        while (samples_left > 0) {
-            int loops = samples_left;
+                // Convert to float and apply volume
+                // 16-bit sample range is -32768 to 32767
+                // Volume is 0-64, so normalize both
+                sample = (sample_val / 32768.0f) * (player->Voices[v].VoiceVolume / 64.0f);
 
-            // Calculate batch size: minimum samples before ANY voice wraps
-            for (int i = 0; i < 4; i++) {
-                if (player->channel_muted[i] || vol[i] == 0) continue;
-
-                if (pos[i] >= (0x280 << 16))
-                    pos[i] -= 0x280 << 16;
-
-                if (delta[i] > 0) {
-                    uint32_t cnt = ((0x280 << 16) - pos[i] - 1) / delta[i] + 1;
-                    if (cnt < (uint32_t)loops) loops = cnt;
-                }
+                // Advance position
+                player->pos[v] += player->Voices[v].Delta;
             }
 
-            samples_left -= loops;
+            // Prepare channel for mixing
+            // AHX uses pre-calculated pan multipliers (0-127 range)
+            // Convert to normalized panning for shared mixer
+            // PanMultLeft=127, PanMultRight=0 → pan = -1.0 (hard left)
+            // PanMultLeft=0, PanMultRight=127 → pan = 1.0 (hard right)
+            // PanMultLeft=64, PanMultRight=64 → pan = 0.0 (center)
+            int panl = player->Voices[v].PanMultLeft;
+            int panr = player->Voices[v].PanMultRight;
+            float pan = ((float)panr - (float)panl) / 127.0f;
+            if (pan < -1.0f) pan = -1.0f;
+            if (pan > 1.0f) pan = 1.0f;
 
-            // Inner loop: process 'loops' samples without any wraparound checks
-            for (int l = 0; l < loops; l++) {
-                int a = 0, b = 0;
+            mix_channels[v].sample = sample;
+            mix_channels[v].panning = pan;
+            mix_channels[v].enabled = 1;
 
-                for (int i = 0; i < 4; i++) {
-                    if (player->channel_muted[i] || vol[i] == 0) continue;
-
-                    // Read 16-bit sample and scale down to 8-bit equivalent range
-                    // (16-bit samples are 256x larger, so >>8 to match original behavior)
-                    int j = (src[i][pos[i] >> 16] * vol[i]) >> 8;
-
-                    // Apply panning
-                    a += (j * panl[i]) >> 7;
-                    b += (j * panr[i]) >> 7;
-
-                    pos[i] += delta[i];
-                }
-
-                // Apply mixgain
-                a = (a * player->mixgain) >> 8;
-                b = (b * player->mixgain) >> 8;
-
-                // Clip to 16-bit range
-                if (a < -32768) a = -32768;
-                if (a >  32767) a =  32767;
-                if (b < -32768) b = -32768;
-                if (b >  32767) b =  32767;
-
-                // Convert to float
-                left[output_pos + out_idx] = a / 32768.0f;
-                right[output_pos + out_idx] = b / 32768.0f;
-                out_idx++;
+            // Write to individual channel output if buffer provided
+            if (channel_outputs && channel_outputs[v]) {
+                channel_outputs[v][i] = sample;
             }
         }
 
-        // Write back positions
-        for (int i = 0; i < 4; i++) {
-            player->pos[i] = pos[i];
-        }
+        // Mix to stereo using shared mixer
+        // Apply mixgain as scaling factor (mixgain is typically 256, normalize to 1.0)
+        float scaling = player->mixgain / 256.0f;
+        tracker_mixer_mix_stereo(mix_channels, 4, &left[i], &right[i], scaling);
 
-        output_pos += chunk_samples;
-        player->frame_counter -= chunk_samples;
+        player->frame_counter--;
     }
+}
+
+void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num_samples, int sample_rate) {
+    // Call the full version with no per-channel outputs
+    ahx_player_process_channels(player, left, right, NULL, num_samples, sample_rate);
 }
 
 void ahx_player_set_channel_mute(AhxPlayer* player, uint8_t channel, bool muted) {

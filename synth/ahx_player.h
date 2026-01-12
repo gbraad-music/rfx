@@ -57,6 +57,25 @@ void ahx_player_get_position(const AhxPlayer* player, uint16_t* position, uint16
 // left and right arrays must have space for 'num_samples' floats
 void ahx_player_process(AhxPlayer* player, float* left, float* right, size_t num_samples, int sample_rate);
 
+/**
+ * Process with per-channel outputs
+ * @param player Player instance
+ * @param left Left channel output buffer (mixed)
+ * @param right Right channel output buffer (mixed)
+ * @param channel_outputs Array of 4 mono channel buffers (can be NULL if not needed)
+ * @param num_samples Number of samples to render
+ * @param sample_rate Output sample rate (typically 48000)
+ *
+ * Use case: VCV Rack modules can expose each channel as a separate output for
+ * individual processing, effects, or visualization
+ */
+void ahx_player_process_channels(AhxPlayer* player,
+                                   float* left,
+                                   float* right,
+                                   float* channel_outputs[4],
+                                   size_t num_samples,
+                                   int sample_rate);
+
 // Set channel mute state (channel 0-3)
 void ahx_player_set_channel_mute(AhxPlayer* player, uint8_t channel, bool muted);
 

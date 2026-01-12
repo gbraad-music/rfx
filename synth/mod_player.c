@@ -185,6 +185,10 @@ static bool is_valid_mod(const uint8_t* data, uint32_t size) {
             memcmp(tag, "4CHN", 4) == 0);
 }
 
+bool mod_player_detect(const uint8_t* data, uint32_t size) {
+    return is_valid_mod(data, size);
+}
+
 ModPlayer* mod_player_create(void) {
     ModPlayer* player = (ModPlayer*)calloc(1, sizeof(ModPlayer));
     if (!player) return NULL;

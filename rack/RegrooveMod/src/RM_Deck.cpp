@@ -2,6 +2,7 @@
 #include "../../regroove_components.hpp"
 #include "../../../synth/mod_player.h"
 #include "../../../synth/mmd_player.h"
+#include "../../../synth/ahx_player.h"
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -12,14 +13,16 @@
 // Forward declaration
 struct RM_Deck;
 
-// Forward declaration of position callback
+// Forward declaration of position callbacks
 static void playerPositionCallback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data);
+static void ahxPositionCallback(uint8_t subsong, uint16_t position, uint16_t row, void* user_data);
 
 // Player type enum
 enum class PlayerType {
 	NONE,
 	MOD,
-	MED
+	MED,
+	AHX
 };
 
 // Custom pad widget for deck controls
@@ -65,8 +68,10 @@ struct RM_Deck : Module {
 	enum OutputId {
 		PFL_L_OUTPUT,
 		PFL_R_OUTPUT,
-		AUDIO_L_OUTPUT,
-		AUDIO_R_OUTPUT,
+		AUDIO_L_OUTPUT,  // OUT L/1
+		AUDIO_R_OUTPUT,  // OUT R/2
+		AUDIO_3_OUTPUT,  // OUT 3
+		AUDIO_4_OUTPUT,  // OUT 4
 		OUTPUTS_LEN
 	};
 	enum LightId {
@@ -76,6 +81,7 @@ struct RM_Deck : Module {
 	// Players (only one is active at a time)
 	ModPlayer* modPlayer = nullptr;
 	MedPlayer* medPlayer = nullptr;
+	AhxPlayer* ahxPlayer = nullptr;
 	PlayerType playerType = PlayerType::NONE;
 
 	std::atomic<bool> playing{false};
@@ -97,7 +103,7 @@ struct RM_Deck : Module {
 
 	// Position tracking from callback
 	std::atomic<uint8_t> currentOrder{0};
-	std::atomic<uint8_t> currentPattern{0};
+	std::atomic<uint16_t> currentPattern{0};  // uint16_t to support AHX positions
 	std::atomic<uint16_t> currentRow{0};
 
 	// Helper methods for channel mute access
@@ -124,6 +130,10 @@ struct RM_Deck : Module {
 	static constexpr size_t BUFFER_SIZE = 512;
 	float leftBuffer[BUFFER_SIZE];
 	float rightBuffer[BUFFER_SIZE];
+	float channel1Buffer[BUFFER_SIZE];
+	float channel2Buffer[BUFFER_SIZE];
+	float channel3Buffer[BUFFER_SIZE];
+	float channel4Buffer[BUFFER_SIZE];
 	size_t bufferPos = 0;
 	bool bufferValid = false;
 
@@ -144,12 +154,15 @@ struct RM_Deck : Module {
 
 		configOutput(PFL_L_OUTPUT, "PFL Left");
 		configOutput(PFL_R_OUTPUT, "PFL Right");
-		configOutput(AUDIO_L_OUTPUT, "Left audio");
-		configOutput(AUDIO_R_OUTPUT, "Right audio");
+		configOutput(AUDIO_L_OUTPUT, "Left audio / Channel 1");
+		configOutput(AUDIO_R_OUTPUT, "Right audio / Channel 2");
+		configOutput(AUDIO_3_OUTPUT, "Channel 3");
+		configOutput(AUDIO_4_OUTPUT, "Channel 4");
 
-		// Create both players (only one will be used at a time)
+		// Create all three players (only one will be used at a time)
 		modPlayer = mod_player_create();
 		medPlayer = med_player_create();
+		ahxPlayer = ahx_player_create();
 		initialized = true;
 	}
 
@@ -164,25 +177,30 @@ struct RM_Deck : Module {
 		if (medPlayer) {
 			med_player_destroy(medPlayer);
 		}
+		if (ahxPlayer) {
+			ahx_player_destroy(ahxPlayer);
+		}
 	}
 
-	// Helper: detect file type from extension
-	PlayerType detectFileType(const std::string& path) {
-		// Get lowercase extension
-		std::string ext;
-		size_t dotPos = path.find_last_of('.');
-		if (dotPos != std::string::npos) {
-			ext = path.substr(dotPos + 1);
-			std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+	// Helper: detect file type from content (using player detection functions)
+	PlayerType detectFileType(const std::vector<uint8_t>& fileData) {
+		if (fileData.empty()) {
+			return PlayerType::NONE;
 		}
 
-		// Check for MED/MMD extensions
-		if (ext == "med" || ext == "mmd" || ext == "mmd0" || ext == "mmd1" || ext == "mmd2" || ext == "mmd3") {
+		// Try MOD detection first (most common)
+		if (mod_player_detect(fileData.data(), fileData.size())) {
+			return PlayerType::MOD;
+		}
+
+		// Try MMD detection
+		if (med_player_detect(fileData.data(), fileData.size())) {
 			return PlayerType::MED;
 		}
-		// Check for MOD extensions
-		else if (ext == "mod") {
-			return PlayerType::MOD;
+
+		// Try AHX detection
+		if (ahx_player_detect(fileData.data(), fileData.size())) {
+			return PlayerType::AHX;
 		}
 
 		return PlayerType::NONE;
@@ -213,14 +231,7 @@ struct RM_Deck : Module {
 				}
 			}
 
-			// Detect file type
-			PlayerType detectedType = detectFileType(path);
-			if (detectedType == PlayerType::NONE) {
-				loading = false;
-				return;
-			}
-
-			// Read file into memory
+			// Read file into memory first
 			FILE* f = fopen(path.c_str(), "rb");
 			if (!f) {
 				loading = false;
@@ -236,6 +247,13 @@ struct RM_Deck : Module {
 			fclose(f);
 
 			if (bytesRead != (size_t)fileSize) {
+				loading = false;
+				return;
+			}
+
+			// Detect file type from content
+			PlayerType detectedType = detectFileType(fileData);
+			if (detectedType == PlayerType::NONE) {
 				loading = false;
 				return;
 			}
@@ -257,6 +275,12 @@ struct RM_Deck : Module {
 							playerType = PlayerType::MED;
 							med_player_set_position_callback(medPlayer, playerPositionCallback, this);
 						}
+					} else if (detectedType == PlayerType::AHX && ahxPlayer) {
+						success = ahx_player_load(ahxPlayer, fileData.data(), fileData.size());
+						if (success) {
+							playerType = PlayerType::AHX;
+							ahx_player_set_position_callback(ahxPlayer, ahxPositionCallback, this);
+						}
 					}
 				}
 			}
@@ -274,6 +298,8 @@ struct RM_Deck : Module {
 						mod_player_set_channel_mute(modPlayer, i, false);
 					} else if (playerType == PlayerType::MED) {
 						med_player_set_channel_mute(medPlayer, i, false);
+					} else if (playerType == PlayerType::AHX) {
+						ahx_player_set_channel_mute(ahxPlayer, i, false);
 					}
 				}
 
@@ -293,10 +319,26 @@ struct RM_Deck : Module {
 
 		std::lock_guard<std::mutex> lock(swapMutex);
 
+		// Create array of channel output pointers
+		float* channelOutputs[4] = {
+			channel1Buffer,
+			channel2Buffer,
+			channel3Buffer,
+			channel4Buffer
+		};
+
 		if (playerType == PlayerType::MOD && modPlayer) {
-			mod_player_process(modPlayer, leftBuffer, rightBuffer, BUFFER_SIZE, APP->engine->getSampleRate());
+			mod_player_process_channels(modPlayer, leftBuffer, rightBuffer,
+			                            channelOutputs, BUFFER_SIZE,
+			                            APP->engine->getSampleRate());
 		} else if (playerType == PlayerType::MED && medPlayer) {
-			med_player_process(medPlayer, leftBuffer, rightBuffer, BUFFER_SIZE, APP->engine->getSampleRate());
+			med_player_process_channels(medPlayer, leftBuffer, rightBuffer,
+			                            channelOutputs, 4, BUFFER_SIZE,
+			                            APP->engine->getSampleRate());
+		} else if (playerType == PlayerType::AHX && ahxPlayer) {
+			ahx_player_process_channels(ahxPlayer, leftBuffer, rightBuffer,
+			                            channelOutputs, BUFFER_SIZE,
+			                            APP->engine->getSampleRate());
 		}
 
 		bufferPos = 0;
@@ -314,6 +356,8 @@ struct RM_Deck : Module {
 						mod_player_start(modPlayer);
 					} else if (playerType == PlayerType::MED && medPlayer) {
 						med_player_start(medPlayer);
+					} else if (playerType == PlayerType::AHX && ahxPlayer) {
+						ahx_player_start(ahxPlayer);
 					}
 				} else {
 					std::lock_guard<std::mutex> lock(swapMutex);
@@ -321,6 +365,8 @@ struct RM_Deck : Module {
 						mod_player_stop(modPlayer);
 					} else if (playerType == PlayerType::MED && medPlayer) {
 						med_player_stop(medPlayer);
+					} else if (playerType == PlayerType::AHX && ahxPlayer) {
+						ahx_player_stop(ahxPlayer);
 					}
 				}
 			}
@@ -427,6 +473,8 @@ struct RM_Deck : Module {
 						mod_player_set_channel_mute(modPlayer, i, newMuteState);
 					} else if (playerType == PlayerType::MED && medPlayer) {
 						med_player_set_channel_mute(medPlayer, i, newMuteState);
+					} else if (playerType == PlayerType::AHX && ahxPlayer) {
+						ahx_player_set_channel_mute(ahxPlayer, i, newMuteState);
 					}
 				}
 				params[CHAN1_MUTE_PARAM + i].setValue(0.f);
@@ -458,12 +506,35 @@ struct RM_Deck : Module {
 		// Get samples from buffer
 		float leftSample = leftBuffer[bufferPos];
 		float rightSample = rightBuffer[bufferPos];
+		float ch1Sample = channel1Buffer[bufferPos];
+		float ch2Sample = channel2Buffer[bufferPos];
+		float ch3Sample = channel3Buffer[bufferPos];
+		float ch4Sample = channel4Buffer[bufferPos];
 		bufferPos++;
 
-		// Output audio
+		// Output audio with flexible routing
 		float gain = muted ? 0.f : 5.f;
-		outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
-		outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
+
+		// Detect which outputs are connected to determine routing mode
+		bool ch3Connected = outputs[AUDIO_3_OUTPUT].isConnected();
+		bool ch4Connected = outputs[AUDIO_4_OUTPUT].isConnected();
+		bool multiChannelMode = ch3Connected || ch4Connected;
+
+		if (multiChannelMode) {
+			// Multi-channel mode: Output all 4 channels separately
+			// L becomes 1, R becomes 2, plus 3, 4
+			outputs[AUDIO_L_OUTPUT].setVoltage(ch1Sample * gain);
+			outputs[AUDIO_R_OUTPUT].setVoltage(ch2Sample * gain);
+			outputs[AUDIO_3_OUTPUT].setVoltage(ch3Sample * gain);
+			outputs[AUDIO_4_OUTPUT].setVoltage(ch4Sample * gain);
+		} else {
+			// Stereo mode: Use pre-mixed L/R outputs
+			// Amiga panning [L R R L]: Left = Ch0+Ch3, Right = Ch1+Ch2
+			outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
+			outputs[AUDIO_R_OUTPUT].setVoltage(rightSample * gain);
+			outputs[AUDIO_3_OUTPUT].setVoltage(0.f);
+			outputs[AUDIO_4_OUTPUT].setVoltage(0.f);
+		}
 
 		// PFL output (Pre-Fader Listening)
 		if (pflActive) {
@@ -523,6 +594,8 @@ struct RM_Deck : Module {
 							mod_player_set_channel_mute(modPlayer, i, muted);
 						} else if (playerType == PlayerType::MED && medPlayer) {
 							med_player_set_channel_mute(medPlayer, i, muted);
+						} else if (playerType == PlayerType::AHX && ahxPlayer) {
+							ahx_player_set_channel_mute(ahxPlayer, i, muted);
 						}
 					}
 				}
@@ -531,12 +604,21 @@ struct RM_Deck : Module {
 	}
 };
 
-// Implement position callback after RM_Deck is fully defined
+// Implement position callbacks after RM_Deck is fully defined
 static void playerPositionCallback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data) {
 	RM_Deck* module = static_cast<RM_Deck*>(user_data);
 	if (module) {
 		module->currentOrder = order;
 		module->currentPattern = pattern;
+		module->currentRow = row;
+	}
+}
+
+static void ahxPositionCallback(uint8_t subsong, uint16_t position, uint16_t row, void* user_data) {
+	RM_Deck* module = static_cast<RM_Deck*>(user_data);
+	if (module) {
+		module->currentOrder = subsong;     // Use subsong as order for display
+		module->currentPattern = position;  // AHX uses position (uint16_t)
 		module->currentRow = row;
 	}
 }
@@ -654,7 +736,7 @@ struct RM_DeckWidget : ModuleWidget {
 		RegrooveLabel* titleLabel = new RegrooveLabel();
 		titleLabel->box.pos = mm2px(Vec(0, 6.5));
 		titleLabel->box.size = mm2px(Vec(60.96, 5));
-		titleLabel->text = "MOD Deck";
+		titleLabel->text = "Tracker Deck";
 		titleLabel->fontSize = 18.0;
 		titleLabel->color = nvgRGB(0xff, 0xff, 0xff);
 		titleLabel->bold = true;
@@ -749,29 +831,71 @@ struct RM_DeckWidget : ModuleWidget {
 		tempoLabel->fontSize = 7.0;
 		addChild(tempoLabel);
 
-		// PFL outputs (left side)
-		RegrooveLabel* pflLabel = new RegrooveLabel();
-		pflLabel->box.pos = mm2px(Vec(7.5, 110));
-		pflLabel->box.size = mm2px(Vec(9, 3));
-		pflLabel->text = "PFL";
-		pflLabel->fontSize = 7.0;
-		pflLabel->align = NVG_ALIGN_CENTER;
-		addChild(pflLabel);
+		// Outputs - 6 evenly spaced at bottom (same layout as DJ mixer)
+		// Spacing: 9.4mm between each output
+		float outY = 118.0;
+		float labelY = 110.0;
+		float labelSize = 3.0;
 
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(7.5, 118.0)), module, RM_Deck::PFL_L_OUTPUT));
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(16.5, 118.0)), module, RM_Deck::PFL_R_OUTPUT));
+		// PFL L
+		RegrooveLabel* pflLLabel = new RegrooveLabel();
+		pflLLabel->box.pos = mm2px(Vec(7.5 - 2, labelY));
+		pflLLabel->box.size = mm2px(Vec(4, labelSize));
+		pflLLabel->text = "PFL";
+		pflLLabel->fontSize = 6.0;
+		pflLLabel->align = NVG_ALIGN_CENTER;
+		addChild(pflLLabel);
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(7.5, outY)), module, RM_Deck::PFL_L_OUTPUT));
 
-		// Audio outputs (right side)
-		RegrooveLabel* outLabel = new RegrooveLabel();
-		outLabel->box.pos = mm2px(Vec(38, 110));
-		outLabel->box.size = mm2px(Vec(20, 3));
-		outLabel->text = "Out";
-		outLabel->fontSize = 7.0;
-		outLabel->align = NVG_ALIGN_CENTER;
-		addChild(outLabel);
+		// PFL R
+		RegrooveLabel* pflRLabel = new RegrooveLabel();
+		pflRLabel->box.pos = mm2px(Vec(16.9 - 2, labelY));
+		pflRLabel->box.size = mm2px(Vec(4, labelSize));
+		pflRLabel->text = "PFL";
+		pflRLabel->fontSize = 6.0;
+		pflRLabel->align = NVG_ALIGN_CENTER;
+		addChild(pflRLabel);
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(16.9, outY)), module, RM_Deck::PFL_R_OUTPUT));
 
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(43.48, 118.0)), module, RM_Deck::AUDIO_L_OUTPUT));
-		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(53.48, 118.0)), module, RM_Deck::AUDIO_R_OUTPUT));
+		// L/1
+		RegrooveLabel* l1Label = new RegrooveLabel();
+		l1Label->box.pos = mm2px(Vec(26.3 - 2, labelY));
+		l1Label->box.size = mm2px(Vec(4, labelSize));
+		l1Label->text = "L/1";
+		l1Label->fontSize = 6.0;
+		l1Label->align = NVG_ALIGN_CENTER;
+		addChild(l1Label);
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(26.3, outY)), module, RM_Deck::AUDIO_L_OUTPUT));
+
+		// R/2
+		RegrooveLabel* r2Label = new RegrooveLabel();
+		r2Label->box.pos = mm2px(Vec(35.7 - 2, labelY));
+		r2Label->box.size = mm2px(Vec(4, labelSize));
+		r2Label->text = "R/2";
+		r2Label->fontSize = 6.0;
+		r2Label->align = NVG_ALIGN_CENTER;
+		addChild(r2Label);
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(35.7, outY)), module, RM_Deck::AUDIO_R_OUTPUT));
+
+		// 3
+		RegrooveLabel* ch3Label = new RegrooveLabel();
+		ch3Label->box.pos = mm2px(Vec(45.1 - 1.5, labelY));
+		ch3Label->box.size = mm2px(Vec(3, labelSize));
+		ch3Label->text = "3";
+		ch3Label->fontSize = 6.0;
+		ch3Label->align = NVG_ALIGN_CENTER;
+		addChild(ch3Label);
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(45.1, outY)), module, RM_Deck::AUDIO_3_OUTPUT));
+
+		// 4
+		RegrooveLabel* ch4Label = new RegrooveLabel();
+		ch4Label->box.pos = mm2px(Vec(54.5 - 1.5, labelY));
+		ch4Label->box.size = mm2px(Vec(3, labelSize));
+		ch4Label->text = "4";
+		ch4Label->fontSize = 6.0;
+		ch4Label->align = NVG_ALIGN_CENTER;
+		addChild(ch4Label);
+		addOutput(createOutputCentered<RegroovePort>(mm2px(Vec(54.5, outY)), module, RM_Deck::AUDIO_4_OUTPUT));
 	}
 
 	void appendContextMenu(Menu* menu) override {
@@ -781,12 +905,12 @@ struct RM_DeckWidget : ModuleWidget {
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel("Module File"));
 
-		menu->addChild(createMenuItem("Load MOD/MED file", "", [=]() {
+		menu->addChild(createMenuItem("Load MOD/MED/AHX file", "", [=]() {
 			if (!module || !module->initialized || module->loading) {
 				return;
 			}
 			char* path = osdialog_file(OSDIALOG_OPEN, NULL, NULL,
-				osdialog_filters_parse("Module Files:mod,med,mmd,mmd0,mmd1,mmd2,mmd3"));
+				osdialog_filters_parse("Module Files:mod,med,mmd,mmd0,mmd1,mmd2,mmd3,ahx,hvl"));
 			if (path) {
 				module->loadFile(path);
 				free(path);

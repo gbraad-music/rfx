@@ -28,6 +28,14 @@ MedPlayer* med_player_create(void);
 void med_player_destroy(MedPlayer* player);
 
 /**
+ * Check if data is a valid MMD file
+ * @param data Pointer to file data
+ * @param size Size of file in bytes
+ * @return true if data appears to be a valid MMD2/MMD3 file
+ */
+bool med_player_detect(const uint8_t* data, size_t size);
+
+/**
  * Load an MMD2 file from memory
  * @param player Player instance
  * @param data File data

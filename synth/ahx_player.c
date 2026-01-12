@@ -1427,6 +1427,19 @@ void ahx_player_destroy(AhxPlayer* player) {
     free(player);
 }
 
+bool ahx_player_detect(const uint8_t* data, size_t size) {
+    if (!data || size < 14) return false;
+
+    // Check for 'THX' magic number at start of file
+    if (data[0] != 'T' || data[1] != 'H' || data[2] != 'X') return false;
+
+    // Check revision number (0 or 1 are valid)
+    uint8_t revision = data[3];
+    if (revision > 1) return false;
+
+    return true;
+}
+
 bool ahx_player_load(AhxPlayer* player, const uint8_t* data, size_t size) {
     if (!player || !data) return false;
     if (!load_song(player, data, size)) return false;

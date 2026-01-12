@@ -33,6 +33,10 @@ AhxPlayer* ahx_player_create(void);
 // Destroy player instance
 void ahx_player_destroy(AhxPlayer* player);
 
+// Check if data is a valid AHX/HVL file
+// Returns true if data appears to be a valid AHX file
+bool ahx_player_detect(const uint8_t* data, size_t size);
+
 // Load AHX song from memory buffer
 // Returns true on success, false on failure
 bool ahx_player_load(AhxPlayer* player, const uint8_t* data, size_t size);

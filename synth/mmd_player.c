@@ -817,17 +817,21 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             uint32_t instr_offset = BE32(*(uint32_t*)(smplarr_ptr + i * 4));
             if (instr_offset == 0) continue;
 
-            // fprintf(stderr, "med_player: Loading sample %d from offset 0x%X\n", i, instr_offset);
-
-            const uint8_t* instr_ptr = read_ptr(base, instr_offset);
-            if (!instr_ptr) {
-                fprintf(stderr, "med_player: ERROR: Invalid instrument pointer for sample %d\n", i);
+            // Validate offset is within file bounds BEFORE dereferencing
+            if (instr_offset >= player->file_size) {
+                // Invalid offset - likely unused sample slot, skip silently
                 continue;
             }
 
-            // Bounds check
-            if (instr_ptr + 6 >= base + player->file_size) {
-                fprintf(stderr, "med_player: ERROR: Instrument header out of bounds for sample %d\n", i);
+            const uint8_t* instr_ptr = read_ptr(base, instr_offset);
+            if (!instr_ptr) {
+                // NULL pointer - skip silently
+                continue;
+            }
+
+            // Bounds check (need to read 6 bytes for InstrHdr)
+            if (instr_ptr + 6 > base + player->file_size) {
+                // Not enough space for header - skip silently
                 continue;
             }
 
@@ -1102,8 +1106,6 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
             // Handle old octave-based sample formats (type 0-7)
             // Note: Use masked_type (low nibble) for octave-based samples
             else if (!is_synth && masked_type >= 0 && masked_type <= 7) {
-                // fprintf(stderr, "med_player:   Old octave-based sample (type %d)\n", masked_type);
-
                 // For one-shot samples (small repeat_length), check if there's more data available
                 // Read repeat info first to determine actual sample size
                 const uint8_t* song_base_temp = read_ptr(base, player->song_offset);
@@ -1116,11 +1118,21 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 if (replen_words_temp <= 2) {
                     // Find next instrument offset
                     uint32_t next_instr_offset = player->file_size;
-                    for (int j = i + 1; j < MAX_SAMPLES; j++) {
-                        uint32_t next_offset = BE32(*(uint32_t*)(smplarr_ptr + j * 4));
-                        if (next_offset > 0) {
-                            next_instr_offset = next_offset;
-                            break;
+
+                    // CRITICAL: Check if smplarr_ptr is valid before using it
+                    if (smplarr_ptr) {
+                        for (int j = i + 1; j < MAX_SAMPLES; j++) {
+                            // BOUNDS CHECK: ensure we don't read past the sample array
+                            const uint8_t* read_pos = smplarr_ptr + j * 4;
+                            if (read_pos + 4 > base + player->file_size) {
+                                break;  // Stop searching if we'd read past file end
+                            }
+                            uint32_t next_offset = BE32(*(uint32_t*)read_pos);
+                            if (next_offset > 0 && next_offset < player->file_size) {
+                                // CRITICAL: Validate offset is within file bounds before using it
+                                next_instr_offset = next_offset;
+                                break;
+                            }
                         }
                     }
 
@@ -1149,6 +1161,16 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 }
                 memcpy(player->samples[i].data, instr_ptr + 6, actual_length);
 
+                // CRITICAL: Byte-swap 16-bit samples (MMD files are big-endian)
+                if (is_16bit) {
+                    int16_t* sample16 = (int16_t*)player->samples[i].data;
+                    uint32_t num_samples = actual_length / 2;
+                    for (uint32_t s = 0; s < num_samples; s++) {
+                        uint16_t be_val = ((uint8_t*)sample16)[s*2] << 8 | ((uint8_t*)sample16)[s*2+1];
+                        sample16[s] = (int16_t)be_val;
+                    }
+                }
+
                 // For old samples, get repeat/volume info from MMD0sample array at start of song
                 // song_base + 0 to song_base + 503 is the sample array (63 samples * 8 bytes each)
                 const uint8_t* song_base = read_ptr(base, player->song_offset);
@@ -1162,13 +1184,10 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
                 player->samples[i].repeat_start = rep_words * 2;  // Convert words to bytes
                 player->samples[i].repeat_length = replen_words * 2;
                 player->samples[i].volume = svol;
-                player->samples[i].transpose = strans;
+                player->samples[i].transpose = strans;  // Use transpose as-is, no octave adjustment
                 player->samples[i].finetune = 0;
                 player->samples[i].is_stereo = is_stereo;
                 player->samples[i].is_16bit = is_16bit;
-
-                // fprintf(stderr, "med_player:   Sample %d (old): len=%u, vol=%d, transpose=%d, repeat=%u/%u\n",
-                //         i+1, length, svol, strans, player->samples[i].repeat_start, player->samples[i].repeat_length);
 
                 samples_loaded++;
             } else {
@@ -1714,8 +1733,15 @@ void med_player_process_channels(MedPlayer* player,
 
             // Set TrackerVoice frequency based on period
             // MMD uses PAL Amiga clock: freq = 7093789.2 / (period * 2) = 3546894.6 / period
+            // CRITICAL: For 16-bit samples, use HALF clock rate (play slower)
             if (chan->period > 0) {
-                tracker_voice_set_period(&chan->voice_playback, chan->period, 3546895, (uint32_t)sample_rate);
+                uint32_t clock_rate = 3546895;
+
+                if (chan->sample->is_16bit) {
+                    clock_rate /= 2;  // HALF clock for 16-bit samples (play at half speed)
+                }
+
+                tracker_voice_set_period(&chan->voice_playback, chan->period, clock_rate, (uint32_t)sample_rate);
             }
 
             // Get sample from TrackerVoice (handles both 8-bit and 16-bit, plus looping)

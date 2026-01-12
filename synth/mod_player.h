@@ -202,6 +202,23 @@ float mod_player_get_channel_panning(const ModPlayer* player, uint8_t channel);
 void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t frames, uint32_t sample_rate);
 
 /**
+ * Process with per-channel outputs
+ * left/right: Mixed stereo output buffers
+ * channel_outputs: Array of 4 mono channel buffers (can be NULL if not needed)
+ * frames: Number of frames to process
+ * sample_rate: Output sample rate (typically 48000)
+ *
+ * Use case: VCV Rack modules can expose each channel as a separate output for
+ * individual processing, effects, or visualization
+ */
+void mod_player_process_channels(ModPlayer* player,
+                                  float* left,
+                                  float* right,
+                                  float* channel_outputs[MOD_MAX_CHANNELS],
+                                  uint32_t frames,
+                                  uint32_t sample_rate);
+
+/**
  * Get MOD title
  */
 const char* mod_player_get_title(const ModPlayer* player);

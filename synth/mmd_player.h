@@ -67,6 +67,31 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                         size_t frames, float sample_rate);
 
 /**
+ * Process audio with per-channel outputs
+ * @param player Player instance
+ * @param left_out Left channel output buffer (mixed)
+ * @param right_out Right channel output buffer (mixed)
+ * @param channel_outputs Array of pointers to mono channel buffers (can be NULL if not needed)
+ * @param num_channel_outputs Size of channel_outputs array (use med_player_get_num_channels())
+ * @param frames Number of frames to render
+ * @param sample_rate Output sample rate
+ *
+ * Use case: VCV Rack modules can expose each channel as a separate output for
+ * individual processing, effects, or visualization
+ *
+ * Note: MMD can have 4-64 channels. Use med_player_get_num_channels() to determine
+ * how many channel buffers to allocate. Buffers beyond the actual channel count
+ * will be filled with silence.
+ */
+void med_player_process_channels(MedPlayer* player,
+                                 float* left_out,
+                                 float* right_out,
+                                 float** channel_outputs,
+                                 uint8_t num_channel_outputs,
+                                 size_t frames,
+                                 float sample_rate);
+
+/**
  * Get current playback position
  * @param player Player instance
  * @param out_pattern Current pattern index

@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,7 @@ typedef struct {
     uint8_t lokey;                   // Lowest MIDI note (0-127)
     uint8_t hikey;                   // Highest MIDI note (0-127)
     uint8_t pitch_keycenter;         // Root note for pitch calculation (default 60)
+    int pitch_keytrack;              // Pitch tracking: 100=full (default), 0=none (drums)
     uint8_t lovel;                   // Lowest velocity (0-127, default 0)
     uint8_t hivel;                   // Highest velocity (0-127, default 127)
     uint32_t offset;                 // Sample start offset in samples (default 0)
@@ -52,6 +54,14 @@ typedef struct {
  * Returns allocated SFZData structure, or NULL on error
  */
 SFZData* sfz_parse(const char* filepath);
+
+/**
+ * Parse SFZ from memory (for web/WASM usage)
+ * content: SFZ file content as string
+ * length: Length of content
+ * Returns allocated SFZData structure, or NULL on error
+ */
+SFZData* sfz_parse_from_memory(const char* content, size_t length);
 
 /**
  * Load WAV files referenced in the SFZ

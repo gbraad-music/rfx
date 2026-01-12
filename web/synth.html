@@ -420,11 +420,35 @@
                 <button id="btnInitSimple">Initialize Simple Synth</button>
                 <button id="btnInitRGResonate1">Initialize RGResonate1</button>
                 <button id="btnInitRG1Piano">Initialize RG1Piano</button>
+                <button id="btnInitRGSFZ">Initialize RGSFZ Sampler</button>
             </div>
             <div class="info">
                 Simple: Basic Web Audio oscillators<br>
                 RGResonate1: WASM polyphonic synthesizer with resonant filters<br>
-                RG1Piano: WASM M1 Piano with modal synthesis
+                RG1Piano: WASM M1 Piano with modal synthesis<br>
+                RGSFZ: SFZ sampler with WAV sample playback
+            </div>
+
+            <!-- RGSFZ Sampler Controls (shown after initialization) -->
+            <div id="rgsfzControls" style="display: none; margin-top: 15px; padding: 15px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 4px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <input type="file" id="sfzFileInput" accept=".sfz" style="display: none;">
+                    <button id="btnLoadSFZ">Load SFZ File</button>
+                    <span id="sfzFileName" style="color: #666; font-size: 12px;"></span>
+                </div>
+                <div id="sfzRegions" style="font-size: 11px; font-family: monospace; color: #888; max-height: 150px; overflow-y: auto; background: #0a0a0a; padding: 10px; border-radius: 4px; display: none; margin-bottom: 10px;">
+                    <!-- Regions will be listed here -->
+                </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                    <input type="file" id="wavFilesInput" accept=".wav" multiple style="display: none;">
+                    <button id="btnLoadWAVs" disabled>Load WAV Samples</button>
+                    <span id="wavLoadStatus" style="color: #666; font-size: 12px;"></span>
+                </div>
+                <div class="info" style="font-size: 11px;">
+                    1. Load SFZ file to define regions<br>
+                    2. Load WAV files (select all samples referenced in SFZ)<br>
+                    3. Play via MIDI or on-screen keyboard
+                </div>
             </div>
         </div>
 
@@ -484,6 +508,7 @@
     <script src="external/rgresonate1-synth.js"></script>
     <script src="external/rg1piano-synth.js"></script>
     <script src="external/rg909-drum.js"></script>
+    <script src="external/rgsfz-synth.js"></script>
 
     <!-- Load WASM modules -->
     <script src="synths/rg909-drum.js"></script>
@@ -502,6 +527,7 @@
         let webrtcMidi = null;
         let currentSynth = null;
         let drumSynth = null;
+        let sfzPlayer = null;
         let sharedAnalyzer = null;
         let isAudible = true;
         let keyboardOctave = 3;  // C3 default
@@ -557,6 +583,7 @@
             document.getElementById('btnInitSimple').addEventListener('click', () => initializeSynth('simple'));
             document.getElementById('btnInitRGResonate1').addEventListener('click', () => initializeSynth('rgresonate1'));
             document.getElementById('btnInitRG1Piano').addEventListener('click', () => initializeSynth('rg1piano'));
+            document.getElementById('btnInitRGSFZ').addEventListener('click', initializeRGSFZ);
 
             // Initialize drum
             document.getElementById('btnInitDrum').addEventListener('click', initializeDrum);
@@ -846,16 +873,21 @@
             midiManager.on('noteon', (data) => {
                 console.log('[MIDI] Note ON:', data, 'Channel:', data.channel);
 
+                // Route to SFZ player if loaded (takes priority)
+                if (sfzPlayer && sfzPlayer.regions.length > 0) {
+                    sfzPlayer.handleNoteOn(data.note, data.velocity);
+                    console.log('[MIDI] Routed to SFZ');
+                }
                 // MIDI Channel 10 (index 9) routes to drums (GM standard)
-                if (data.channel === 9 && drumSynth) {
+                else if (data.channel === 9 && drumSynth) {
                     drumSynth.triggerDrum(data.note, data.velocity);
                     console.log('[MIDI] Routed to drums (Channel 10)');
                 } else if (currentSynth) {
                     currentSynth.handleNoteOn(data.note, data.velocity);
                 }
 
-                // Also handle drum notes by note number (36-49) if not on channel 10
-                if (data.channel !== 9 && drumSynth && data.note >= 36 && data.note <= 49) {
+                // Also handle drum notes by note number (36-49) if not on channel 10 and no SFZ
+                if (!sfzPlayer && data.channel !== 9 && drumSynth && data.note >= 36 && data.note <= 49) {
                     drumSynth.triggerDrum(data.note, data.velocity);
                 }
             });
@@ -864,8 +896,12 @@
             midiManager.on('noteoff', (data) => {
                 console.log('[MIDI] Note OFF:', data, 'Channel:', data.channel);
 
+                // Send note off to SFZ player if loaded
+                if (sfzPlayer && sfzPlayer.regions.length > 0) {
+                    sfzPlayer.handleNoteOff(data.note, data.velocity);
+                }
                 // Only send note off to synth (drums don't need note off)
-                if (data.channel !== 9 && currentSynth) {
+                else if (data.channel !== 9 && currentSynth) {
                     currentSynth.handleNoteOff(data.note);
                 }
             });
@@ -1625,8 +1661,12 @@
                 // Note off
                 activeKeys.delete(note);
 
+                // Send note off to SFZ player if loaded
+                if (sfzPlayer && sfzPlayer.regions.length > 0) {
+                    sfzPlayer.handleNoteOff(note, velocity);
+                }
                 // Only send note off to synth (not drums)
-                if (keyboardChannel !== 9 && currentSynth) {
+                else if (keyboardChannel !== 9 && currentSynth) {
                     currentSynth.handleNoteOff(note);
                 }
             } else {
@@ -1639,8 +1679,13 @@
                 const noteName = noteNames[(note - 12) % 12];
                 document.getElementById('lastNote').textContent = `${noteName}${octave} (Ch ${keyboardChannel + 1}) Vel ${velocity}`;
 
-                // Route to synth or drums based on channel
-                if (keyboardChannel === 9) {
+                // Route to SFZ player if loaded (takes priority)
+                if (sfzPlayer && sfzPlayer.regions.length > 0) {
+                    sfzPlayer.handleNoteOn(note, velocity);
+                    console.log('[Keyboard] SFZ note:', note, 'velocity:', velocity);
+                }
+                // Route to drums or synth based on channel
+                else if (keyboardChannel === 9) {
                     // Channel 10 (drums)
                     if (drumSynth) {
                         drumSynth.triggerDrum(note, velocity);
@@ -1655,6 +1700,173 @@
                 }
             }
         }
+
+        // RGSFZ Sampler (WASM-based SFZ player)
+        async function initializeRGSFZ() {
+            // Resume AudioContext if needed
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            if (sfzPlayer) {
+                console.log('[RGSFZ] Already initialized');
+                return;
+            }
+
+            try {
+                sfzPlayer = new RGSFZSynth(audioContext);
+                await sfzPlayer.initialize();
+
+                // Connect to shared analyzer
+                if (!sharedAnalyzer) {
+                    sharedAnalyzer = new FrequencyAnalyzer(audioContext, {
+                        fftSize: 8192,
+                        smoothing: 0.8,
+                        updateRate: 50,
+                        sourceName: 'midi-synth',
+                        enableDecay: true
+                    });
+                    sharedAnalyzer.start();
+
+                    sharedAnalyzer.on('*', (event) => {
+                        if (event.type === 'frequency' && event.data && event.data.bands) {
+                            updateFrequencyBars(event.data.bands);
+                        }
+                    });
+                }
+
+                sfzPlayer.masterGain.connect(sharedAnalyzer.inputGain);
+                sharedAnalyzer.connectTo(audioContext.destination);
+
+                // Show RGSFZ controls
+                document.getElementById('rgsfzControls').style.display = 'block';
+
+                // Update button states
+                document.getElementById('btnInitRGSFZ').textContent = 'RGSFZ Initialized';
+                document.getElementById('btnInitRGSFZ').disabled = true;
+
+                console.log('[RGSFZ] Initialized successfully');
+
+            } catch (error) {
+                console.error('[RGSFZ] Initialization error:', error);
+                alert('Failed to initialize RGSFZ: ' + error.message);
+            }
+        }
+
+        document.getElementById('btnLoadSFZ').addEventListener('click', () => {
+            document.getElementById('sfzFileInput').click();
+        });
+
+        document.getElementById('sfzFileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                console.log('[RGSFZ] Loading SFZ:', file.name);
+                document.getElementById('sfzFileName').textContent = `Loading ${file.name}...`;
+
+                // Parse SFZ file
+                const sfzText = await file.text();
+                sfzPlayer.parseSFZ(sfzText);
+
+                const info = sfzPlayer.getInfo();
+                console.log('[RGSFZ] Parsed', info.regions, 'regions');
+
+                // Display regions (show full sample paths for debugging)
+                const regionsDiv = document.getElementById('sfzRegions');
+                regionsDiv.style.display = 'block';
+                regionsDiv.innerHTML = sfzPlayer.regions.map((r, i) => {
+                    return `Region ${i + 1}: "${r.sample}" [${r.lokey}-${r.hikey}] vel[${r.lovel}-${r.hivel}] pitch=${r.pitch_keycenter}`;
+                }).join('\n');
+
+                console.log('[RGSFZ] SFZ regions:', sfzPlayer.regions.map(r => r.sample));
+
+                document.getElementById('sfzFileName').textContent = `${file.name} (${info.regions} regions)`;
+
+                // Enable WAV loading button
+                document.getElementById('btnLoadWAVs').disabled = false;
+
+                console.log('[RGSFZ] SFZ parsed - Now load WAV samples');
+
+            } catch (error) {
+                console.error('[RGSFZ] SFZ load error:', error);
+                document.getElementById('sfzFileName').textContent = `Error: ${error.message}`;
+            }
+        });
+
+        // WAV sample loading
+        document.getElementById('btnLoadWAVs').addEventListener('click', () => {
+            document.getElementById('wavFilesInput').click();
+        });
+
+        document.getElementById('wavFilesInput').addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            try {
+                console.log('[RGSFZ] Loading', files.length, 'WAV files...');
+                document.getElementById('wavLoadStatus').textContent = `Loading ${files.length} files...`;
+
+                let loadedCount = 0;
+
+                // Helper: normalize filename for matching (handle spaces, case, etc.)
+                const normalizeFilename = (name) => {
+                    return name.trim().toLowerCase();
+                };
+
+                // Create a map of normalized filename -> file for matching
+                const fileMap = new Map();
+                files.forEach(file => {
+                    const filename = file.name;
+                    const normalized = normalizeFilename(filename);
+
+                    // Store multiple variations
+                    fileMap.set(normalized, file);
+                    fileMap.set(normalizeFilename(filename.replace(/\//g, '\\')), file);
+
+                    console.log('[RGSFZ] Available file:', filename);
+                });
+
+                // Try to load samples for each region
+                for (let i = 0; i < sfzPlayer.regions.length; i++) {
+                    const region = sfzPlayer.regions[i];
+
+                    // Extract just the filename from the sample path
+                    const samplePath = region.sample;
+                    const filename = samplePath.split(/[\/\\]/).pop();
+                    const normalizedSample = normalizeFilename(filename);
+                    const normalizedPath = normalizeFilename(samplePath);
+
+                    // Try multiple matching strategies
+                    const wavFile = fileMap.get(normalizedSample) ||
+                                   fileMap.get(normalizedPath) ||
+                                   fileMap.get(normalizeFilename(samplePath.replace(/\//g, '\\')));
+
+                    if (wavFile) {
+                        const arrayBuffer = await wavFile.arrayBuffer();
+                        await sfzPlayer.loadRegionSample(i, arrayBuffer);
+                        loadedCount++;
+                        console.log('[RGSFZ] Matched:', filename, '→', wavFile.name);
+                    } else {
+                        console.warn('[RGSFZ] Sample not found:', samplePath, '(normalized:', normalizedSample, ')');
+                    }
+                }
+
+                document.getElementById('wavLoadStatus').textContent =
+                    `Loaded ${loadedCount}/${sfzPlayer.regions.length} samples`;
+                document.getElementById('wavLoadStatus').style.color = '#00ff00';
+
+                console.log('[RGSFZ] Loaded', loadedCount, 'samples - Ready to play!');
+
+            } catch (error) {
+                console.error('[RGSFZ] WAV load error:', error);
+                document.getElementById('wavLoadStatus').textContent = `Error: ${error.message}`;
+                document.getElementById('wavLoadStatus').style.color = '#ff3333';
+            }
+
+            // Clear file input
+            e.target.value = '';
+        });
 
         // Initialize on load
         window.addEventListener('load', init);

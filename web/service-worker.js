@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v93';
+const CACHE_NAME = 'rfx-effects-v95';
 const ASSETS = [
     './',
     './index.html',
@@ -17,7 +17,10 @@ const ASSETS = [
     './pad-knob.js',
     './svg-slider.js',
     './fader-components.js',
-    // MOD/MED Player
+    // Unified Deck Player (MOD/MED/AHX with automatic detection)
+    './players/deck-player.js',
+    './players/deck-player.wasm',
+    // Legacy MOD/MED Player (will be removed after index.html update)
     './players/modmed-player.js',
     './players/modmed-player.wasm',
     // Synth test page dependencies

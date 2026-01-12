@@ -118,23 +118,23 @@ class AudioEffectsProcessor {
     }
 
     async initModMedPlayer() {
-        console.log('📡 Loading MOD/MED Player WASM...');
+        console.log('📡 Loading Deck Player WASM (MOD/MED/AHX)...');
 
         try {
-            const createModMedPlayerModule = await import('./players/modmed-player.js').then(m => m.default);
-            this.modMedModule = await createModMedPlayerModule();
+            const createDeckPlayerModule = await import('./players/deck-player.js').then(m => m.default);
+            this.modMedModule = await createDeckPlayerModule();
 
             console.log('Module keys:', Object.keys(this.modMedModule).filter(k => !k.startsWith('_')));
             console.log('Has HEAPU8:', !!this.modMedModule.HEAPU8);
             console.log('Has wasmMemory:', !!this.modMedModule.wasmMemory);
             console.log('Has _malloc:', typeof this.modMedModule._malloc);
 
-            this.modMedPlayer = this.modMedModule._modmed_player_create(this.audioContext.sampleRate);
+            this.modMedPlayer = this.modMedModule._deck_player_create_wasm(this.audioContext.sampleRate);
 
-            console.log('✅ MOD/MED Player ready!');
+            console.log('✅ Deck Player ready (MOD/MED/AHX)!');
             return true;
         } catch (error) {
-            console.warn('⚠️ MOD/MED Player not available:', error.message);
+            console.warn('⚠️ Deck Player not available:', error.message);
             return false;
         }
     }
@@ -289,12 +289,48 @@ class AudioEffectsProcessor {
         }
     }
 
+    async detectTrackerFormat(file) {
+        // Read first 1084 bytes to detect format by magic bytes
+        const buffer = await file.slice(0, 1084).arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+
+        // MOD: Check offset 1080 for signature (M.K., M!K!, FLT4, FLT8, etc.)
+        if (bytes.length >= 1084) {
+            const sig = String.fromCharCode(bytes[1080], bytes[1081], bytes[1082], bytes[1083]);
+            if (sig === 'M.K.' || sig === 'M!K!' || sig === 'FLT4' || sig === 'FLT8' ||
+                sig === '6CHN' || sig === '8CHN' || sig.endsWith('CHN')) {
+                console.log('✅ Detected: ProTracker MOD');
+                return true;
+            }
+        }
+
+        // MED/MMD: Check offset 0 for 'MMD0', 'MMD1', 'MMD2', 'MMD3'
+        if (bytes.length >= 4) {
+            const sig = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+            if (sig === 'MMD0' || sig === 'MMD1' || sig === 'MMD2' || sig === 'MMD3') {
+                console.log('✅ Detected: OctaMED MMD' + sig.charAt(3));
+                return true;
+            }
+        }
+
+        // AHX/HVL: Check offset 0 for 'THX'
+        if (bytes.length >= 3) {
+            const sig = String.fromCharCode(bytes[0], bytes[1], bytes[2]);
+            if (sig === 'THX') {
+                console.log('✅ Detected: AHX/HVL');
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     async loadAudioFile(file) {
         console.log(`📂 Loading: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
-        // Check if it's a MOD/MED file
-        const ext = file.name.toLowerCase().split('.').pop();
-        if (ext === 'mod' || ext === 'med' || ext === 'mmd' || ext === 'mmd2' || ext === 'mmd3') {
+        // Detect tracker files by reading file header (magic bytes)
+        const isTracker = await this.detectTrackerFormat(file);
+        if (isTracker) {
             await this.loadModMedFile(file);
             return;
         }
@@ -432,7 +468,7 @@ class AudioEffectsProcessor {
 
         // Load into player
         console.log(`Loading ${uint8Array.length} bytes at ptr 0x${dataPtr.toString(16)}`);
-        const success = this.modMedModule._modmed_player_load_from_memory(
+        const success = this.modMedModule._deck_player_load_from_memory(
             this.modMedPlayer,
             dataPtr,
             uint8Array.length,
@@ -451,7 +487,7 @@ class AudioEffectsProcessor {
         }
 
         // Get file info
-        const typeNamePtr = this.modMedModule._modmed_player_get_type_name(this.modMedPlayer);
+        const typeNamePtr = this.modMedModule._deck_player_get_type_name_wasm(this.modMedPlayer);
         let typeName = '';
         if (typeNamePtr) {
             const heap8 = new Uint8Array(memoryBuffer);
@@ -463,8 +499,8 @@ class AudioEffectsProcessor {
             }
             typeName = new TextDecoder().decode(new Uint8Array(typeNameBytes));
         }
-        const numChannels = this.modMedModule._modmed_player_get_num_channels(this.modMedPlayer);
-        const songLength = this.modMedModule._modmed_player_get_song_length(this.modMedPlayer);
+        const numChannels = this.modMedModule._deck_player_get_num_channels_wasm(this.modMedPlayer);
+        const songLength = this.modMedModule._deck_player_get_song_length_wasm(this.modMedPlayer);
 
         console.log(`✅ Loaded ${typeName}: ${file.name}`);
         console.log(`   Channels: ${numChannels}, Song length: ${songLength} patterns`);
@@ -487,8 +523,8 @@ class AudioEffectsProcessor {
             button.textContent = `${i + 1}`;
             button.dataset.channel = i;
             button.onclick = () => {
-                const muted = this.modMedModule._modmed_player_get_channel_mute(this.modMedPlayer, i);
-                this.modMedModule._modmed_player_set_channel_mute(this.modMedPlayer, i, muted ? 0 : 1);
+                const muted = this.modMedModule._deck_player_get_channel_mute_wasm(this.modMedPlayer, i);
+                this.modMedModule._deck_player_set_channel_mute_wasm(this.modMedPlayer, i, muted ? 0 : 1);
                 button.classList.toggle('muted', !muted);
             };
             channelMutesContainer.appendChild(button);
@@ -496,16 +532,16 @@ class AudioEffectsProcessor {
 
         // Wire up pattern navigation buttons
         document.getElementById('modmedPrevPattern').onclick = () => {
-            this.modMedModule._modmed_player_prev_pattern(this.modMedPlayer);
+            this.modMedModule._deck_player_prev_pattern(this.modMedPlayer);
         };
         document.getElementById('modmedNextPattern').onclick = () => {
-            this.modMedModule._modmed_player_next_pattern(this.modMedPlayer);
+            this.modMedModule._deck_player_next_pattern(this.modMedPlayer);
         };
 
         let loopPattern = false;
         document.getElementById('modmedLoopPattern').onclick = () => {
             loopPattern = !loopPattern;
-            this.modMedModule._modmed_player_set_loop_pattern(this.modMedPlayer, loopPattern ? 1 : 0);
+            this.modMedModule._deck_player_set_loop_pattern(this.modMedPlayer, loopPattern ? 1 : 0);
             document.getElementById('modmedLoopPattern').classList.toggle('active', loopPattern);
         };
 
@@ -513,7 +549,7 @@ class AudioEffectsProcessor {
         const bufferSize = 4096;
         this.modMedScriptNode = this.audioContext.createScriptProcessor(bufferSize, 0, 2);
 
-        const audioBufferPtr = this.modMedModule._modmed_create_audio_buffer(bufferSize);
+        const audioBufferPtr = this.modMedModule._deck_create_audio_buffer(bufferSize);
 
         // Zero the buffer initially
         const memBuf = this.modMedModule.wasmMemory ? this.modMedModule.wasmMemory.buffer : this.modMedModule.HEAPU8.buffer;
@@ -542,7 +578,7 @@ class AudioEffectsProcessor {
             const pitch = 1.0 / this.playbackRate;
             const adjustedSampleRate = this.audioContext.sampleRate * pitch;
 
-            this.modMedModule._modmed_player_process_f32(
+            this.modMedModule._deck_player_process_f32(
                 this.modMedPlayer,
                 audioBufferPtr,
                 actualBufferSize,
@@ -607,7 +643,7 @@ class AudioEffectsProcessor {
     playModMed() {
         if (!this.modMedPlayer) return;
 
-        this.modMedModule._modmed_player_start(this.modMedPlayer);
+        this.modMedModule._deck_player_start_wasm(this.modMedPlayer);
         this.isModMedPlaying = true;
         this.isPlaying = true;
         console.log('▶️ MOD/MED playback started');
@@ -616,7 +652,7 @@ class AudioEffectsProcessor {
     stopModMed() {
         if (!this.modMedPlayer) return;
 
-        this.modMedModule._modmed_player_stop(this.modMedPlayer);
+        this.modMedModule._deck_player_stop_wasm(this.modMedPlayer);
         this.isModMedPlaying = false;
         this.isPlaying = false;
         console.log('⏹ MOD/MED playback stopped');
@@ -632,9 +668,9 @@ class AudioEffectsProcessor {
         }
 
         // Get current position
-        const order = this.modMedModule._modmed_player_get_current_order(this.modMedPlayer);
-        const row = this.modMedModule._modmed_player_get_current_row(this.modMedPlayer);
-        const bpm = this.modMedModule._modmed_player_get_bpm(this.modMedPlayer);
+        const order = this.modMedModule._deck_player_get_current_order(this.modMedPlayer);
+        const row = this.modMedModule._deck_player_get_current_row(this.modMedPlayer);
+        const bpm = this.modMedModule._deck_player_get_bpm_wasm(this.modMedPlayer);
 
         // Update display
         document.getElementById('modmedOrderPos').textContent = order.toString().padStart(2, '0');

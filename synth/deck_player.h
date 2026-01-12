@@ -61,6 +61,18 @@ void deck_player_set_position_callback(DeckPlayer* player, DeckPlayerPositionCal
 // Get current playback position
 void deck_player_get_position(const DeckPlayer* player, uint8_t* order, uint16_t* pattern, uint16_t* row);
 
+// Set playback position
+void deck_player_set_position(DeckPlayer* player, uint8_t order, uint16_t row);
+
+// Get song info
+uint8_t deck_player_get_song_length(const DeckPlayer* player);
+uint8_t deck_player_get_num_channels(const DeckPlayer* player);
+uint16_t deck_player_get_bpm(const DeckPlayer* player);
+void deck_player_set_bpm(DeckPlayer* player, uint16_t bpm);
+
+// Loop control
+void deck_player_set_loop_range(DeckPlayer* player, uint16_t start_order, uint16_t end_order);
+
 // Channel muting (channels 0-3, supports up to 4 channels)
 void deck_player_set_channel_mute(DeckPlayer* player, uint8_t channel, bool muted);
 bool deck_player_get_channel_mute(const DeckPlayer* player, uint8_t channel);

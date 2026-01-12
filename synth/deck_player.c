@@ -230,6 +230,107 @@ void deck_player_get_position(const DeckPlayer* player, uint8_t* order, uint16_t
     }
 }
 
+void deck_player_set_position(DeckPlayer* player, uint8_t order, uint16_t row) {
+    if (!player) return;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            mod_player_set_position(player->mod_player, order, row);
+            break;
+        case DECK_PLAYER_MED:
+            med_player_set_position(player->med_player, order, row);
+            break;
+        case DECK_PLAYER_AHX:
+            // AHX doesn't have set_position API
+            break;
+        default:
+            break;
+    }
+}
+
+uint8_t deck_player_get_song_length(const DeckPlayer* player) {
+    if (!player) return 0;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            return mod_player_get_song_length(player->mod_player);
+        case DECK_PLAYER_MED:
+            return med_player_get_song_length(player->med_player);
+        case DECK_PLAYER_AHX:
+            // AHX doesn't expose song length API
+            return 0;
+        default:
+            return 0;
+    }
+}
+
+uint8_t deck_player_get_num_channels(const DeckPlayer* player) {
+    if (!player) return 0;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            return 4;  // MOD is always 4 channels
+        case DECK_PLAYER_MED:
+            return med_player_get_num_channels(player->med_player);
+        case DECK_PLAYER_AHX:
+            return 4;  // AHX is always 4 channels
+        default:
+            return 0;
+    }
+}
+
+uint16_t deck_player_get_bpm(const DeckPlayer* player) {
+    if (!player) return 125;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            return 125;  // MOD doesn't expose BPM API (uses CIA tempo)
+        case DECK_PLAYER_MED:
+            return med_player_get_bpm(player->med_player);
+        case DECK_PLAYER_AHX:
+            return 125;  // AHX doesn't expose BPM (uses CIA tempo)
+        default:
+            return 125;
+    }
+}
+
+void deck_player_set_bpm(DeckPlayer* player, uint16_t bpm) {
+    if (!player) return;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            // MOD doesn't support BPM API
+            (void)bpm;
+            break;
+        case DECK_PLAYER_MED:
+            med_player_set_bpm(player->med_player, bpm);
+            break;
+        case DECK_PLAYER_AHX:
+            // AHX doesn't support BPM changes
+            break;
+        default:
+            break;
+    }
+}
+
+void deck_player_set_loop_range(DeckPlayer* player, uint16_t start_order, uint16_t end_order) {
+    if (!player) return;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            mod_player_set_loop_range(player->mod_player, start_order, end_order);
+            break;
+        case DECK_PLAYER_MED:
+            med_player_set_loop_range(player->med_player, start_order, end_order);
+            break;
+        case DECK_PLAYER_AHX:
+            // AHX doesn't support loop range
+            break;
+        default:
+            break;
+    }
+}
+
 void deck_player_set_channel_mute(DeckPlayer* player, uint8_t channel, bool muted) {
     if (!player || channel >= 4) return;
 

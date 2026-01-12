@@ -9,6 +9,7 @@
 
 #include "mmd_player.h"
 #include "tracker_voice.h"
+#include "tracker_mixer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -1579,9 +1580,14 @@ bool med_player_is_playing(const MedPlayer* player) {
     return player ? player->playing : false;
 }
 
-// Process audio
-void med_player_process(MedPlayer* player, float* left_out, float* right_out,
-                       size_t frames, float sample_rate) {
+// Process audio with per-channel outputs
+void med_player_process_channels(MedPlayer* player,
+                                 float* left_out,
+                                 float* right_out,
+                                 float** channel_outputs,
+                                 uint8_t num_channel_outputs,
+                                 size_t frames,
+                                 float sample_rate) {
     if (!player || !left_out || !right_out) return;
 
     // Calculate samples per tick
@@ -1664,21 +1670,29 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
                     float vol = (chan->current_volume / (float)player->max_volume) * (chan->sample->volume / 64.0f) *
                                (player->track_volumes[ch] / 127.0f) * chan->user_volume;
 
-                    // if (sample_debug_count < 3) {
-                    //     fprintf(stderr, "  vol components: chan_vol=%.3f smp_vol=%.3f trk_vol=%.3f user_vol=%.3f => final_vol=%.3f\n",
-                    //             chan->current_volume / (float)player->max_volume,
-                    //             chan->sample->volume / 64.0f,
-                    //             player->track_volumes[ch] / 127.0f,
-                    //             chan->user_volume, vol);
-                    //     fprintf(stderr, "  output: left+=%.3f right+=%.3f\n",
-                    //             sample * vol * (1.0f - ((player->track_pans[ch] + 16) / 32.0f)),
-                    //             sample * vol * ((player->track_pans[ch] + 16) / 32.0f));
-                    // }
+                    // Store volume-scaled sample for mixing
+                    float scaled_sample = sample * vol;
 
-                    // Apply panning (use track panning for classic Amiga hard panning)
-                    float pan = (player->track_pans[ch] + 16) / 32.0f;
-                    left += sample * vol * (1.0f - pan);
-                    right += sample * vol * pan;
+                    // Convert MMD panning (-16 to +16) to normalized panning (-1.0 to 1.0)
+                    float pan_normalized = tracker_mixer_mmd_pan_to_normalized(player->track_pans[ch]);
+
+                    // Mix to stereo using shared mixer (no scaling here, apply later)
+                    TrackerMixerChannel mix_ch = {
+                        .sample = scaled_sample,
+                        .panning = pan_normalized,
+                        .enabled = 1
+                    };
+
+                    float ch_left, ch_right;
+                    tracker_mixer_mix_stereo(&mix_ch, 1, &ch_left, &ch_right, 1.0f);
+
+                    left += ch_left;
+                    right += ch_right;
+
+                    // Write to individual channel output if buffer provided
+                    if (channel_outputs && ch < num_channel_outputs && channel_outputs[ch]) {
+                        channel_outputs[ch][i] = scaled_sample;
+                    }
                 }
                 continue;
             }
@@ -1714,11 +1728,29 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
             float vol = (chan->current_volume / (float)player->max_volume) * (chan->sample->volume / 64.0f) *
                        (player->track_volumes[ch] / 127.0f) * chan->user_volume;
 
-            // Apply panning (use track panning for classic Amiga hard panning)
-            float pan = (player->track_pans[ch] + 16) / 32.0f;  // -16..+16 -> 0..1
-            // Amiga-style mixing: simple addition without normalization (0.5x scaling)
-            left += sample * vol * (1.0f - pan) * 0.5f;
-            right += sample * vol * pan * 0.5f;
+            // Store volume-scaled sample for mixing
+            float scaled_sample = sample * vol;
+
+            // Convert MMD panning (-16 to +16) to normalized panning (-1.0 to 1.0)
+            float pan_normalized = tracker_mixer_mmd_pan_to_normalized(player->track_pans[ch]);
+
+            // Mix to stereo using shared mixer
+            TrackerMixerChannel mix_ch = {
+                .sample = scaled_sample,
+                .panning = pan_normalized,
+                .enabled = 1
+            };
+
+            float ch_left, ch_right;
+            tracker_mixer_mix_stereo(&mix_ch, 1, &ch_left, &ch_right, 0.5f);
+
+            left += ch_left;
+            right += ch_right;
+
+            // Write to individual channel output if buffer provided
+            if (channel_outputs && ch < num_channel_outputs && channel_outputs[ch]) {
+                channel_outputs[ch][i] = scaled_sample;
+            }
         }
 
         left_out[i] = left;
@@ -1731,6 +1763,13 @@ void med_player_process(MedPlayer* player, float* left_out, float* right_out,
             process_tick(player);
         }
     }
+}
+
+// Process audio (wrapper for backwards compatibility)
+void med_player_process(MedPlayer* player, float* left_out, float* right_out,
+                       size_t frames, float sample_rate) {
+    // Call the full version with no per-channel outputs
+    med_player_process_channels(player, left_out, right_out, NULL, 0, frames, sample_rate);
 }
 
 // Get position

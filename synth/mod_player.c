@@ -1,4 +1,5 @@
 #include "mod_player.h"
+#include "tracker_mixer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -1032,7 +1033,12 @@ static float render_channel(ModChannel* chan, uint32_t sample_rate, ModPlayer* p
     return output;
 }
 
-void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t frames, uint32_t sample_rate) {
+void mod_player_process_channels(ModPlayer* player,
+                                  float* left,
+                                  float* right,
+                                  float* channel_outputs[MOD_MAX_CHANNELS],
+                                  uint32_t frames,
+                                  uint32_t sample_rate) {
     if (!player || !left || !right) return;
 
     // Calculate samples per tick
@@ -1146,25 +1152,28 @@ void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t f
             player->sample_accumulator += 1.0f;
         }
 
-        // Render all channels
-        float left_sample = 0.0f;
-        float right_sample = 0.0f;
-
+        // Render each channel and optionally write to individual outputs
+        TrackerMixerChannel mix_channels[MOD_MAX_CHANNELS];
         for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
-            float sample = render_channel(&player->channels[c], sample_rate, player, c);
+            float channel_sample = render_channel(&player->channels[c], sample_rate, player, c);
+            mix_channels[c].sample = channel_sample;
+            mix_channels[c].panning = player->channels[c].panning;
+            mix_channels[c].enabled = 1;
 
-            // Apply panning
-            float pan = player->channels[c].panning;
-            float left_gain = 1.0f - (pan * 0.5f + 0.5f);   // 1.0 when pan = -1, 0.0 when pan = 1
-            float right_gain = pan * 0.5f + 0.5f;            // 0.0 when pan = -1, 1.0 when pan = 1
-
-            left_sample += sample * left_gain;
-            right_sample += sample * right_gain;
+            // Write to individual channel output if buffer provided
+            if (channel_outputs && channel_outputs[c]) {
+                channel_outputs[c][i] = channel_sample;
+            }
         }
 
-        // Output with headroom to prevent clipping
-        // ProTracker uses less aggressive scaling than 0.25
-        left[i] = left_sample * 0.5f;
-        right[i] = right_sample * 0.5f;
+        // Mix to stereo using shared mixer
+        tracker_mixer_mix_stereo(mix_channels, MOD_MAX_CHANNELS,
+                                &left[i], &right[i],
+                                0.5f);  // Amiga-style headroom
     }
+}
+
+void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t frames, uint32_t sample_rate) {
+    // Call the full version with no per-channel outputs
+    mod_player_process_channels(player, left, right, NULL, frames, sample_rate);
 }

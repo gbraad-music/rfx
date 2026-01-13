@@ -12,6 +12,7 @@
 
 // Convert plugin params to core instrument definition
 static void params_to_core_instrument(AhxCoreInstrument* core, const AhxInstrumentParams* params) {
+    core->Waveform = params->waveform;
     core->Volume = params->volume;
     core->WaveLength = params->wave_length;
 

@@ -29,6 +29,7 @@ typedef struct {
 
 // AHX instrument definition (from .ahx file format)
 typedef struct {
+    int Waveform;                              // Waveform type (0=triangle, 1=sawtooth, 2=square, 3=noise)
     int Volume;                                // Instrument volume (0-64)
     int WaveLength;                            // Waveform harmonic length (0-7)
     AhxCoreEnvelope Envelope;                  // ADSR envelope

@@ -1,64 +1,59 @@
 /*
  * AHX Instrument Synth - Implementation
  *
- * Extracts synthesis logic from AHX player for standalone instrument use.
+ * Plugin-friendly wrapper around ahx_synth_core
+ * Allows external parameter control while using authentic AHX algorithms
  */
 
 #include "ahx_instrument.h"
+#include "ahx_synth_core.h"
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 
-// AHX timing: 50Hz frame rate (PAL)
-#define AHX_FRAME_RATE 50
+// Convert plugin params to core instrument definition
+static void params_to_core_instrument(AhxCoreInstrument* core, const AhxInstrumentParams* params) {
+    core->Volume = params->volume;
+    core->WaveLength = params->wave_length;
 
-// Waveform generation (extracted from ahx_player.c)
-static void generate_triangle(int16_t* buffer, int len) {
-    for (int i = 0; i < len; i++) {
-        int phase = (i * 256) / len;
-        if (phase < 128) {
-            buffer[i] = (phase * 256) - 16384;
-        } else {
-            buffer[i] = 16384 - ((phase - 128) * 256);
-        }
+    // Envelope
+    core->Envelope.aFrames = params->envelope.attack_frames;
+    core->Envelope.aVolume = params->envelope.attack_volume;
+    core->Envelope.dFrames = params->envelope.decay_frames;
+    core->Envelope.dVolume = params->envelope.decay_volume;
+    core->Envelope.sFrames = params->envelope.sustain_frames;
+    core->Envelope.rFrames = params->envelope.release_frames;
+    core->Envelope.rVolume = params->envelope.release_volume;
+
+    // Filter modulation
+    if (params->filter_enabled) {
+        core->FilterLowerLimit = params->filter_lower;
+        core->FilterUpperLimit = params->filter_upper;
+        core->FilterSpeed = params->filter_speed;
+    } else {
+        core->FilterLowerLimit = 0;
+        core->FilterUpperLimit = 0;
+        core->FilterSpeed = 0;
     }
-}
 
-static void generate_sawtooth(int16_t* buffer, int len) {
-    for (int i = 0; i < len; i++) {
-        int phase = (i * 256) / len;
-        buffer[i] = (phase * 128) - 16384;
+    // PWM modulation
+    if (params->square_enabled) {
+        core->SquareLowerLimit = params->square_lower;
+        core->SquareUpperLimit = params->square_upper;
+        core->SquareSpeed = params->square_speed;
+    } else {
+        core->SquareLowerLimit = 0;
+        core->SquareUpperLimit = 0;
+        core->SquareSpeed = 0;
     }
-}
 
-static void generate_square(int16_t* buffer, int len, int width) {
-    int threshold = (len * width) / 255;
-    for (int i = 0; i < len; i++) {
-        buffer[i] = (i < threshold) ? 16383 : -16384;
-    }
-}
+    // Vibrato
+    core->VibratoDelay = params->vibrato_delay;
+    core->VibratoDepth = params->vibrato_depth;
+    core->VibratoSpeed = params->vibrato_speed;
 
-static void generate_noise(int16_t* buffer, int len) {
-    uint32_t seed = 0x12345678;
-    for (int i = 0; i < len; i++) {
-        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF;
-        buffer[i] = ((int16_t)(seed >> 16)) ;
-    }
-}
-
-// Apply filter to waveform
-static void apply_filter(int16_t* buffer, int len, int cutoff) {
-    if (cutoff >= 63) return;  // No filtering
-
-    float rc = 1.0f / (2.0f * 3.14159f * (63 - cutoff) * 100.0f);
-    float dt = 1.0f / 3546895.0f;  // Paula clock
-    float alpha = dt / (rc + dt);
-
-    float prev = 0.0f;
-    for (int i = 0; i < len; i++) {
-        prev = prev + alpha * ((float)buffer[i] - prev);
-        buffer[i] = (int16_t)prev;
-    }
+    // Hard cut release
+    core->HardCutRelease = params->hard_cut_release ? 1 : 0;
+    core->HardCutReleaseFrames = params->hard_cut_frames;
 }
 
 // Initialize instrument
@@ -67,336 +62,152 @@ void ahx_instrument_init(AhxInstrument* inst) {
 
     memset(inst, 0, sizeof(AhxInstrument));
 
-    // Initialize tracker components
-    tracker_voice_init(&inst->voice);
-    tracker_modulator_init(&inst->filter_mod);
-    tracker_modulator_init(&inst->square_mod);
-
-    // Set default parameters
+    // Initialize with default params
     inst->params = ahx_instrument_default_params();
-    inst->env_state = ENV_OFF;
+
+    // Convert to core instrument
+    AhxCoreInstrument core_inst;
+    params_to_core_instrument(&core_inst, &inst->params);
+
+    // Initialize synthesis voice with core
+    ahx_synth_voice_init(&inst->voice);
+    ahx_synth_voice_calc_adsr(&inst->voice, &core_inst);
+
+    // Store core instrument
+    memcpy(&inst->core_inst, &core_inst, sizeof(AhxCoreInstrument));
+    inst->voice.Instrument = &inst->core_inst;
 }
 
-// Set parameters
+// Set instrument parameters
 void ahx_instrument_set_params(AhxInstrument* inst, const AhxInstrumentParams* params) {
     if (!inst || !params) return;
 
-    inst->params = *params;
+    // Copy params
+    memcpy(&inst->params, params, sizeof(AhxInstrumentParams));
 
-    // Configure modulators
-    if (params->filter_enabled) {
-        tracker_modulator_set_limits(&inst->filter_mod, params->filter_lower, params->filter_upper);
-        tracker_modulator_set_speed(&inst->filter_mod, params->filter_speed);
-        tracker_modulator_set_active(&inst->filter_mod, true);
-    } else {
-        tracker_modulator_set_active(&inst->filter_mod, false);
-    }
+    // Convert to core instrument
+    params_to_core_instrument(&inst->core_inst, params);
 
-    if (params->square_enabled) {
-        tracker_modulator_set_limits(&inst->square_mod, params->square_lower, params->square_upper);
-        tracker_modulator_set_speed(&inst->square_mod, params->square_speed);
-        tracker_modulator_set_active(&inst->square_mod, true);
-    } else {
-        tracker_modulator_set_active(&inst->square_mod, false);
+    // Recalculate ADSR if instrument has been initialized
+    if (inst->voice.Instrument) {
+        ahx_synth_voice_calc_adsr(&inst->voice, &inst->core_inst);
     }
 }
 
-// Get parameters
+// Get current parameters
 void ahx_instrument_get_params(const AhxInstrument* inst, AhxInstrumentParams* params) {
     if (!inst || !params) return;
-    *params = inst->params;
+    memcpy(params, &inst->params, sizeof(AhxInstrumentParams));
 }
 
-// Note on
+// Create default parameters
+AhxInstrumentParams ahx_instrument_default_params(void) {
+    AhxInstrumentParams params;
+    memset(&params, 0, sizeof(AhxInstrumentParams));
+
+    // Default oscillator
+    params.waveform = AHX_WAVE_SAWTOOTH;
+    params.wave_length = 4;
+    params.volume = 64;
+
+    // Default ADSR envelope (basic shape)
+    params.envelope.attack_frames = 1;
+    params.envelope.attack_volume = 64;
+    params.envelope.decay_frames = 20;
+    params.envelope.decay_volume = 50;
+    params.envelope.sustain_frames = 0;  // Infinite
+    params.envelope.release_frames = 30;
+    params.envelope.release_volume = 0;
+
+    // No modulation by default
+    params.filter_enabled = false;
+    params.filter_lower = 0;
+    params.filter_upper = 63;
+    params.filter_speed = 4;
+
+    params.square_enabled = false;
+    params.square_lower = 32;
+    params.square_upper = 224;
+    params.square_speed = 4;
+
+    // No vibrato by default
+    params.vibrato_delay = 0;
+    params.vibrato_depth = 0;
+    params.vibrato_speed = 0;
+
+    // No hard cut
+    params.hard_cut_release = false;
+    params.hard_cut_frames = 3;
+
+    params.plist = NULL;
+
+    return params;
+}
+
+// Trigger note on
 void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity, uint32_t sample_rate) {
     if (!inst) return;
+
+    // Use authentic AHX synthesis core
+    ahx_synth_voice_note_on(&inst->voice, note, velocity, sample_rate);
 
     inst->note = note;
     inst->velocity = velocity;
     inst->active = true;
     inst->released = false;
-
-    // Reset envelope
-    inst->env_state = ENV_ATTACK;
-    inst->env_frames = 0;
-    inst->env_volume = 0;
-
-    // Reset vibrato
-    inst->vibrato_frames = 0;
-    inst->vibrato_phase = 0.0f;
-
-    // Reset modulators
-    tracker_modulator_init(&inst->filter_mod);
-    tracker_modulator_init(&inst->square_mod);
-    ahx_instrument_set_params(inst, &inst->params);
-
-    // Calculate samples per frame (for 50Hz AHX timing)
-    inst->samples_per_frame = sample_rate / AHX_FRAME_RATE;
-    inst->frame_counter = 0;
-
-    // Generate initial waveform
-    int wave_len = 4 << inst->params.wave_length;  // 4, 8, 16, ..., 512
-
-    switch (inst->params.waveform) {
-        case AHX_WAVE_TRIANGLE:
-            generate_triangle(inst->waveform_buffer, wave_len);
-            break;
-        case AHX_WAVE_SAWTOOTH:
-            generate_sawtooth(inst->waveform_buffer, wave_len);
-            break;
-        case AHX_WAVE_SQUARE:
-            generate_square(inst->waveform_buffer, wave_len, 128);
-            break;
-        case AHX_WAVE_NOISE:
-            generate_noise(inst->waveform_buffer, wave_len);
-            break;
-    }
-
-    // Apply initial filter if enabled
-    if (inst->params.filter_enabled) {
-        int cutoff = tracker_modulator_get_position(&inst->filter_mod);
-        apply_filter(inst->waveform_buffer, wave_len, cutoff);
-    }
-
-    // Set waveform in voice
-    tracker_voice_set_waveform_16bit(&inst->voice, inst->waveform_buffer, wave_len);
-    tracker_voice_set_loop(&inst->voice, 0, wave_len * 2, 2);  // Loop full waveform
-
-    // Set note frequency
-    // AHX uses period-based playback
-    uint32_t period = 3546895 / (uint32_t)(440.0f * powf(2.0f, (note - 69) / 12.0f));
-    tracker_voice_set_period(&inst->voice, period, 3546895, sample_rate);
-
-    // Set volume based on velocity and instrument volume
-    int volume = (inst->params.volume * velocity) / 127;
-    tracker_voice_set_volume(&inst->voice, volume);
-
-    // Reset position
-    tracker_voice_reset_position(&inst->voice);
 }
 
-// Note off
+// Trigger note off
 void ahx_instrument_note_off(AhxInstrument* inst) {
     if (!inst) return;
 
+    // Use authentic AHX synthesis core
+    ahx_synth_voice_note_off(&inst->voice);
+
     inst->released = true;
-
-    if (inst->params.hard_cut_release) {
-        // Hard cut: short fade out
-        inst->env_state = ENV_RELEASE;
-        inst->env_frames = 0;
-    } else {
-        // Normal release
-        if (inst->env_state != ENV_RELEASE && inst->env_state != ENV_OFF) {
-            inst->env_state = ENV_RELEASE;
-            inst->env_frames = 0;
-        }
-    }
 }
 
-// Process one frame (50Hz)
-void ahx_instrument_process_frame(AhxInstrument* inst) {
-    if (!inst || !inst->active) return;
-
-    // Update envelope
-    const AhxEnvelope* env = &inst->params.envelope;
-
-    switch (inst->env_state) {
-        case ENV_ATTACK:
-            if (inst->env_frames >= env->attack_frames) {
-                inst->env_state = ENV_DECAY;
-                inst->env_frames = 0;
-                inst->env_volume = env->attack_volume;
-            } else {
-                // Linear interpolation
-                inst->env_volume = (env->attack_volume * inst->env_frames) / (env->attack_frames ? env->attack_frames : 1);
-                inst->env_frames++;
-            }
-            break;
-
-        case ENV_DECAY:
-            if (inst->env_frames >= env->decay_frames) {
-                inst->env_state = ENV_SUSTAIN;
-                inst->env_frames = 0;
-                inst->env_volume = env->decay_volume;
-            } else {
-                // Linear interpolation from attack to decay volume
-                int range = env->attack_volume - env->decay_volume;
-                inst->env_volume = env->attack_volume - (range * inst->env_frames) / (env->decay_frames ? env->decay_frames : 1);
-                inst->env_frames++;
-            }
-            break;
-
-        case ENV_SUSTAIN:
-            inst->env_volume = env->decay_volume;
-            if (env->sustain_frames > 0) {
-                inst->env_frames++;
-                if (inst->env_frames >= env->sustain_frames) {
-                    // Sustain timeout - go to release
-                    inst->env_state = ENV_RELEASE;
-                    inst->env_frames = 0;
-                }
-            }
-            break;
-
-        case ENV_RELEASE:
-            if (inst->params.hard_cut_release) {
-                // Hard cut: quick fade
-                uint32_t cut_frames = inst->params.hard_cut_frames ? inst->params.hard_cut_frames : 1;
-                if (inst->env_frames >= cut_frames) {
-                    inst->env_state = ENV_OFF;
-                    inst->active = false;
-                    inst->env_volume = 0;
-                } else {
-                    inst->env_volume = (env->decay_volume * (cut_frames - inst->env_frames)) / cut_frames;
-                    inst->env_frames++;
-                }
-            } else {
-                // Normal release
-                if (inst->env_frames >= env->release_frames) {
-                    inst->env_state = ENV_OFF;
-                    inst->active = false;
-                    inst->env_volume = 0;
-                } else {
-                    inst->env_volume = env->decay_volume - ((env->decay_volume - env->release_volume) * inst->env_frames) / (env->release_frames ? env->release_frames : 1);
-                    inst->env_frames++;
-                }
-            }
-            break;
-
-        case ENV_OFF:
-            inst->active = false;
-            inst->env_volume = 0;
-            break;
-    }
-
-    // Update modulators
-    if (tracker_modulator_is_active(&inst->filter_mod)) {
-        tracker_modulator_update(&inst->filter_mod);
-    }
-
-    if (tracker_modulator_is_active(&inst->square_mod)) {
-        tracker_modulator_update(&inst->square_mod);
-
-        // Regenerate square wave with new width
-        if (inst->params.waveform == AHX_WAVE_SQUARE) {
-            int wave_len = 4 << inst->params.wave_length;
-            int width = tracker_modulator_get_position(&inst->square_mod);
-            generate_square(inst->waveform_buffer, wave_len, width);
-            tracker_voice_set_waveform_16bit(&inst->voice, inst->waveform_buffer, wave_len);
-        }
-    }
-
-    // Update vibrato
-    inst->vibrato_frames++;
-}
-
-// Process samples
+// Process audio samples (uses authentic AHX algorithms)
 uint32_t ahx_instrument_process(AhxInstrument* inst, float* output, uint32_t num_samples, uint32_t sample_rate) {
     (void)sample_rate;  // Reserved for future use
 
-    if (!inst || !output || !inst->active) {
+    if (!inst || !output) {
         if (output) {
             memset(output, 0, num_samples * sizeof(float));
         }
         return 0;
     }
 
-    for (uint32_t i = 0; i < num_samples; i++) {
-        // Process frames at 50Hz
-        inst->frame_counter++;
-        if (inst->frame_counter >= inst->samples_per_frame) {
-            inst->frame_counter = 0;
-            ahx_instrument_process_frame(inst);
-        }
+    // Use authentic AHX synthesis core
+    uint32_t generated = ahx_synth_voice_process(&inst->voice, output, num_samples, sample_rate);
 
-        // Get sample from voice
-        int32_t left, right;
-        tracker_voice_get_stereo_sample(&inst->voice, &left, &right);
+    // Update active state
+    inst->active = ahx_synth_voice_is_active(&inst->voice);
 
-        // Apply envelope
-        int32_t sample = (left * inst->env_volume) / 64;
-
-        // Convert to float (-1.0 to 1.0)
-        output[i] = (float)sample / 32768.0f;
-
-        // Check if still active
-        if (!inst->active) {
-            // Fill remaining with silence
-            for (uint32_t j = i + 1; j < num_samples; j++) {
-                output[j] = 0.0f;
-            }
-            return i + 1;
-        }
-    }
-
-    return num_samples;
+    return generated;
 }
 
-// Check if active
+// Check if instrument is active
 bool ahx_instrument_is_active(const AhxInstrument* inst) {
-    return inst && inst->active;
+    if (!inst) return false;
+    return ahx_synth_voice_is_active(&inst->voice);
 }
 
-// Reset
+// Reset instrument
 void ahx_instrument_reset(AhxInstrument* inst) {
     if (!inst) return;
 
+    ahx_synth_voice_reset(&inst->voice);
+    inst->voice.Instrument = &inst->core_inst;
+
     inst->active = false;
     inst->released = false;
-    inst->env_state = ENV_OFF;
-    inst->env_frames = 0;
-    inst->env_volume = 0;
-    inst->vibrato_frames = 0;
-    inst->vibrato_phase = 0.0f;
-    inst->frame_counter = 0;
-
-    tracker_voice_init(&inst->voice);
-    tracker_modulator_init(&inst->filter_mod);
-    tracker_modulator_init(&inst->square_mod);
+    inst->note = 0;
+    inst->velocity = 0;
 }
 
-// Default parameters
-AhxInstrumentParams ahx_instrument_default_params(void) {
-    AhxInstrumentParams params = {0};
-
-    // Oscillator
-    params.waveform = AHX_WAVE_SAWTOOTH;
-    params.wave_length = 3;  // 32 samples
-    params.volume = 64;
-
-    // Envelope (classic ADSR)
-    params.envelope.attack_frames = 1;
-    params.envelope.attack_volume = 64;
-    params.envelope.decay_frames = 10;
-    params.envelope.decay_volume = 48;
-    params.envelope.sustain_frames = 0;  // Infinite
-    params.envelope.release_frames = 20;
-    params.envelope.release_volume = 0;
-
-    // Filter (disabled by default)
-    params.filter_lower = 0;
-    params.filter_upper = 63;
-    params.filter_speed = 4;
-    params.filter_enabled = false;
-
-    // Square modulation (disabled by default)
-    params.square_lower = 64;
-    params.square_upper = 192;
-    params.square_speed = 4;
-    params.square_enabled = false;
-
-    // Vibrato (disabled by default)
-    params.vibrato_delay = 0;
-    params.vibrato_depth = 0;
-    params.vibrato_speed = 0;
-
-    // Release
-    params.hard_cut_release = false;
-    params.hard_cut_frames = 2;
-
-    // No PList by default
-    params.plist = NULL;
-
-    return params;
+// Process frame (deprecated - now handled by ahx_synth_core)
+void ahx_instrument_process_frame(AhxInstrument* inst) {
+    if (!inst) return;
+    ahx_synth_voice_process_frame(&inst->voice);
 }

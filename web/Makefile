@@ -129,14 +129,21 @@ synths:
 		cp ../plugins/RGResonate1_Synth/rgresonate1-synth.js synths/ && \
 		echo "  [OK] RGResonate1 synth"; \
 	else \
-		echo "  [WARN] RGResonate1 not built (run 'make' in plugins/RGResonate1_Synth)"; \
+		echo "  [WARN] RGResonate1 not built (run 'make web' in plugins/RGResonate1_Synth)"; \
 	fi
 	@if [ -f ../plugins/RG909_Drum/rg909-drum.wasm ]; then \
 		cp ../plugins/RG909_Drum/rg909-drum.wasm synths/ && \
 		cp ../plugins/RG909_Drum/rg909-drum.js synths/ && \
 		echo "  [OK] RG909 drum machine"; \
 	else \
-		echo "  [WARN] RG909 not built (run 'make' in plugins/RG909_Drum)"; \
+		echo "  [WARN] RG909 not built (run 'make web' in plugins/RG909_Drum)"; \
+	fi
+	@if [ -f ../plugins/RGAHX_Synth/rgahxsynth.wasm ]; then \
+		cp ../plugins/RGAHX_Synth/rgahxsynth.wasm synths/ && \
+		cp ../plugins/RGAHX_Synth/rgahxsynth.js synths/ && \
+		echo "  [OK] RGAHX synth"; \
+	else \
+		echo "  [WARN] RGAHX not built (run 'make web' in plugins/RGAHX_Synth)"; \
 	fi
 	@if [ -d ~/Projects/revision/synths ]; then \
 		cp ~/Projects/revision/synths/synth-worklet-processor.js synths/ && \

@@ -10,6 +10,10 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef EMSCRIPTEN
+#include <emscripten.h>
+#endif
+
 #define AMIGA_PAULA_PAL_CLK 3546895
 #define AHX_FRAME_RATE 50
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
@@ -265,13 +269,24 @@ static void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, 
             }
             break;
 
-        case 2:  // Square (generate all 32 pulse widths, then copy appropriate one)
+        case 2:  // Square - generate simple 50% square at appropriate wave_length
             {
-                int16_t square_buffer[0x1000];  // 32 waveforms * 128 samples each
-                waves_generate_square(square_buffer);
-                // For now, use middle pulse width (50%)
-                int pulse_width = 16;  // 16 out of 32 = 50% duty cycle
-                memcpy(temp_buffer, &square_buffer[pulse_width * 0x80], 0x80 * sizeof(int16_t));
+                // Generate based on wave_length like other waveforms
+                int wave_samples = 4 * (1 << wave_length);  // 4, 8, 16, 32, 64, 128
+                int half = wave_samples / 2;
+
+                // Simple 50% duty cycle
+                for (int i = 0; i < half; i++) {
+                    temp_buffer[i] = -32768;  // Low
+                }
+                for (int i = half; i < wave_samples; i++) {
+                    temp_buffer[i] = 32767;  // High
+                }
+
+                #ifdef EMSCRIPTEN
+                emscripten_log(EM_LOG_CONSOLE, "[ahx_synth] Square wave: len=%d samples[0]=%d [%d]=%d",
+                    wave_samples, temp_buffer[0], half, temp_buffer[half]);
+                #endif
             }
             break;
 
@@ -295,6 +310,14 @@ static void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, 
         for (int i = 0; i < wave_loops; i++) {
             memcpy(&voice->VoiceBuffer[i * wave_size], temp_buffer, wave_size * sizeof(int16_t));
         }
+
+        #ifdef EMSCRIPTEN
+        if (waveform == 2) {
+            emscripten_log(EM_LOG_CONSOLE, "[ahx_synth] VoiceBuffer: [0]=%d [64]=%d [128]=%d [256]=%d [512]=%d",
+                voice->VoiceBuffer[0], voice->VoiceBuffer[64], voice->VoiceBuffer[128],
+                voice->VoiceBuffer[256], voice->VoiceBuffer[512]);
+        }
+        #endif
     }
 
     // Wrap-around sample for interpolation
@@ -310,6 +333,9 @@ void ahx_synth_voice_init(AhxSynthVoice* voice) {
     tracker_modulator_init(&voice->filter_mod);
     tracker_modulator_init(&voice->square_mod);
     tracker_voice_init(&voice->voice_playback);
+
+    // Set tracker voice volume to 1 (we apply volume separately via VoiceVolume)
+    tracker_voice_set_volume(&voice->voice_playback, 1);
 
     voice->TrackOn = true;
     voice->NoteMaxVolume = 0x40;  // Default max volume
@@ -374,6 +400,14 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // Reset ADSR to attack phase
     voice->ADSRVolume = 0;
 
+    // CRITICAL: Recalculate ADSR deltas to reset frame counters
+    ahx_synth_voice_calc_adsr(voice, voice->Instrument);
+
+    #ifdef EMSCRIPTEN
+    emscripten_log(EM_LOG_CONSOLE, "[ahx_synth_core] After calc_adsr: aFrames=%d aVol=%d",
+        voice->ADSR.aFrames, voice->ADSR.aVolume);
+    #endif
+
     // Reset vibrato
     voice->VibratoDelay = voice->Instrument->VibratoDelay;
     voice->VibratoCurrent = 0;
@@ -421,6 +455,12 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // Setup voice playback with period and waveform buffer
     tracker_voice_set_period(&voice->voice_playback, voice->VoicePeriod, AMIGA_PAULA_PAL_CLK, sample_rate);
     tracker_voice_set_waveform_16bit(&voice->voice_playback, voice->VoiceBuffer, 0x280);
+
+    // Set tracker voice volume to 1 (we apply volume separately via VoiceVolume)
+    tracker_voice_set_volume(&voice->voice_playback, 1);
+
+    // CRITICAL: Reset playback position to start of waveform
+    tracker_voice_reset_position(&voice->voice_playback);
 }
 
 // Trigger note off
@@ -544,6 +584,14 @@ uint32_t ahx_synth_voice_process(AhxSynthVoice* voice, float* output, uint32_t n
         // Apply volume and convert to float
         float sample = ((float)(left + right) / 2.0f) * (voice->VoiceVolume / 64.0f) / 32768.0f;
         output[i] = sample;
+
+        #ifdef EMSCRIPTEN
+        static int sample_log_counter = 0;
+        if (voice->Waveform == 2 && sample_log_counter++ % 10000 == 0) {
+            emscripten_log(EM_LOG_CONSOLE, "[ahx_synth] Sample: left=%d right=%d vol=%d output=%.6f",
+                left, right, voice->VoiceVolume, sample);
+        }
+        #endif
 
         if (!voice->TrackOn) {
             // Voice stopped - clear remaining buffer

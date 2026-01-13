@@ -59,26 +59,43 @@ WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
               -I../.. -I../../synth
 
 # WebAssembly source files
-WASM_SOURCES = ../../synth/ahx_instrument.c \
+WASM_SOURCES = ../../synth/ahx_synth_core.c \
+               ../../synth/ahx_instrument.c \
                ../../synth/tracker_voice.c \
                ../../synth/tracker_modulator.c \
                ../../synth/tracker_sequence.c \
                ../../synth/synth_midi.c \
                wasm_bindings.c
 
-# Exported functions for JavaScript
+# Exported functions for JavaScript (regroove_synth_* interface)
 WASM_EXPORTED_FUNCTIONS = \
   -s EXPORTED_FUNCTIONS='[\
     "_malloc", "_free",\
-    "_ahx_instrument_init",\
-    "_ahx_instrument_set_params",\
-    "_ahx_instrument_get_params",\
-    "_ahx_instrument_note_on",\
-    "_ahx_instrument_note_off",\
-    "_ahx_instrument_process",\
-    "_ahx_instrument_is_active",\
-    "_ahx_instrument_reset",\
-    "_ahx_instrument_default_params"\
+    "_regroove_synth_create",\
+    "_regroove_synth_destroy",\
+    "_regroove_synth_reset",\
+    "_regroove_synth_note_on",\
+    "_regroove_synth_note_off",\
+    "_regroove_synth_control_change",\
+    "_regroove_synth_pitch_bend",\
+    "_regroove_synth_all_notes_off",\
+    "_regroove_synth_process_f32",\
+    "_regroove_synth_get_parameter_count",\
+    "_regroove_synth_get_parameter",\
+    "_regroove_synth_set_parameter",\
+    "_regroove_synth_get_parameter_name",\
+    "_regroove_synth_get_parameter_label",\
+    "_regroove_synth_get_parameter_default",\
+    "_regroove_synth_get_parameter_min",\
+    "_regroove_synth_get_parameter_max",\
+    "_regroove_synth_get_parameter_group",\
+    "_regroove_synth_get_group_name",\
+    "_regroove_synth_parameter_is_integer",\
+    "_regroove_synth_get_engine",\
+    "_regroove_synth_get_engine_name",\
+    "_synth_create_audio_buffer",\
+    "_synth_destroy_audio_buffer",\
+    "_synth_get_buffer_size_bytes"\
   ]'
 
 WASM_OUTPUT = rgahxsynth.js

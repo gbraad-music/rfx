@@ -419,14 +419,65 @@
             <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
                 <button id="btnInitSimple">Initialize Simple Synth</button>
                 <button id="btnInitRGResonate1">Initialize RGResonate1</button>
+                <button id="btnInitRGAHX">Initialize RGAHX</button>
                 <button id="btnInitRG1Piano">Initialize RG1Piano</button>
                 <button id="btnInitRGSFZ">Initialize RGSFZ Sampler</button>
             </div>
             <div class="info">
                 Simple: Basic Web Audio oscillators<br>
                 RGResonate1: WASM polyphonic synthesizer with resonant filters<br>
+                RGAHX: WASM Amiga AHX/HivelyTracker synthesizer (authentic algorithms)<br>
                 RG1Piano: WASM M1 Piano with modal synthesis<br>
                 RGSFZ: SFZ sampler with WAV sample playback
+            </div>
+
+            <!-- RGAHX Synth Controls (shown after initialization) -->
+            <div id="rgahxControls" style="display: none; margin: 20px auto; max-width: 800px; padding: 25px; background: rgba(30, 30, 30, 0.5); border-radius: 8px; border: 1px solid rgba(207, 26, 55, 0.3);">
+                <div style="text-align: center; margin-bottom: 20px; color: #CF1A37; font-size: 1.1em; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">
+                    RGAHX Synthesizer
+                </div>
+
+                <!-- Waveform Selector -->
+                <div style="margin-bottom: 25px; text-align: center;">
+                    <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.75em; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Waveform</label>
+                    <select id="ahxWaveform" style="width: 200px; padding: 8px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.9em;">
+                        <option value="0">Triangle</option>
+                        <option value="1" selected>Sawtooth</option>
+                        <option value="2">Square</option>
+                        <option value="3">Noise</option>
+                    </select>
+                </div>
+
+                <!-- ADSR Envelope Controls -->
+                <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start;">
+                    <!-- Attack Slider -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Attack</div>
+                        <svg-slider id="ahxAttack" value="1" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
+                        <div id="ahxAttackVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">1</div>
+                    </div>
+
+                    <!-- Decay Slider -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Decay</div>
+                        <svg-slider id="ahxDecay" value="20" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
+                        <div id="ahxDecayVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">20</div>
+                    </div>
+
+                    <!-- Sustain Slider -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Sustain</div>
+                        <svg-slider id="ahxSustain" value="0" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
+                        <div id="ahxSustainVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">∞</div>
+                    </div>
+
+                    <!-- Release Slider -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Release</div>
+                        <svg-slider id="ahxRelease" value="30" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
+                        <div id="ahxReleaseVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">30</div>
+                    </div>
+                </div>
             </div>
 
             <!-- RGSFZ Sampler Controls (shown after initialization) -->
@@ -501,11 +552,16 @@
 
     </div>
 
+    <!-- Custom UI components -->
+    <script type="module" src="svg-slider.js"></script>
+    <script type="module" src="pad-knob.js"></script>
+
     <!-- Load MIDI stack (ES6 modules not needed for standalone scripts) -->
     <script src="external/midi-manager.js"></script>
     <script src="external/frequency-analyzer.js"></script>
     <script src="external/midi-audio-synth.js"></script>
     <script src="external/rgresonate1-synth.js"></script>
+    <script src="external/rgahxsynth-synth.js"></script>
     <script src="external/rg1piano-synth.js"></script>
     <script src="external/rg909-drum.js"></script>
     <script src="external/rgsfz-synth.js"></script>
@@ -582,6 +638,7 @@
             // Initialize synth engines
             document.getElementById('btnInitSimple').addEventListener('click', () => initializeSynth('simple'));
             document.getElementById('btnInitRGResonate1').addEventListener('click', () => initializeSynth('rgresonate1'));
+            document.getElementById('btnInitRGAHX').addEventListener('click', () => initializeSynth('rgahx'));
             document.getElementById('btnInitRG1Piano').addEventListener('click', () => initializeSynth('rg1piano'));
             document.getElementById('btnInitRGSFZ').addEventListener('click', initializeRGSFZ);
 
@@ -590,6 +647,9 @@
 
             // Render drums
             document.getElementById('btnRenderDrums').addEventListener('click', renderAllDrums);
+
+            // RGAHX parameter controls
+            setupRGAHXControls();
 
             // Drum pads
             document.querySelectorAll('.drum-pad').forEach(pad => {
@@ -648,6 +708,58 @@
             });
         }
 
+        function setupRGAHXControls() {
+            // Waveform selector
+            document.getElementById('ahxWaveform').addEventListener('change', (e) => {
+                const waveform = parseInt(e.target.value);
+                updateAHXParameter('waveform', waveform);
+                console.log('[RGAHX] Waveform changed to:', waveform);
+            });
+
+            // Attack slider
+            document.getElementById('ahxAttack').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxAttackVal').textContent = value;
+                updateAHXParameter('attack', value);
+            });
+
+            // Decay slider
+            document.getElementById('ahxDecay').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxDecayVal').textContent = value;
+                updateAHXParameter('decay', value);
+            });
+
+            // Sustain slider (show ∞ for 0)
+            document.getElementById('ahxSustain').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxSustainVal').textContent = value === 0 ? '∞' : value;
+                updateAHXParameter('sustain', value);
+            });
+
+            // Release slider
+            document.getElementById('ahxRelease').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxReleaseVal').textContent = value;
+                updateAHXParameter('release', value);
+            });
+        }
+
+        function updateAHXParameter(param, value) {
+            if (!currentSynth || !currentSynth.workletNode) {
+                console.warn('[RGAHX] Cannot update parameter - synth not initialized');
+                return;
+            }
+
+            // Send parameter update to worklet
+            currentSynth.workletNode.port.postMessage({
+                type: 'setParam',
+                data: { param, value }
+            });
+
+            console.log(`[RGAHX] Updated ${param} to ${value}`);
+        }
+
         async function initializeSynth(engine) {
             // Resume AudioContext if needed
             if (audioContext.state === 'suspended') {
@@ -683,6 +795,8 @@
             // Create synth based on engine parameter
             if (engine === 'rgresonate1') {
                 currentSynth = new RGResonate1Synth(audioContext);
+            } else if (engine === 'rgahx') {
+                currentSynth = new RGAHXSynth(audioContext);
             } else if (engine === 'rg1piano') {
                 currentSynth = new RG1PianoSynth(audioContext);
             } else {
@@ -700,6 +814,7 @@
 
             let engineName = 'Simple';
             if (engine === 'rgresonate1') engineName = 'RGResonate1';
+            else if (engine === 'rgahx') engineName = 'RGAHX';
             else if (engine === 'rg1piano') engineName = 'RG1Piano';
 
             synthStatus.innerHTML = `Synth: <span>${engineName}</span>`;
@@ -707,12 +822,17 @@
             // Update button states
             document.getElementById('btnInitSimple').textContent = engine === 'simple' ? 'Simple Synth Initialized' : 'Initialize Simple Synth';
             document.getElementById('btnInitRGResonate1').textContent = engine === 'rgresonate1' ? 'RGResonate1 Initialized' : 'Initialize RGResonate1';
+            document.getElementById('btnInitRGAHX').textContent = engine === 'rgahx' ? 'RGAHX Initialized' : 'Initialize RGAHX';
             document.getElementById('btnInitRG1Piano').textContent = engine === 'rg1piano' ? 'RG1Piano Initialized' : 'Initialize RG1Piano';
 
             // Disable active button
             document.getElementById('btnInitSimple').disabled = engine === 'simple';
             document.getElementById('btnInitRGResonate1').disabled = engine === 'rgresonate1';
+            document.getElementById('btnInitRGAHX').disabled = engine === 'rgahx';
             document.getElementById('btnInitRG1Piano').disabled = engine === 'rg1piano';
+
+            // Show/hide engine-specific controls
+            document.getElementById('rgahxControls').style.display = engine === 'rgahx' ? 'block' : 'none';
 
             // Don't call setAudible(true) - already connected through analyzer
             // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)

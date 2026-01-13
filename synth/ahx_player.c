@@ -10,6 +10,7 @@
  */
 
 #include "ahx_player.h"
+#include "ahx_synth_core.h"
 #include "tracker_modulator.h"
 #include "tracker_sequence.h"
 #include "tracker_voice.h"
@@ -386,14 +387,48 @@ static void voice_init(AhxVoice* voice) {
     voice->Delta = 1;
 }
 
+// Convert player's AhxInstrument to AhxCoreInstrument for synthesis core
+static void player_instrument_to_core(const AhxInstrument* inst, AhxCoreInstrument* core) {
+    core->Volume = inst->Volume;
+    core->WaveLength = inst->WaveLength;
+    core->Envelope.aFrames = inst->Envelope.aFrames;
+    core->Envelope.aVolume = inst->Envelope.aVolume;
+    core->Envelope.dFrames = inst->Envelope.dFrames;
+    core->Envelope.dVolume = inst->Envelope.dVolume;
+    core->Envelope.sFrames = inst->Envelope.sFrames;
+    core->Envelope.rFrames = inst->Envelope.rFrames;
+    core->Envelope.rVolume = inst->Envelope.rVolume;
+    core->FilterLowerLimit = inst->FilterLowerLimit;
+    core->FilterUpperLimit = inst->FilterUpperLimit;
+    core->FilterSpeed = inst->FilterSpeed;
+    core->SquareLowerLimit = inst->SquareLowerLimit;
+    core->SquareUpperLimit = inst->SquareUpperLimit;
+    core->SquareSpeed = inst->SquareSpeed;
+    core->VibratoDelay = inst->VibratoDelay;
+    core->VibratoDepth = inst->VibratoDepth;
+    core->VibratoSpeed = inst->VibratoSpeed;
+    core->HardCutRelease = inst->HardCutRelease;
+    core->HardCutReleaseFrames = inst->HardCutReleaseFrames;
+}
+
 static void voice_calc_adsr(AhxVoice* voice) {
-    voice->ADSR.aFrames = voice->Instrument->Envelope.aFrames;
-    voice->ADSR.aVolume = voice->Instrument->Envelope.aVolume * 256 / voice->ADSR.aFrames;
-    voice->ADSR.dFrames = voice->Instrument->Envelope.dFrames;
-    voice->ADSR.dVolume = (voice->Instrument->Envelope.dVolume - voice->Instrument->Envelope.aVolume) * 256 / voice->ADSR.dFrames;
-    voice->ADSR.sFrames = voice->Instrument->Envelope.sFrames;
-    voice->ADSR.rFrames = voice->Instrument->Envelope.rFrames;
-    voice->ADSR.rVolume = (voice->Instrument->Envelope.rVolume - voice->Instrument->Envelope.dVolume) * 256 / voice->ADSR.rFrames;
+    // Use authentic AHX synthesis core for ADSR calculation
+    AhxCoreInstrument core_inst;
+    player_instrument_to_core(voice->Instrument, &core_inst);
+
+    // Create temporary synth voice to calculate ADSR deltas
+    AhxSynthVoice temp_voice;
+    temp_voice.Instrument = &core_inst;
+    ahx_synth_voice_calc_adsr(&temp_voice, &core_inst);
+
+    // Copy calculated ADSR back to player voice
+    voice->ADSR.aFrames = temp_voice.ADSR.aFrames;
+    voice->ADSR.aVolume = temp_voice.ADSR.aVolume;
+    voice->ADSR.dFrames = temp_voice.ADSR.dFrames;
+    voice->ADSR.dVolume = temp_voice.ADSR.dVolume;
+    voice->ADSR.sFrames = temp_voice.ADSR.sFrames;
+    voice->ADSR.rFrames = temp_voice.ADSR.rFrames;
+    voice->ADSR.rVolume = temp_voice.ADSR.rVolume;
 }
 
 // Wave generation functions
@@ -944,7 +979,10 @@ static void player_process_frame(AhxPlayer* player, int v) {
         }
     }
 
-    // ADSR envelope
+    // ADSR envelope (AUTHENTIC AHX ALGORITHM)
+    // NOTE: This is the source algorithm extracted to ahx_synth_core.c
+    // The ADSR deltas are calculated by voice_calc_adsr() using ahx_synth_voice_calc_adsr()
+    // This processing uses those pre-calculated deltas - the authentic AHX method
     if (player->Voices[v].ADSR.aFrames) {
         player->Voices[v].ADSRVolume += player->Voices[v].ADSR.aVolume;
         if (--player->Voices[v].ADSR.aFrames <= 0)

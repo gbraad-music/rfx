@@ -29,6 +29,7 @@ include_directories(
 add_executable(ahx_player_test
     ahx_player_test.c
     ../../synth/ahx_player.c
+    ../../synth/ahx_synth_core.c
     ../../synth/tracker_modulator.c
     ../../synth/tracker_sequence.c
     ../../synth/tracker_voice.c

@@ -282,11 +282,6 @@ static void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, 
                 for (int i = half; i < wave_samples; i++) {
                     temp_buffer[i] = 32767;  // High
                 }
-
-                #ifdef EMSCRIPTEN
-                emscripten_log(EM_LOG_CONSOLE, "[ahx_synth] Square wave: len=%d samples[0]=%d [%d]=%d",
-                    wave_samples, temp_buffer[0], half, temp_buffer[half]);
-                #endif
             }
             break;
 
@@ -310,14 +305,6 @@ static void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, 
         for (int i = 0; i < wave_loops; i++) {
             memcpy(&voice->VoiceBuffer[i * wave_size], temp_buffer, wave_size * sizeof(int16_t));
         }
-
-        #ifdef EMSCRIPTEN
-        if (waveform == 2) {
-            emscripten_log(EM_LOG_CONSOLE, "[ahx_synth] VoiceBuffer: [0]=%d [64]=%d [128]=%d [256]=%d [512]=%d",
-                voice->VoiceBuffer[0], voice->VoiceBuffer[64], voice->VoiceBuffer[128],
-                voice->VoiceBuffer[256], voice->VoiceBuffer[512]);
-        }
-        #endif
     }
 
     // Wrap-around sample for interpolation
@@ -402,11 +389,6 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
 
     // CRITICAL: Recalculate ADSR deltas to reset frame counters
     ahx_synth_voice_calc_adsr(voice, voice->Instrument);
-
-    #ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[ahx_synth_core] After calc_adsr: aFrames=%d aVol=%d",
-        voice->ADSR.aFrames, voice->ADSR.aVolume);
-    #endif
 
     // Reset vibrato
     voice->VibratoDelay = voice->Instrument->VibratoDelay;
@@ -584,14 +566,6 @@ uint32_t ahx_synth_voice_process(AhxSynthVoice* voice, float* output, uint32_t n
         // Apply volume and convert to float
         float sample = ((float)(left + right) / 2.0f) * (voice->VoiceVolume / 64.0f) / 32768.0f;
         output[i] = sample;
-
-        #ifdef EMSCRIPTEN
-        static int sample_log_counter = 0;
-        if (voice->Waveform == 2 && sample_log_counter++ % 10000 == 0) {
-            emscripten_log(EM_LOG_CONSOLE, "[ahx_synth] Sample: left=%d right=%d vol=%d output=%.6f",
-                left, right, voice->VoiceVolume, sample);
-        }
-        #endif
 
         if (!voice->TrackOn) {
             // Voice stopped - clear remaining buffer

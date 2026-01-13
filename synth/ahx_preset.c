@@ -1,0 +1,272 @@
+/*
+ * AHX Preset System - Implementation
+ */
+
+#include "ahx_preset.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define PRESET_MAGIC "AHXP"
+#define PRESET_VERSION 1
+
+// Preset file header
+typedef struct {
+    char magic[4];          // "AHXP"
+    uint32_t version;       // Version number
+    uint32_t reserved[2];   // Reserved for future use
+} PresetHeader;
+
+// Save preset to file
+bool ahx_preset_save(const AhxPreset* preset, const char* filepath) {
+    if (!preset || !filepath) return false;
+
+    FILE* f = fopen(filepath, "wb");
+    if (!f) return false;
+
+    // Write header
+    PresetHeader header;
+    memcpy(header.magic, PRESET_MAGIC, 4);
+    header.version = PRESET_VERSION;
+    header.reserved[0] = 0;
+    header.reserved[1] = 0;
+
+    if (fwrite(&header, sizeof(PresetHeader), 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Write preset data
+    if (fwrite(preset, sizeof(AhxPreset), 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    fclose(f);
+    return true;
+}
+
+// Load preset from file
+bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
+    if (!preset || !filepath) return false;
+
+    FILE* f = fopen(filepath, "rb");
+    if (!f) return false;
+
+    // Read header
+    PresetHeader header;
+    if (fread(&header, sizeof(PresetHeader), 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Verify magic
+    if (memcmp(header.magic, PRESET_MAGIC, 4) != 0) {
+        fclose(f);
+        return false;
+    }
+
+    // Check version
+    if (header.version != PRESET_VERSION) {
+        fclose(f);
+        return false;
+    }
+
+    // Read preset data
+    if (fread(preset, sizeof(AhxPreset), 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    fclose(f);
+    return true;
+}
+
+// Import from AHX file (requires ahx_player parsing)
+bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uint8_t instrument_index) {
+    if (!preset || !ahx_filepath) return false;
+
+    // TODO: This requires parsing the AHX file format
+    // For now, return a default preset
+    // Implementation would need to:
+    // 1. Open and parse AHX file header
+    // 2. Find instrument at index
+    // 3. Extract parameters and convert to AhxInstrumentParams
+
+    // Placeholder implementation
+    *preset = ahx_preset_create_default();
+    snprintf(preset->name, 64, "Imported from AHX (Inst %d)", instrument_index);
+    return false;  // Not implemented yet
+}
+
+// Get instrument count from AHX file
+uint8_t ahx_preset_get_ahx_instrument_count(const char* ahx_filepath) {
+    if (!ahx_filepath) return 0;
+
+    FILE* f = fopen(ahx_filepath, "rb");
+    if (!f) return 0;
+
+    // Read AHX header to get instrument count
+    // AHX format: "THX" signature at offset 0
+    char sig[4];
+    if (fread(sig, 1, 4, f) != 4) {
+        fclose(f);
+        return 0;
+    }
+
+    if (memcmp(sig, "THX", 3) != 0) {
+        fclose(f);
+        return 0;
+    }
+
+    // Skip to instrument count (offset varies)
+    // For now, return 64 (max)
+    fclose(f);
+    return 64;
+}
+
+// Get instrument name from AHX file
+bool ahx_preset_get_ahx_instrument_name(const char* ahx_filepath, uint8_t instrument_index, char* name_out) {
+    if (!ahx_filepath || !name_out) return false;
+
+    // TODO: Parse AHX file and extract instrument name
+    snprintf(name_out, 64, "Instrument %d", instrument_index);
+    return false;  // Not implemented yet
+}
+
+// Create default preset
+AhxPreset ahx_preset_create_default(void) {
+    AhxPreset preset;
+    memset(&preset, 0, sizeof(AhxPreset));
+
+    strcpy(preset.name, "Default");
+    strcpy(preset.author, "Regroove");
+    strcpy(preset.description, "Default AHX instrument");
+
+    preset.params = ahx_instrument_default_params();
+
+    return preset;
+}
+
+// Built-in presets
+AhxPreset ahx_preset_get_builtin(uint8_t index) {
+    AhxPreset preset = ahx_preset_create_default();
+
+    switch (index) {
+        case 0: // Default
+            strcpy(preset.name, "Default");
+            strcpy(preset.description, "Basic sawtooth synth");
+            preset.params = ahx_instrument_default_params();
+            break;
+
+        case 1: // Bass - Classic AHX
+            strcpy(preset.name, "Bass - Classic AHX");
+            strcpy(preset.description, "Thick bass with filter and PWM");
+            preset.params.waveform = AHX_WAVE_SQUARE;
+            preset.params.wave_length = 5;
+            preset.params.filter_enabled = true;
+            preset.params.filter_lower = 10;
+            preset.params.filter_upper = 40;
+            preset.params.filter_speed = 3;
+            preset.params.square_enabled = true;
+            preset.params.square_lower = 40;
+            preset.params.square_upper = 200;
+            preset.params.square_speed = 6;
+            preset.params.envelope.attack_frames = 1;
+            preset.params.envelope.attack_volume = 64;
+            preset.params.envelope.decay_frames = 20;
+            preset.params.envelope.decay_volume = 50;
+            preset.params.envelope.sustain_frames = 0;
+            preset.params.envelope.release_frames = 10;
+            break;
+
+        case 2: // Lead - Sawtooth
+            strcpy(preset.name, "Lead - Sawtooth");
+            strcpy(preset.description, "Bright lead with vibrato");
+            preset.params.waveform = AHX_WAVE_SAWTOOTH;
+            preset.params.wave_length = 4;
+            preset.params.filter_enabled = true;
+            preset.params.filter_lower = 25;
+            preset.params.filter_upper = 55;
+            preset.params.filter_speed = 5;
+            preset.params.vibrato_delay = 10;
+            preset.params.vibrato_depth = 4;
+            preset.params.vibrato_speed = 30;
+            preset.params.envelope.attack_frames = 2;
+            preset.params.envelope.attack_volume = 64;
+            preset.params.envelope.decay_frames = 15;
+            preset.params.envelope.decay_volume = 56;
+            preset.params.envelope.sustain_frames = 0;
+            preset.params.envelope.release_frames = 25;
+            break;
+
+        case 3: // Pad - PWM
+            strcpy(preset.name, "Pad - PWM");
+            strcpy(preset.description, "Evolving pad with pulse width modulation");
+            preset.params.waveform = AHX_WAVE_SQUARE;
+            preset.params.wave_length = 4;
+            preset.params.square_enabled = true;
+            preset.params.square_lower = 32;
+            preset.params.square_upper = 224;
+            preset.params.square_speed = 8;
+            preset.params.filter_enabled = true;
+            preset.params.filter_lower = 20;
+            preset.params.filter_upper = 45;
+            preset.params.filter_speed = 6;
+            preset.params.envelope.attack_frames = 50;
+            preset.params.envelope.attack_volume = 64;
+            preset.params.envelope.decay_frames = 30;
+            preset.params.envelope.decay_volume = 52;
+            preset.params.envelope.sustain_frames = 0;
+            preset.params.envelope.release_frames = 60;
+            break;
+
+        case 4: // Hit - Percussion
+            strcpy(preset.name, "Hit - Percussion");
+            strcpy(preset.description, "Percussive noise hit");
+            preset.params.waveform = AHX_WAVE_NOISE;
+            preset.params.wave_length = 2;
+            preset.params.volume = 64;
+            preset.params.hard_cut_release = true;
+            preset.params.hard_cut_frames = 3;
+            preset.params.filter_enabled = true;
+            preset.params.filter_lower = 5;
+            preset.params.filter_upper = 50;
+            preset.params.filter_speed = 1;
+            preset.params.envelope.attack_frames = 0;
+            preset.params.envelope.attack_volume = 64;
+            preset.params.envelope.decay_frames = 0;
+            preset.params.envelope.decay_volume = 64;
+            preset.params.envelope.sustain_frames = 0;
+            preset.params.envelope.release_frames = 0;
+            break;
+
+        case 5: // Noise - Cymbal
+            strcpy(preset.name, "Noise - Cymbal");
+            strcpy(preset.description, "Cymbal-like noise");
+            preset.params.waveform = AHX_WAVE_NOISE;
+            preset.params.wave_length = 3;
+            preset.params.filter_enabled = true;
+            preset.params.filter_lower = 40;
+            preset.params.filter_upper = 60;
+            preset.params.filter_speed = 2;
+            preset.params.envelope.attack_frames = 0;
+            preset.params.envelope.attack_volume = 64;
+            preset.params.envelope.decay_frames = 30;
+            preset.params.envelope.decay_volume = 40;
+            preset.params.envelope.sustain_frames = 0;
+            preset.params.envelope.release_frames = 40;
+            break;
+
+        default:
+            preset = ahx_preset_create_default();
+            break;
+    }
+
+    return preset;
+}
+
+// Get number of built-in presets
+uint8_t ahx_preset_get_builtin_count(void) {
+    return 6;
+}

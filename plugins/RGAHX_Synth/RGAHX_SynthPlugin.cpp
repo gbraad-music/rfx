@@ -79,7 +79,7 @@ protected:
                 param.name = "Wave Length";
                 param.symbol = "wave_length";
                 param.ranges.min = 0.0f;
-                param.ranges.max = 7.0f;
+                param.ranges.max = 5.0f;
                 param.ranges.def = 3.0f;
                 param.hints |= kParameterIsInteger;
                 param.groupId = GROUP_OSCILLATOR;

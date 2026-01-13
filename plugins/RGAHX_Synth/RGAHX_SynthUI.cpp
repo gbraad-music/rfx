@@ -182,7 +182,7 @@ private:
                 drawWaveformPreview(waveform, fUI->fParameters[kParameterWaveLength]);
 
                 ImGui::SameLine(0, 40);
-                KNOB(kParameterWaveLength, "Wave Len", 0.0f, 7.0f, 1.0f);
+                KNOB(kParameterWaveLength, "Wave Len", 0.0f, 5.0f, 1.0f);
 
                 ImGui::SameLine();
                 KNOB(kParameterOscVolume, "Volume", 0.0f, 64.0f, 1.0f);

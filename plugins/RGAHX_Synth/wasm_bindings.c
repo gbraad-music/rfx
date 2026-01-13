@@ -76,13 +76,9 @@ void regroove_synth_note_on(AhxSynthInstance* synth, uint8_t note, uint8_t veloc
         voice_idx = 0;
     }
 
-    emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Note ON: %d vel:%d on voice %d", note, velocity, voice_idx);
-
     // Trigger note on
     synth->voice_notes[voice_idx] = note;
     ahx_instrument_note_on(&synth->voices[voice_idx], note, velocity, synth->sample_rate);
-
-    emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Voice active: %d", ahx_instrument_is_active(&synth->voices[voice_idx]));
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -127,16 +123,10 @@ void regroove_synth_process_f32(AhxSynthInstance* synth, float* buffer, int fram
     // Clear buffer
     memset(buffer, 0, frames * 2 * sizeof(float));
 
-    static int log_counter = 0;
-    int active_voices = 0;
-    float max_sample = 0.0f;
-
     // Mix all active voices
     float voice_buffer[frames];
     for (int v = 0; v < MAX_VOICES; v++) {
         if (ahx_instrument_is_active(&synth->voices[v])) {
-            active_voices++;
-
             // Process voice (mono)
             ahx_instrument_process(&synth->voices[v], voice_buffer, frames, sample_rate);
 
@@ -144,16 +134,8 @@ void regroove_synth_process_f32(AhxSynthInstance* synth, float* buffer, int fram
             for (int i = 0; i < frames; i++) {
                 buffer[i * 2 + 0] += voice_buffer[i];  // Left
                 buffer[i * 2 + 1] += voice_buffer[i];  // Right
-
-                float abs_sample = voice_buffer[i] < 0 ? -voice_buffer[i] : voice_buffer[i];
-                if (abs_sample > max_sample) max_sample = abs_sample;
             }
         }
-    }
-
-    // Log every 100 calls
-    if (++log_counter % 100 == 0 && active_voices > 0) {
-        emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Active:%d MaxSample:%.6f", active_voices, max_sample);
     }
 }
 
@@ -173,43 +155,127 @@ void regroove_synth_set_parameter(AhxSynthInstance* synth, int index, float valu
     if (!synth) return;
 
     // Update all voices with new parameters
+    // Parameter indices match plugin DistrhoPluginInfo.h exactly
     for (int i = 0; i < MAX_VOICES; i++) {
         AhxInstrumentParams* params = &synth->voices[i].params;
+        bool recalc_adsr = false;
 
         switch (index) {
-            case 0: // Waveform
+            // Oscillator Group
+            case 0:  // kParameterWaveform
                 params->waveform = (uint8_t)value;
                 synth->voices[i].core_inst.Waveform = (uint8_t)value;
-                emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Waveform set to %d", (int)value);
+                break;
+            case 1:  // kParameterWaveLength
+                params->wave_length = (uint8_t)value;
+                synth->voices[i].core_inst.WaveLength = (uint8_t)value;
+                break;
+            case 2:  // kParameterOscVolume
+                params->volume = (uint8_t)value;
+                synth->voices[i].core_inst.Volume = (uint8_t)value;
                 break;
 
-            case 1: // Attack frames
+            // Envelope Group
+            case 3:  // kParameterAttackFrames
                 params->envelope.attack_frames = (uint8_t)value;
                 synth->voices[i].core_inst.Envelope.aFrames = (uint8_t)value;
-                ahx_synth_voice_calc_adsr(&synth->voices[i].voice, &synth->voices[i].core_inst);
-                emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Attack set to %d", (int)value);
+                recalc_adsr = true;
                 break;
-
-            case 2: // Decay frames
+            case 4:  // kParameterAttackVolume
+                params->envelope.attack_volume = (uint8_t)value;
+                synth->voices[i].core_inst.Envelope.aVolume = (uint8_t)value;
+                recalc_adsr = true;
+                break;
+            case 5:  // kParameterDecayFrames
                 params->envelope.decay_frames = (uint8_t)value;
                 synth->voices[i].core_inst.Envelope.dFrames = (uint8_t)value;
-                ahx_synth_voice_calc_adsr(&synth->voices[i].voice, &synth->voices[i].core_inst);
-                emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Decay set to %d", (int)value);
+                recalc_adsr = true;
                 break;
-
-            case 3: // Sustain frames
+            case 6:  // kParameterDecayVolume
+                params->envelope.decay_volume = (uint8_t)value;
+                synth->voices[i].core_inst.Envelope.dVolume = (uint8_t)value;
+                recalc_adsr = true;
+                break;
+            case 7:  // kParameterSustainFrames
                 params->envelope.sustain_frames = (uint8_t)value;
                 synth->voices[i].core_inst.Envelope.sFrames = (uint8_t)value;
-                ahx_synth_voice_calc_adsr(&synth->voices[i].voice, &synth->voices[i].core_inst);
-                emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Sustain set to %d", (int)value);
+                recalc_adsr = true;
                 break;
-
-            case 4: // Release frames
+            case 8:  // kParameterReleaseFrames
                 params->envelope.release_frames = (uint8_t)value;
                 synth->voices[i].core_inst.Envelope.rFrames = (uint8_t)value;
-                ahx_synth_voice_calc_adsr(&synth->voices[i].voice, &synth->voices[i].core_inst);
-                emscripten_log(EM_LOG_CONSOLE, "[RGAHX] Release set to %d", (int)value);
+                recalc_adsr = true;
                 break;
+            case 9:  // kParameterReleaseVolume
+                params->envelope.release_volume = (uint8_t)value;
+                synth->voices[i].core_inst.Envelope.rVolume = (uint8_t)value;
+                recalc_adsr = true;
+                break;
+
+            // Filter Group
+            case 10:  // kParameterFilterLower
+                params->filter_lower = (uint8_t)value;
+                synth->voices[i].core_inst.FilterLowerLimit = (uint8_t)value;
+                break;
+            case 11:  // kParameterFilterUpper
+                params->filter_upper = (uint8_t)value;
+                synth->voices[i].core_inst.FilterUpperLimit = (uint8_t)value;
+                break;
+            case 12:  // kParameterFilterSpeed
+                params->filter_speed = (uint8_t)value;
+                synth->voices[i].core_inst.FilterSpeed = (uint8_t)value;
+                break;
+            case 13:  // kParameterFilterEnable
+                params->filter_enabled = value > 0.5f;
+                break;
+
+            // PWM Group
+            case 14:  // kParameterSquareLower
+                params->square_lower = (uint8_t)value;
+                synth->voices[i].core_inst.SquareLowerLimit = (uint8_t)value;
+                break;
+            case 15:  // kParameterSquareUpper
+                params->square_upper = (uint8_t)value;
+                synth->voices[i].core_inst.SquareUpperLimit = (uint8_t)value;
+                break;
+            case 16:  // kParameterSquareSpeed
+                params->square_speed = (uint8_t)value;
+                synth->voices[i].core_inst.SquareSpeed = (uint8_t)value;
+                break;
+            case 17:  // kParameterSquareEnable
+                params->square_enabled = value > 0.5f;
+                break;
+
+            // Vibrato Group
+            case 18:  // kParameterVibratoDelay
+                params->vibrato_delay = (uint8_t)value;
+                synth->voices[i].core_inst.VibratoDelay = (uint8_t)value;
+                break;
+            case 19:  // kParameterVibratoDepth
+                params->vibrato_depth = (uint8_t)value;
+                synth->voices[i].core_inst.VibratoDepth = (uint8_t)value;
+                break;
+            case 20:  // kParameterVibratoSpeed
+                params->vibrato_speed = (uint8_t)value;
+                synth->voices[i].core_inst.VibratoSpeed = (uint8_t)value;
+                break;
+
+            // Release Group
+            case 21:  // kParameterHardCutRelease
+                params->hard_cut_release = value > 0.5f;
+                synth->voices[i].core_inst.HardCutRelease = value > 0.5f ? 1 : 0;
+                break;
+            case 22:  // kParameterHardCutFrames
+                params->hard_cut_frames = (uint8_t)value;
+                synth->voices[i].core_inst.HardCutReleaseFrames = (uint8_t)value;
+                break;
+
+            // case 23 is kParameterMasterVolume - handled separately at instance level
+        }
+
+        // Recalculate ADSR if any envelope parameter changed
+        if (recalc_adsr) {
+            ahx_synth_voice_calc_adsr(&synth->voices[i].voice, &synth->voices[i].core_inst);
         }
     }
 }

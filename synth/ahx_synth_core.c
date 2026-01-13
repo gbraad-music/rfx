@@ -470,9 +470,13 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
             // Recalculate release for hard cut
             int target_vol = voice->Instrument->Envelope.rVolume;
             int frames = voice->HardCutReleaseF ? voice->HardCutReleaseF : 1;
-            voice->ADSR.rVolume = -(voice->ADSRVolume - (target_vol << 8)) / frames;
+
+            // Force immediate transition to release phase
+            voice->ADSR.aFrames = 0;
+            voice->ADSR.dFrames = 0;
+            voice->ADSR.sFrames = 0;
             voice->ADSR.rFrames = frames;
-            voice->ADSR.aFrames = voice->ADSR.dFrames = voice->ADSR.sFrames = 0;
+            voice->ADSR.rVolume = -(voice->ADSRVolume - (target_vol << 8)) / frames;
         } else {
             voice->NoteCutWait--;
         }

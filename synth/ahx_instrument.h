@@ -25,13 +25,14 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "tracker_voice.h"
-#include "tracker_modulator.h"
-#include "tracker_sequence.h"
+#include "ahx_synth_core.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+// Forward declarations
+typedef struct TrackerSequence TrackerSequence;
 
 // AHX waveform types
 typedef enum {
@@ -87,43 +88,20 @@ typedef struct {
     TrackerSequence* plist;     // Optional PList sequence
 } AhxInstrumentParams;
 
-// AHX Instrument voice state
+// AHX Instrument voice state (uses authentic AHX synthesis core)
 typedef struct {
-    // Instrument parameters
+    // Plugin parameters (external control)
     AhxInstrumentParams params;
 
-    // Playback state
-    TrackerVoice voice;
-    TrackerModulator filter_mod;
-    TrackerModulator square_mod;
+    // Authentic AHX synthesis core
+    AhxSynthVoice voice;
+    AhxCoreInstrument core_inst;
 
-    // Envelope state
-    uint32_t env_frames;        // Current frame in envelope
-    uint8_t env_volume;         // Current envelope volume
-    enum {
-        ENV_ATTACK,
-        ENV_DECAY,
-        ENV_SUSTAIN,
-        ENV_RELEASE,
-        ENV_OFF
-    } env_state;
-
-    // Vibrato state
-    uint32_t vibrato_frames;    // Frames since note on
-    float vibrato_phase;        // Vibrato LFO phase
-
-    // Waveform buffer
-    int16_t waveform_buffer[0x281];  // Generated waveform (641 samples)
-
-    // Note info
+    // Note info (for plugin reference)
     uint8_t note;               // MIDI note
     uint8_t velocity;           // MIDI velocity (0-127)
     bool active;                // Is voice active?
     bool released;              // Has note been released?
-
-    // Frame counter (50Hz for AHX timing)
-    uint32_t frame_counter;
-    uint32_t samples_per_frame; // Calculated from sample rate
 } AhxInstrument;
 
 /**

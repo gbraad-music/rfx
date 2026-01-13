@@ -12,6 +12,7 @@ TARGETS = lv2_sep vst3
 
 FILES_DSP = \
 	RGAHX_SynthPlugin.cpp \
+	../../synth/ahx_synth_core.c \
 	../../synth/ahx_instrument.c \
 	../../synth/ahx_preset.c \
 	../../synth/tracker_voice.c \

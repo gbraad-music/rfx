@@ -437,45 +437,161 @@
                     RGAHX Synthesizer
                 </div>
 
-                <!-- Waveform Selector -->
-                <div style="margin-bottom: 25px; text-align: center;">
-                    <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.75em; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Waveform</label>
-                    <select id="ahxWaveform" style="width: 200px; padding: 8px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.9em;">
-                        <option value="0">Triangle</option>
-                        <option value="1" selected>Sawtooth</option>
-                        <option value="2">Square</option>
-                        <option value="3">Noise</option>
-                    </select>
+                <!-- Oscillator Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Oscillator</div>
+                    <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Waveform</label>
+                            <select id="ahxWaveform" style="width: 120px; padding: 6px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                                <option value="0">Triangle</option>
+                                <option value="1" selected>Sawtooth</option>
+                                <option value="2">Square</option>
+                                <option value="3">Noise</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Wave Len</div>
+                            <svg-slider id="ahxWaveLength" value="4" min="0" max="5" width="40" color="#4A90E2" style="height: 120px;"></svg-slider>
+                            <div id="ahxWaveLengthVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">4</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Volume</div>
+                            <svg-slider id="ahxOscVolume" value="64" min="0" max="64" width="40" color="#4A90E2" style="height: 120px;"></svg-slider>
+                            <div id="ahxOscVolumeVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">64</div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- ADSR Envelope Controls -->
-                <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start;">
-                    <!-- Attack Slider -->
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Attack</div>
-                        <svg-slider id="ahxAttack" value="1" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
-                        <div id="ahxAttackVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">1</div>
+                <!-- Envelope Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Envelope</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">A Time</div>
+                            <svg-slider id="ahxAttack" value="1" min="0" max="255" width="35" color="#CF1A37" style="height: 150px;"></svg-slider>
+                            <div id="ahxAttackVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">1</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">A Vol</div>
+                            <svg-slider id="ahxAttackVol" value="64" min="0" max="64" width="35" color="#CF1A37" style="height: 150px;"></svg-slider>
+                            <div id="ahxAttackVolVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">64</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">D Time</div>
+                            <svg-slider id="ahxDecay" value="20" min="0" max="255" width="35" color="#E29E1A" style="height: 150px;"></svg-slider>
+                            <div id="ahxDecayVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">20</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">D Vol</div>
+                            <svg-slider id="ahxDecayVol" value="48" min="0" max="64" width="35" color="#E29E1A" style="height: 150px;"></svg-slider>
+                            <div id="ahxDecayVolVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">48</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">S Time</div>
+                            <svg-slider id="ahxSustain" value="0" min="0" max="255" width="35" color="#50C878" style="height: 150px;"></svg-slider>
+                            <div id="ahxSustainVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">∞</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">R Time</div>
+                            <svg-slider id="ahxRelease" value="30" min="0" max="255" width="35" color="#8E44AD" style="height: 150px;"></svg-slider>
+                            <div id="ahxReleaseVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">30</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">R Vol</div>
+                            <svg-slider id="ahxReleaseVol" value="0" min="0" max="64" width="35" color="#8E44AD" style="height: 150px;"></svg-slider>
+                            <div id="ahxReleaseVolVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">0</div>
+                        </div>
                     </div>
+                </div>
 
-                    <!-- Decay Slider -->
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Decay</div>
-                        <svg-slider id="ahxDecay" value="20" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
-                        <div id="ahxDecayVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">20</div>
+                <!-- Filter Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Filter</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Lower</div>
+                            <svg-slider id="ahxFilterLower" value="1" min="0" max="63" width="40" color="#E74C3C" style="height: 120px;"></svg-slider>
+                            <div id="ahxFilterLowerVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">1</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Upper</div>
+                            <svg-slider id="ahxFilterUpper" value="63" min="0" max="63" width="40" color="#E74C3C" style="height: 120px;"></svg-slider>
+                            <div id="ahxFilterUpperVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">63</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Speed</div>
+                            <svg-slider id="ahxFilterSpeed" value="0" min="0" max="63" width="40" color="#E74C3C" style="height: 120px;"></svg-slider>
+                            <div id="ahxFilterSpeedVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Enable</label>
+                            <input type="checkbox" id="ahxFilterEnable" style="width: 20px; height: 20px;">
+                        </div>
                     </div>
+                </div>
 
-                    <!-- Sustain Slider -->
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Sustain</div>
-                        <svg-slider id="ahxSustain" value="0" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
-                        <div id="ahxSustainVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">∞</div>
+                <!-- PWM Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">PWM / Square Mod</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Lower</div>
+                            <svg-slider id="ahxSquareLower" value="128" min="0" max="255" width="40" color="#3498DB" style="height: 120px;"></svg-slider>
+                            <div id="ahxSquareLowerVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">128</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Upper</div>
+                            <svg-slider id="ahxSquareUpper" value="128" min="0" max="255" width="40" color="#3498DB" style="height: 120px;"></svg-slider>
+                            <div id="ahxSquareUpperVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">128</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Speed</div>
+                            <svg-slider id="ahxSquareSpeed" value="0" min="0" max="255" width="40" color="#3498DB" style="height: 120px;"></svg-slider>
+                            <div id="ahxSquareSpeedVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Enable</label>
+                            <input type="checkbox" id="ahxSquareEnable" style="width: 20px; height: 20px;">
+                        </div>
                     </div>
+                </div>
 
-                    <!-- Release Slider -->
-                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
-                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Release</div>
-                        <svg-slider id="ahxRelease" value="30" min="0" max="255" width="45" color="#CF1A37" style="height: 200px;"></svg-slider>
-                        <div id="ahxReleaseVal" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">30</div>
+                <!-- Vibrato Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Vibrato</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Delay</div>
+                            <svg-slider id="ahxVibratoDelay" value="0" min="0" max="255" width="40" color="#9B59B6" style="height: 120px;"></svg-slider>
+                            <div id="ahxVibratoDelayVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Depth</div>
+                            <svg-slider id="ahxVibratoDepth" value="0" min="0" max="15" width="40" color="#9B59B6" style="height: 120px;"></svg-slider>
+                            <div id="ahxVibratoDepthVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Speed</div>
+                            <svg-slider id="ahxVibratoSpeed" value="0" min="0" max="255" width="40" color="#9B59B6" style="height: 120px;"></svg-slider>
+                            <div id="ahxVibratoSpeedVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Hard Cut Release Group -->
+                <div style="margin-bottom: 15px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Hard Cut Release</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Enable</label>
+                            <input type="checkbox" id="ahxHardCutEnable" style="width: 20px; height: 20px;">
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Frames</div>
+                            <svg-slider id="ahxHardCutFrames" value="0" min="0" max="7" width="40" color="#E67E22" style="height: 120px;"></svg-slider>
+                            <div id="ahxHardCutFramesVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -709,45 +825,128 @@
         }
 
         function setupRGAHXControls() {
-            // Waveform selector
+            // Oscillator Group
             document.getElementById('ahxWaveform').addEventListener('change', (e) => {
-                const waveform = parseInt(e.target.value);
-                updateAHXParameter('waveform', waveform);
-                console.log('[RGAHX] Waveform changed to:', waveform);
+                updateAHXParameter('waveform', parseInt(e.target.value));
+            });
+            document.getElementById('ahxWaveLength').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxWaveLengthVal').textContent = value;
+                updateAHXParameter('wave_length', value);
+            });
+            document.getElementById('ahxOscVolume').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxOscVolumeVal').textContent = value;
+                updateAHXParameter('osc_volume', value);
             });
 
-            // Attack slider
+            // Envelope Group
             document.getElementById('ahxAttack').addEventListener('input', (e) => {
                 const value = parseInt(e.target.value);
                 document.getElementById('ahxAttackVal').textContent = value;
-                updateAHXParameter('attack', value);
+                updateAHXParameter('attack_frames', value);
             });
-
-            // Decay slider
+            document.getElementById('ahxAttackVol').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxAttackVolVal').textContent = value;
+                updateAHXParameter('attack_volume', value);
+            });
             document.getElementById('ahxDecay').addEventListener('input', (e) => {
                 const value = parseInt(e.target.value);
                 document.getElementById('ahxDecayVal').textContent = value;
-                updateAHXParameter('decay', value);
+                updateAHXParameter('decay_frames', value);
             });
-
-            // Sustain slider (show ∞ for 0)
+            document.getElementById('ahxDecayVol').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxDecayVolVal').textContent = value;
+                updateAHXParameter('decay_volume', value);
+            });
             document.getElementById('ahxSustain').addEventListener('input', (e) => {
                 const value = parseInt(e.target.value);
                 document.getElementById('ahxSustainVal').textContent = value === 0 ? '∞' : value;
-                updateAHXParameter('sustain', value);
+                updateAHXParameter('sustain_frames', value);
             });
-
-            // Release slider
             document.getElementById('ahxRelease').addEventListener('input', (e) => {
                 const value = parseInt(e.target.value);
                 document.getElementById('ahxReleaseVal').textContent = value;
-                updateAHXParameter('release', value);
+                updateAHXParameter('release_frames', value);
+            });
+            document.getElementById('ahxReleaseVol').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxReleaseVolVal').textContent = value;
+                updateAHXParameter('release_volume', value);
+            });
+
+            // Filter Group
+            document.getElementById('ahxFilterLower').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxFilterLowerVal').textContent = value;
+                updateAHXParameter('filter_lower', value);
+            });
+            document.getElementById('ahxFilterUpper').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxFilterUpperVal').textContent = value;
+                updateAHXParameter('filter_upper', value);
+            });
+            document.getElementById('ahxFilterSpeed').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxFilterSpeedVal').textContent = value;
+                updateAHXParameter('filter_speed', value);
+            });
+            document.getElementById('ahxFilterEnable').addEventListener('change', (e) => {
+                updateAHXParameter('filter_enable', e.target.checked ? 1 : 0);
+            });
+
+            // PWM Group
+            document.getElementById('ahxSquareLower').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxSquareLowerVal').textContent = value;
+                updateAHXParameter('square_lower', value);
+            });
+            document.getElementById('ahxSquareUpper').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxSquareUpperVal').textContent = value;
+                updateAHXParameter('square_upper', value);
+            });
+            document.getElementById('ahxSquareSpeed').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxSquareSpeedVal').textContent = value;
+                updateAHXParameter('square_speed', value);
+            });
+            document.getElementById('ahxSquareEnable').addEventListener('change', (e) => {
+                updateAHXParameter('square_enable', e.target.checked ? 1 : 0);
+            });
+
+            // Vibrato Group
+            document.getElementById('ahxVibratoDelay').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxVibratoDelayVal').textContent = value;
+                updateAHXParameter('vibrato_delay', value);
+            });
+            document.getElementById('ahxVibratoDepth').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxVibratoDepthVal').textContent = value;
+                updateAHXParameter('vibrato_depth', value);
+            });
+            document.getElementById('ahxVibratoSpeed').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxVibratoSpeedVal').textContent = value;
+                updateAHXParameter('vibrato_speed', value);
+            });
+
+            // Hard Cut Release Group
+            document.getElementById('ahxHardCutEnable').addEventListener('change', (e) => {
+                updateAHXParameter('hard_cut_release', e.target.checked ? 1 : 0);
+            });
+            document.getElementById('ahxHardCutFrames').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('ahxHardCutFramesVal').textContent = value;
+                updateAHXParameter('hard_cut_frames', value);
             });
         }
 
         function updateAHXParameter(param, value) {
             if (!currentSynth || !currentSynth.workletNode) {
-                console.warn('[RGAHX] Cannot update parameter - synth not initialized');
                 return;
             }
 
@@ -756,8 +955,6 @@
                 type: 'setParam',
                 data: { param, value }
             });
-
-            console.log(`[RGAHX] Updated ${param} to ${value}`);
         }
 
         async function initializeSynth(engine) {

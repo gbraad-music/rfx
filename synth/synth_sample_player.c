@@ -105,31 +105,58 @@ void synth_sample_player_reset(SynthSamplePlayer* player) {
     player->loop_amplitude = 1.0f;
 }
 
-// Linear interpolation helper
-static inline float lerp(float a, float b, float t) {
-    return a + (b - a) * t;
-}
-
-// Get interpolated sample from buffer
+// Cubic (Catmull-Rom) interpolation for high-quality pitch shifting
+// Uses 4-point interpolation for smooth frequency response and minimal aliasing
 static float get_sample_interpolated(const int16_t* data, uint32_t length, float position) {
     if (!data || length == 0) return 0.0f;
 
     uint32_t index = (uint32_t)position;
     float frac = position - (float)index;
 
-    if (index >= length - 1) {
-        // At or past end, wrap or return last sample
+    // Bounds check - need at least 4 samples for cubic
+    if (length < 4) {
+        // Fallback to simple lookup for very short samples
+        if (index >= length) index = length - 1;
+        return (float)data[index] / 32768.0f;
+    }
+
+    // At or past end
+    if (index >= length - 2) {
         if (length > 0) {
             return (float)data[length - 1] / 32768.0f;
         }
         return 0.0f;
     }
 
-    // Linear interpolation between current and next sample
-    float sample1 = (float)data[index] / 32768.0f;
-    float sample2 = (float)data[index + 1] / 32768.0f;
+    // Get 4 surrounding samples for cubic interpolation
+    // y0 = sample before, y1 = current, y2 = next, y3 = sample after next
+    float y0, y1, y2, y3;
 
-    return lerp(sample1, sample2, frac);
+    if (index == 0) {
+        // First sample - duplicate edge
+        y0 = (float)data[0] / 32768.0f;
+    } else {
+        y0 = (float)data[index - 1] / 32768.0f;
+    }
+
+    y1 = (float)data[index] / 32768.0f;
+    y2 = (float)data[index + 1] / 32768.0f;
+
+    if (index + 2 >= length) {
+        // Near end - duplicate edge
+        y3 = (float)data[length - 1] / 32768.0f;
+    } else {
+        y3 = (float)data[index + 2] / 32768.0f;
+    }
+
+    // Catmull-Rom cubic interpolation
+    // Produces smooth curves passing through control points
+    float a0 = y3 - y2 - y0 + y1;
+    float a1 = y0 - y1 - a0;
+    float a2 = y2 - y0;
+    float a3 = y1;
+
+    return (a0 * frac * frac * frac) + (a1 * frac * frac) + (a2 * frac) + a3;
 }
 
 float synth_sample_player_process(SynthSamplePlayer* player, uint32_t output_sample_rate) {

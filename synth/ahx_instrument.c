@@ -10,6 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef EMSCRIPTEN
+#include <emscripten.h>
+#endif
+
 // Convert plugin params to core instrument definition
 static void params_to_core_instrument(AhxCoreInstrument* core, const AhxInstrumentParams* params) {
     core->Waveform = params->waveform;
@@ -149,6 +153,11 @@ AhxInstrumentParams ahx_instrument_default_params(void) {
 void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity, uint32_t sample_rate) {
     if (!inst) return;
 
+    #ifdef EMSCRIPTEN
+    emscripten_log(EM_LOG_CONSOLE, "[ahx_instrument] note_on: aFrames=%d aVol=%d dFrames=%d",
+        inst->voice.ADSR.aFrames, inst->voice.ADSR.aVolume, inst->voice.ADSR.dFrames);
+    #endif
+
     // Use authentic AHX synthesis core
     ahx_synth_voice_note_on(&inst->voice, note, velocity, sample_rate);
 
@@ -170,14 +179,20 @@ void ahx_instrument_note_off(AhxInstrument* inst) {
 
 // Process audio samples (uses authentic AHX algorithms)
 uint32_t ahx_instrument_process(AhxInstrument* inst, float* output, uint32_t num_samples, uint32_t sample_rate) {
-    (void)sample_rate;  // Reserved for future use
-
     if (!inst || !output) {
         if (output) {
             memset(output, 0, num_samples * sizeof(float));
         }
         return 0;
     }
+
+    #ifdef EMSCRIPTEN
+    static int debug_counter = 0;
+    if (debug_counter++ % 1000 == 0 && inst->active) {
+        emscripten_log(EM_LOG_CONSOLE, "[ahx_instrument] TrackOn:%d ADSR:%d Vol:%d",
+            inst->voice.TrackOn, inst->voice.ADSRVolume >> 8, inst->voice.VoiceVolume);
+    }
+    #endif
 
     // Use authentic AHX synthesis core
     uint32_t generated = ahx_synth_voice_process(&inst->voice, output, num_samples, sample_rate);

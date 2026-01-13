@@ -2,6 +2,7 @@
 
 extern "C" {
 #include "../../synth/synth_modal_piano.h"
+#include "../../synth/synth_midi.h"
 #include "../../data/rg1piano/sample_data.h"
 }
 
@@ -14,8 +15,6 @@ START_NAMESPACE_DISTRHO
 
 struct PianoVoice {
     ModalPiano* piano;
-    bool active;
-    uint8_t note;
 };
 
 class RG1PianoPlugin : public Plugin
@@ -30,6 +29,7 @@ public:
         , fVolume(0.83f)
         , fLfoRate(0.3f)
         , fLfoDepth(0.2f)
+        , fMidi(nullptr)
     {
         // Initialize sample data structure
         fSampleData.attack_data = m1piano_onset;
@@ -39,11 +39,12 @@ public:
         fSampleData.sample_rate = M1PIANO_SAMPLE_RATE;
         fSampleData.root_note = M1PIANO_ROOT_NOTE;
 
+        // Create MIDI handler with polyphonic voice allocation
+        fMidi = synth_midi_create(PIANO_VOICES, VOICE_ALLOC_POLYPHONIC);
+
         // Create voices
         for (int i = 0; i < PIANO_VOICES; i++) {
             fVoices[i].piano = modal_piano_create();
-            fVoices[i].active = false;
-            fVoices[i].note = 0;
 
             if (fVoices[i].piano) {
                 modal_piano_load_sample(fVoices[i].piano, &fSampleData);
@@ -54,6 +55,12 @@ public:
 
     ~RG1PianoPlugin() override
     {
+        // Destroy MIDI handler
+        if (fMidi) {
+            synth_midi_destroy(fMidi);
+        }
+
+        // Destroy voices
         for (int i = 0; i < PIANO_VOICES; i++) {
             if (fVoices[i].piano) {
                 modal_piano_destroy(fVoices[i].piano);
@@ -171,6 +178,8 @@ protected:
         uint32_t framePos = 0;
         const int sampleRate = (int)getSampleRate();
 
+        if (!fMidi) return;
+
         // Process MIDI events
         for (uint32_t i = 0; i < midiEventCount; ++i) {
             const MidiEvent& event = midiEvents[i];
@@ -181,16 +190,41 @@ protected:
                 framePos++;
             }
 
-            if (event.size != 3) continue;
+            // Parse MIDI message using tracker_midi
+            SynthMidiMessage msg;
+            if (!synth_midi_parse(event.data, event.size, &msg)) {
+                continue;
+            }
 
-            const uint8_t status = event.data[0] & 0xF0;
-            const uint8_t note = event.data[1];
-            const uint8_t velocity = event.data[2];
+            switch (msg.type) {
+                case MIDI_NOTE_ON:
+                    if (msg.velocity > 0) {
+                        handleNoteOn(msg.channel, msg.note, msg.velocity);
+                    } else {
+                        // Velocity 0 = note off
+                        handleNoteOff(msg.channel, msg.note);
+                    }
+                    break;
 
-            if (status == 0x90 && velocity > 0) {
-                handleNoteOn(note, velocity);
-            } else if (status == 0x80 || (status == 0x90 && velocity == 0)) {
-                handleNoteOff(note);
+                case MIDI_NOTE_OFF:
+                    handleNoteOff(msg.channel, msg.note);
+                    break;
+
+                case MIDI_CC:
+                    // Handle All Notes Off
+                    if (msg.cc_number == MIDI_CC_ALL_NOTES_OFF ||
+                        msg.cc_number == MIDI_CC_ALL_SOUND_OFF) {
+                        synth_midi_all_notes_off(fMidi);
+                        for (int j = 0; j < PIANO_VOICES; j++) {
+                            if (fVoices[j].piano) {
+                                modal_piano_release(fVoices[j].piano);
+                            }
+                        }
+                    }
+                    break;
+
+                default:
+                    break;
             }
         }
 
@@ -231,33 +265,34 @@ private:
         }
     }
 
-    int findFreeVoice()
+    void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity)
     {
-        // First try to find an inactive voice
-        for (int i = 0; i < PIANO_VOICES; i++) {
-            if (!fVoices[i].active) return i;
+        if (!fMidi) return;
+
+        // Allocate voice using tracker_midi
+        int voice_idx = synth_midi_allocate_voice(fMidi, channel, note, velocity);
+        if (voice_idx < 0 || voice_idx >= PIANO_VOICES || !fVoices[voice_idx].piano) {
+            return;
         }
 
-        // Otherwise steal oldest voice (voice 0)
-        return 0;
-    }
-
-    void handleNoteOn(uint8_t note, uint8_t velocity)
-    {
-        int voice_idx = findFreeVoice();
-        if (voice_idx < 0 || !fVoices[voice_idx].piano) return;
-
-        // Modal piano handles velocity sensitivity internally
+        // Trigger the piano voice
         modal_piano_trigger(fVoices[voice_idx].piano, note, velocity);
-        fVoices[voice_idx].active = true;
-        fVoices[voice_idx].note = note;
     }
 
-    void handleNoteOff(uint8_t note)
+    void handleNoteOff(uint8_t channel, uint8_t note)
     {
-        for (int i = 0; i < PIANO_VOICES; i++) {
-            if (fVoices[i].active && fVoices[i].note == note) {
-                modal_piano_release(fVoices[i].piano);
+        if (!fMidi) return;
+
+        // Find voices playing this note
+        int released_voices[PIANO_VOICES];
+        int count = synth_midi_find_voices_for_note(fMidi, channel, note, released_voices);
+
+        // Release found voices
+        for (int i = 0; i < count; i++) {
+            int voice_idx = released_voices[i];
+            if (voice_idx >= 0 && voice_idx < PIANO_VOICES && fVoices[voice_idx].piano) {
+                modal_piano_release(fVoices[voice_idx].piano);
+                synth_midi_release_voice(fMidi, voice_idx);
             }
         }
     }
@@ -267,13 +302,17 @@ private:
         float mixL = 0.0f, mixR = 0.0f;
 
         for (int i = 0; i < PIANO_VOICES; i++) {
-            if (!fVoices[i].active || !fVoices[i].piano) continue;
+            // Check if voice is active via MIDI handler
+            if (!fMidi || !fMidi->voices[i].active || !fVoices[i].piano) {
+                continue;
+            }
 
-            // Modal piano handles filter envelope internally
+            // Process piano voice
             float sample = modal_piano_process(fVoices[i].piano, sampleRate);
 
+            // Release voice if piano is no longer active
             if (!modal_piano_is_active(fVoices[i].piano)) {
-                fVoices[i].active = false;
+                synth_midi_release_voice(fMidi, i);
                 continue;
             }
 
@@ -304,6 +343,7 @@ private:
 
     SampleData fSampleData;
     PianoVoice fVoices[PIANO_VOICES];
+    SynthMidiHandler* fMidi;
 
     float fDecay, fResonance, fBrightness, fVelocitySens, fVolume;
     float fLfoRate, fLfoDepth;

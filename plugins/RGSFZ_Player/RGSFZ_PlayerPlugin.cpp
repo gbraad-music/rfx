@@ -3,6 +3,7 @@
 extern "C" {
 #include "../../synth/sfz_parser.h"
 #include "../../synth/synth_sample_player.h"
+#include "../../synth/synth_midi.h"
 }
 
 #include <cstring>
@@ -14,8 +15,6 @@ START_NAMESPACE_DISTRHO
 struct SFZVoice {
     SynthSamplePlayer* player;
     const SFZRegion* region;
-    uint8_t note;
-    bool active;
     SampleData sample_data;  // Temporary sample data struct
 };
 
@@ -29,18 +28,26 @@ public:
         , fAttack(0.001f)
         , fDecay(0.5f)
         , fSFZ(nullptr)
+        , fMidi(nullptr)
     {
+        // Create MIDI handler with polyphonic voice allocation
+        fMidi = synth_midi_create(MAX_VOICES, VOICE_ALLOC_POLYPHONIC);
+
         // Create voices
         for (int i = 0; i < MAX_VOICES; i++) {
             fVoices[i].player = synth_sample_player_create();
             fVoices[i].region = nullptr;
-            fVoices[i].note = 0;
-            fVoices[i].active = false;
         }
     }
 
     ~RGSFZ_PlayerPlugin() override
     {
+        // Destroy MIDI handler
+        if (fMidi) {
+            synth_midi_destroy(fMidi);
+        }
+
+        // Destroy voices
         for (int i = 0; i < MAX_VOICES; i++) {
             if (fVoices[i].player) {
                 synth_sample_player_destroy(fVoices[i].player);
@@ -146,6 +153,8 @@ protected:
         uint32_t framePos = 0;
         const int sampleRate = (int)getSampleRate();
 
+        if (!fMidi) return;
+
         // Process MIDI events
         for (uint32_t i = 0; i < midiEventCount; ++i) {
             const MidiEvent& event = midiEvents[i];
@@ -156,16 +165,41 @@ protected:
                 framePos++;
             }
 
-            if (event.size != 3) continue;
+            // Parse MIDI message using tracker_midi
+            SynthMidiMessage msg;
+            if (!synth_midi_parse(event.data, event.size, &msg)) {
+                continue;
+            }
 
-            const uint8_t status = event.data[0] & 0xF0;
-            const uint8_t note = event.data[1];
-            const uint8_t velocity = event.data[2];
+            switch (msg.type) {
+                case MIDI_NOTE_ON:
+                    if (msg.velocity > 0) {
+                        handleNoteOn(msg.channel, msg.note, msg.velocity);
+                    } else {
+                        // Velocity 0 = note off
+                        handleNoteOff(msg.channel, msg.note);
+                    }
+                    break;
 
-            if (status == 0x90 && velocity > 0) {
-                handleNoteOn(note, velocity);
-            } else if (status == 0x80 || (status == 0x90 && velocity == 0)) {
-                handleNoteOff(note);
+                case MIDI_NOTE_OFF:
+                    handleNoteOff(msg.channel, msg.note);
+                    break;
+
+                case MIDI_CC:
+                    // Handle All Notes Off
+                    if (msg.cc_number == MIDI_CC_ALL_NOTES_OFF ||
+                        msg.cc_number == MIDI_CC_ALL_SOUND_OFF) {
+                        synth_midi_all_notes_off(fMidi);
+                        for (int j = 0; j < MAX_VOICES; j++) {
+                            if (fVoices[j].player) {
+                                synth_sample_player_release(fVoices[j].player);
+                            }
+                        }
+                    }
+                    break;
+
+                default:
+                    break;
             }
         }
 
@@ -190,23 +224,18 @@ private:
         }
     }
 
-    int findFreeVoice()
+    void handleNoteOn(uint8_t channel, uint8_t note, uint8_t velocity)
     {
-        for (int i = 0; i < MAX_VOICES; i++) {
-            if (!fVoices[i].active) return i;
-        }
-        return 0;  // Steal oldest
-    }
-
-    void handleNoteOn(uint8_t note, uint8_t velocity)
-    {
-        if (!fSFZ) return;
+        if (!fSFZ || !fMidi) return;
 
         // Find matching region
         const SFZRegion* region = sfz_find_region(fSFZ, note, velocity);
         if (!region || !region->sample_data) return;
 
-        int voice_idx = findFreeVoice();
+        // Allocate voice using tracker_midi
+        int voice_idx = synth_midi_allocate_voice(fMidi, channel, note, velocity);
+        if (voice_idx < 0 || voice_idx >= MAX_VOICES) return;
+
         SFZVoice* v = &fVoices[voice_idx];
 
         // Setup sample data for synth_sample_player
@@ -230,15 +259,22 @@ private:
         synth_sample_player_trigger(v->player, note, velocity);
 
         v->region = region;
-        v->note = note;
-        v->active = true;
     }
 
-    void handleNoteOff(uint8_t note)
+    void handleNoteOff(uint8_t channel, uint8_t note)
     {
-        for (int i = 0; i < MAX_VOICES; i++) {
-            if (fVoices[i].active && fVoices[i].note == note) {
-                synth_sample_player_release(fVoices[i].player);
+        if (!fMidi) return;
+
+        // Find voices playing this note
+        int released_voices[MAX_VOICES];
+        int count = synth_midi_find_voices_for_note(fMidi, channel, note, released_voices);
+
+        // Release found voices
+        for (int i = 0; i < count; i++) {
+            int voice_idx = released_voices[i];
+            if (voice_idx >= 0 && voice_idx < MAX_VOICES) {
+                synth_sample_player_release(fVoices[voice_idx].player);
+                synth_midi_release_voice(fMidi, voice_idx);
             }
         }
     }
@@ -248,13 +284,17 @@ private:
         float mixL = 0.0f, mixR = 0.0f;
 
         for (int i = 0; i < MAX_VOICES; i++) {
-            SFZVoice* v = &fVoices[i];
-            if (!v->active) continue;
+            // Check if voice is active via MIDI handler
+            if (!fMidi || !fMidi->voices[i].active) {
+                continue;
+            }
 
+            SFZVoice* v = &fVoices[i];
             float sample = synth_sample_player_process(v->player, sampleRate);
 
+            // Release voice if sample player is no longer active
             if (!synth_sample_player_is_active(v->player)) {
-                v->active = false;
+                synth_midi_release_voice(fMidi, i);
                 continue;
             }
 
@@ -282,6 +322,7 @@ private:
 
     SFZVoice fVoices[MAX_VOICES];
     SFZData* fSFZ;
+    SynthMidiHandler* fMidi;
     float fVolume, fPan, fAttack, fDecay;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RGSFZ_PlayerPlugin)

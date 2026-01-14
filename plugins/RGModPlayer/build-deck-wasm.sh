@@ -24,7 +24,7 @@ mkdir -p "$OUTDIR"
 CFLAGS="-O3 -s WASM=1 -s ALLOW_MEMORY_GROWTH=1"
 CFLAGS="$CFLAGS -s EXPORTED_RUNTIME_METHODS=[cwrap,ccall,HEAPU8,HEAP8,HEAPF32]"
 CFLAGS="$CFLAGS -s MODULARIZE=1 -s EXPORT_ES6=1 -s EXPORT_NAME='createDeckPlayerModule'"
-CFLAGS="$CFLAGS -I../../synth"
+CFLAGS="$CFLAGS -I../../players -I../../synth"
 
 # Enable MMD synth support
 CFLAGS="$CFLAGS -DMMD_SYNTH_SUPPORT"
@@ -62,15 +62,15 @@ EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}]"
 # Source files - unified deck player approach
 SOURCES="deck_player_wasm.c"
 SOURCES="$SOURCES ../../synth/deck_player.c"
-SOURCES="$SOURCES ../../synth/mod_player.c"
-SOURCES="$SOURCES ../../synth/mmd_player.c"
-SOURCES="$SOURCES ../../synth/ahx_player.c"
+SOURCES="$SOURCES ../../players/mod_player.c"
+SOURCES="$SOURCES ../../players/mmd_player.c"
+SOURCES="$SOURCES ../../players/ahx_player.c"
 
 # Shared tracker components
-SOURCES="$SOURCES ../../synth/tracker_mixer.c"
-SOURCES="$SOURCES ../../synth/tracker_voice.c"
-SOURCES="$SOURCES ../../synth/tracker_modulator.c"
-SOURCES="$SOURCES ../../synth/tracker_sequence.c"
+SOURCES="$SOURCES ../../players/tracker_mixer.c"
+SOURCES="$SOURCES ../../players/tracker_voice.c"
+SOURCES="$SOURCES ../../players/tracker_modulator.c"
+SOURCES="$SOURCES ../../players/tracker_sequence.c"
 
 # Synth components (for MMD and AHX)
 SOURCES="$SOURCES ../../synth/synth_oscillator.c"

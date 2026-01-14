@@ -4,9 +4,9 @@
  */
 
 #include "deck_player.h"
-#include "mod_player.h"
-#include "mmd_player.h"
-#include "ahx_player.h"
+#include "../players/mod_player.h"
+#include "../players/mmd_player.h"
+#include "../players/ahx_player.h"
 #include <stdlib.h>
 #include <string.h>
 

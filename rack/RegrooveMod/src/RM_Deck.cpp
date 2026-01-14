@@ -1,8 +1,8 @@
 #include "plugin.hpp"
 #include "../../regroove_components.hpp"
-#include "../../../synth/mod_player.h"
-#include "../../../synth/mmd_player.h"
-#include "../../../synth/ahx_player.h"
+#include "../../../players/mod_player.h"
+#include "../../../players/mmd_player.h"
+#include "../../../players/ahx_player.h"
 #include <thread>
 #include <atomic>
 #include <mutex>

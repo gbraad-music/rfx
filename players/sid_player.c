@@ -4,8 +4,8 @@
  */
 
 #include "sid_player.h"
-#include "synth_sid.h"
-#include "cpu_6502.h"
+#include "../synth/synth_sid.h"
+#include "../common/cpu_6502.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

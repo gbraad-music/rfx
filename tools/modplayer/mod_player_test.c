@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <SDL2/SDL.h>
-#include "../../synth/mod_player.h"
+#include "../../players/mod_player.h"
 
 #ifdef _WIN32
 #include <io.h>

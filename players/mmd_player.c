@@ -17,10 +17,10 @@
 
 #ifdef MMD_SYNTH_SUPPORT
 // Include synth components for OctaMED synthetic instruments
-#include "synth_oscillator.h"
-#include "synth_envelope.h"
-#include "synth_lfo.h"
-#include "wavetable.h"
+#include "../synth/synth_oscillator.h"
+#include "../synth/synth_envelope.h"
+#include "../synth/synth_lfo.h"
+#include "../synth/wavetable.h"
 #endif
 
 // Endianness conversion (MMD files are big-endian)

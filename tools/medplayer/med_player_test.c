@@ -14,7 +14,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <SDL2/SDL.h>
-#include "../../synth/mmd_player.h"
+#include "../../players/mmd_player.h"
 
 #ifdef _WIN32
 #include <io.h>

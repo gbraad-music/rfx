@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include "../../synth/mod_player.h"
-#include "../../synth/mmd_player.h"
+#include "../../players/mod_player.h"
+#include "../../players/mmd_player.h"
 
 typedef enum {
     PLAYER_TYPE_NONE = 0,

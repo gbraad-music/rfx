@@ -12,6 +12,9 @@ struct PatternSequencer {
     uint16_t order_length;       // Length of pattern_order
     uint16_t rows_per_pattern;   // Rows per pattern
 
+    // Timing mode
+    PatternSequencerMode mode;   // Tick-based (MOD/MMD) or frame-based (AHX)
+
     // Playback state
     bool playing;
     uint16_t current_pattern_index;  // Index in pattern_order
@@ -59,6 +62,7 @@ PatternSequencer* pattern_sequencer_create(void) {
     if (!seq) return NULL;
 
     // Initialize defaults
+    seq->mode = PS_MODE_TICK_BASED;  // Default to tick-based (MOD/MMD)
     seq->speed = 6;
     seq->bpm = 125;
     seq->looping_enabled = true;
@@ -78,6 +82,12 @@ void pattern_sequencer_destroy(PatternSequencer* seq) {
     }
 
     free(seq);
+}
+
+// Set timing mode
+void pattern_sequencer_set_mode(PatternSequencer* seq, PatternSequencerMode mode) {
+    if (!seq) return;
+    seq->mode = mode;
 }
 
 // Set callbacks
@@ -336,9 +346,18 @@ void pattern_sequencer_process(PatternSequencer* seq,
         return;
     }
 
-    // Calculate samples per tick: (2.5 * sample_rate) / BPM
-    // This matches standard MOD/tracker timing
-    seq->samples_per_tick = (2.5 * sample_rate) / (double)seq->bpm;
+    // Calculate samples per tick based on mode
+    if (seq->mode == PS_MODE_TICK_BASED) {
+        // Tick-based (MOD/MMD): BPM controls timing
+        // samples_per_tick = (2.5 * sample_rate) / BPM
+        // This matches standard ProTracker CIA timer timing
+        seq->samples_per_tick = (2.5 * sample_rate) / (double)seq->bpm;
+    } else {
+        // Frame-based (AHX/HVL): Fixed 50Hz frame rate
+        // samples_per_tick = sample_rate / 50.0
+        // This matches PAL video frame rate (20ms per frame)
+        seq->samples_per_tick = sample_rate / 50.0;
+    }
 
     for (uint32_t frame = 0; frame < frames; frame++) {
         seq->sample_accumulator += 1.0;

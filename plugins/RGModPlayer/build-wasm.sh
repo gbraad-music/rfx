@@ -33,6 +33,7 @@ SOURCES="$SOURCES ../../players/mod_player.c"
 SOURCES="$SOURCES ../../players/mmd_player.c"
 
 # Shared tracker components (required by players)
+SOURCES="$SOURCES ../../players/pattern_sequencer.c"
 SOURCES="$SOURCES ../../players/tracker_voice.c"
 SOURCES="$SOURCES ../../players/tracker_mixer.c"
 

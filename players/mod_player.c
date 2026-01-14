@@ -1,5 +1,6 @@
 #include "mod_player.h"
 #include "tracker_mixer.h"
+#include "pattern_sequencer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -13,7 +14,13 @@
 
 // Forward declarations
 static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note);
+static void process_effects(ModPlayer* player, uint8_t channel);
 static void trigger_position_callback(ModPlayer* player);
+
+// Pattern sequencer callbacks
+static void mod_on_tick(void* user_data, uint8_t tick);
+static void mod_on_row(void* user_data, uint16_t pattern_index,
+                      uint16_t pattern_number, uint16_t row);
 
 // Period table for notes (ProTracker)
 static const uint16_t period_table[16][36] = {
@@ -90,6 +97,9 @@ struct ModPlayer {
     uint8_t song_length;
     uint8_t num_patterns;
     ModNote* patterns;  // Dynamically allocated: [num_patterns][4][64]
+
+    // Pattern sequencer (NEW - handles timing/position/flow control)
+    PatternSequencer* sequencer;
 
     // Playback state
     bool playing;
@@ -193,6 +203,16 @@ ModPlayer* mod_player_create(void) {
     ModPlayer* player = (ModPlayer*)calloc(1, sizeof(ModPlayer));
     if (!player) return NULL;
 
+    // Create pattern sequencer
+    player->sequencer = pattern_sequencer_create();
+    if (!player->sequencer) {
+        free(player);
+        return NULL;
+    }
+
+    // Set sequencer to tick-based mode (MOD uses BPM timing)
+    pattern_sequencer_set_mode(player->sequencer, PS_MODE_TICK_BASED);
+
     // Set defaults
     player->speed = 6;
     player->bpm = 125;
@@ -218,6 +238,11 @@ ModPlayer* mod_player_create(void) {
 
 void mod_player_destroy(ModPlayer* player) {
     if (!player) return;
+
+    // Destroy pattern sequencer
+    if (player->sequencer) {
+        pattern_sequencer_destroy(player->sequencer);
+    }
 
     // Free sample data
     for (int i = 0; i < MOD_MAX_SAMPLES; i++) {
@@ -346,36 +371,75 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     player->loop_start = 0;
     player->loop_end = player->song_length > 0 ? player->song_length - 1 : 0;
 
+    // Configure pattern sequencer with song structure
+    // Convert song_positions from uint8_t[] to uint16_t[] for pattern_sequencer
+    uint16_t pattern_order_16[128];
+    for (int i = 0; i < player->song_length; i++) {
+        pattern_order_16[i] = player->song_positions[i];
+    }
+
+    pattern_sequencer_set_song(player->sequencer,
+                              pattern_order_16,
+                              player->song_length,
+                              MOD_PATTERN_ROWS);  // 64 rows per pattern
+    pattern_sequencer_set_speed(player->sequencer, player->speed);
+    pattern_sequencer_set_bpm(player->sequencer, player->bpm);
+    pattern_sequencer_set_loop_range(player->sequencer, player->loop_start, player->loop_end);
+
+    // Set up sequencer callbacks
+    PatternSequencerCallbacks callbacks = {
+        .on_tick = mod_on_tick,
+        .on_row = mod_on_row,
+        .on_pattern_change = NULL,  // Not needed for MOD
+        .on_song_end = NULL          // Not needed for MOD
+    };
+    pattern_sequencer_set_callbacks(player->sequencer, &callbacks, player);
+
     return true;
+}
+
+// Pattern sequencer callbacks
+static void mod_on_tick(void* user_data, uint8_t tick) {
+    ModPlayer* player = (ModPlayer*)user_data;
+
+    // Process per-tick effects for all channels
+    for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
+        process_effects(player, c);
+    }
+}
+
+static void mod_on_row(void* user_data, uint16_t pattern_index,
+                      uint16_t pattern_number, uint16_t row) {
+    ModPlayer* player = (ModPlayer*)user_data;
+
+    // Process notes for this row
+    if (pattern_number < player->num_patterns) {
+        for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
+            uint32_t note_index = pattern_number * (MOD_MAX_CHANNELS * MOD_PATTERN_ROWS) +
+                                 row * MOD_MAX_CHANNELS + c;
+            const ModNote* note = &player->patterns[note_index];
+            process_note(player, c, note);
+        }
+    }
+
+    // Trigger position callback
+    trigger_position_callback(player);
 }
 
 void mod_player_start(ModPlayer* player) {
     if (!player) return;
     player->playing = true;
-    player->current_pattern_index = player->loop_start;
-    player->current_row = 0;
-    player->tick = 0;
-    player->sample_accumulator = 0.0f;
 
-    // Process the first row immediately
-    if (player->current_pattern_index < player->song_length) {
-        uint8_t pattern_num = player->song_positions[player->current_pattern_index];
-
-        if (pattern_num < player->num_patterns) {
-            for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
-                uint32_t pattern_index = pattern_num * (MOD_MAX_CHANNELS * MOD_PATTERN_ROWS) +
-                                        player->current_row * MOD_MAX_CHANNELS + c;
-                const ModNote* note = &player->patterns[pattern_index];
-
-                process_note(player, c, note);
-            }
-        }
-    }
+    // Start pattern sequencer (handles position initialization and first row processing)
+    pattern_sequencer_start(player->sequencer);
 }
 
 void mod_player_stop(ModPlayer* player) {
     if (!player) return;
     player->playing = false;
+
+    // Stop pattern sequencer
+    pattern_sequencer_stop(player->sequencer);
 
     // Stop all channels
     for (int i = 0; i < MOD_MAX_CHANNELS; i++) {

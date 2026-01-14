@@ -106,6 +106,7 @@ struct SidPlayer {
     /* SID register cache (for change detection) */
     uint8_t sid_regs[32];
     uint8_t prev_gate[3];      /* Previous gate state for each voice */
+    uint16_t base_frequency[3]; /* Base frequency when gate triggered (for pitch bend) */
 
     /* Debug output */
     bool debug_enabled;
@@ -198,7 +199,18 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
             switch (reg) {
                 case 0: /* Frequency low */
                 case 1: /* Frequency high */
-                    /* Frequency will be handled by waveform control register */
+                    /* Calculate pitch bend if base frequency is set */
+                    {
+                        uint16_t freq = (player->sid_regs[1] << 8) | player->sid_regs[0];
+                        if (player->base_frequency[voice] > 0 && freq > 0) {
+                            /* Calculate pitch bend in semitones */
+                            float ratio = (float)freq / (float)player->base_frequency[voice];
+                            float semitones = 12.0f * log2f(ratio);
+                            /* Normalize to ±1.0 for ±12 semitone range */
+                            float bend = semitones / 12.0f;
+                            synth_sid_set_pitch_bend(player->synth, voice, bend);
+                        }
+                    }
                     break;
 
                 case 2: /* Pulse width low */
@@ -235,6 +247,20 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
             uint8_t voice = 1;
             uint8_t vreg = reg - 7;
             switch (vreg) {
+                case 0: /* Frequency low */
+                case 1: /* Frequency high */
+                    /* Calculate pitch bend if base frequency is set */
+                    {
+                        uint16_t freq = (player->sid_regs[8] << 8) | player->sid_regs[7];
+                        if (player->base_frequency[voice] > 0 && freq > 0) {
+                            float ratio = (float)freq / (float)player->base_frequency[voice];
+                            float semitones = 12.0f * log2f(ratio);
+                            float bend = semitones / 12.0f;
+                            synth_sid_set_pitch_bend(player->synth, voice, bend);
+                        }
+                    }
+                    break;
+
                 case 2:
                 case 3: {
                     uint16_t pw = (player->sid_regs[10] << 8) | player->sid_regs[9];
@@ -269,6 +295,20 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
             uint8_t voice = 2;
             uint8_t vreg = reg - 14;
             switch (vreg) {
+                case 0: /* Frequency low */
+                case 1: /* Frequency high */
+                    /* Calculate pitch bend if base frequency is set */
+                    {
+                        uint16_t freq = (player->sid_regs[15] << 8) | player->sid_regs[14];
+                        if (player->base_frequency[voice] > 0 && freq > 0) {
+                            float ratio = (float)freq / (float)player->base_frequency[voice];
+                            float semitones = 12.0f * log2f(ratio);
+                            float bend = semitones / 12.0f;
+                            synth_sid_set_pitch_bend(player->synth, voice, bend);
+                        }
+                    }
+                    break;
+
                 case 2:
                 case 3: {
                     uint16_t pw = (player->sid_regs[17] << 8) | player->sid_regs[16];
@@ -388,6 +428,12 @@ static void handle_sid_voice_control(SidPlayer* player, uint8_t voice, uint8_t v
         uint16_t freq = (player->sid_regs[freq_hi_reg] << 8) | player->sid_regs[freq_lo_reg];
 
         if (freq > 0) {
+            /* Store base frequency for pitch bend calculations */
+            player->base_frequency[voice] = freq;
+
+            /* Reset pitch bend to 0 for new note */
+            synth_sid_set_pitch_bend(player->synth, voice, 0.0f);
+
             /* Convert SID frequency to Hz */
             /* PAL C64: SID clock = 985248 Hz, formula: Hz = freq * clock / 16777216 */
             float hz = freq * 0.0596f;  /* Approximation: 985248 / 16777216 */
@@ -406,6 +452,8 @@ static void handle_sid_voice_control(SidPlayer* player, uint8_t voice, uint8_t v
     } else if (!new_gate && old_gate) {
         /* Gate 1->0 transition: trigger note off */
         synth_sid_note_off(player->synth, voice);
+        /* Clear base frequency when note ends */
+        player->base_frequency[voice] = 0;
     }
 }
 

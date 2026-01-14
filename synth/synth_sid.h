@@ -124,6 +124,10 @@ int synth_sid_get_ring_mod(SynthSID* sid, uint8_t voice);
 void synth_sid_set_sync(SynthSID* sid, uint8_t voice, int enabled);
 int synth_sid_get_sync(SynthSID* sid, uint8_t voice);
 
+// Pitch bend (MIDI-style, -1.0 to +1.0, maps to ±12 semitones by default)
+void synth_sid_set_pitch_bend(SynthSID* sid, uint8_t voice, float bend);
+float synth_sid_get_pitch_bend(SynthSID* sid, uint8_t voice);
+
 // ============================================================================
 // Filter Parameters
 // ============================================================================

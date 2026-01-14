@@ -106,6 +106,10 @@ struct SidPlayer {
     /* SID register cache (for change detection) */
     uint8_t sid_regs[32];
     uint8_t prev_gate[3];      /* Previous gate state for each voice */
+
+    /* Debug output */
+    bool debug_enabled;
+    uint32_t debug_frame_count;  /* For periodic output */
 };
 
 /* ============================================================================
@@ -142,14 +146,51 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
         uint8_t reg = addr - SID_BASE;
         player->sid_regs[reg] = value;
 
-        /* Optionally log first few SID writes for debugging */
-        #if 0
-        static int write_count = 0;
-        if (write_count < 10) {
-            fprintf(stderr, "SID[$%02X] = $%02X\n", reg, value);
-            write_count++;
+        /* Debug output for SID register writes */
+        if (player->debug_enabled) {
+            const char* reg_names[] = {
+                "V1.FRQ_LO", "V1.FRQ_HI", "V1.PW_LO", "V1.PW_HI", "V1.CTRL", "V1.AD", "V1.SR",
+                "V2.FRQ_LO", "V2.FRQ_HI", "V2.PW_LO", "V2.PW_HI", "V2.CTRL", "V2.AD", "V2.SR",
+                "V3.FRQ_LO", "V3.FRQ_HI", "V3.PW_LO", "V3.PW_HI", "V3.CTRL", "V3.AD", "V3.SR",
+                "FC_LO", "FC_HI", "RES_FILT", "MODE_VOL"
+            };
+
+            if (reg < 24) {
+                /* Show timestamp */
+                uint32_t time_ms = player->time_ms;
+                uint32_t minutes = time_ms / 60000;
+                uint32_t seconds = (time_ms / 1000) % 60;
+                uint32_t millis = time_ms % 1000;
+
+                fprintf(stderr, "[%02u:%02u.%03u] %10s = $%02X",
+                        minutes, seconds, millis, reg_names[reg], value);
+
+                /* Decode important registers */
+                if (reg == 4 || reg == 11 || reg == 18) {  /* Control registers */
+                    uint8_t voice = reg / 7;
+                    fprintf(stderr, " [");
+                    if (value & 0x80) fprintf(stderr, "NOISE ");
+                    if (value & 0x40) fprintf(stderr, "PULSE ");
+                    if (value & 0x20) fprintf(stderr, "SAW ");
+                    if (value & 0x10) fprintf(stderr, "TRI ");
+                    if (value & 0x08) fprintf(stderr, "TEST ");
+                    if (value & 0x04) fprintf(stderr, "RING ");
+                    if (value & 0x02) fprintf(stderr, "SYNC ");
+                    if (value & 0x01) fprintf(stderr, "GATE");
+                    fprintf(stderr, "]");
+
+                    /* Show frequency for this voice */
+                    uint8_t freq_lo = voice * 7;
+                    uint8_t freq_hi = voice * 7 + 1;
+                    uint16_t freq = (player->sid_regs[freq_hi] << 8) | player->sid_regs[freq_lo];
+                    if (freq > 0) {
+                        float hz = freq * 0.0596f;
+                        fprintf(stderr, " freq=%uHz", (uint32_t)hz);
+                    }
+                }
+                fprintf(stderr, "\n");
+            }
         }
-        #endif
 
         /* Voice 1 (registers 0-6) */
         if (reg <= 6) {
@@ -1761,4 +1802,75 @@ void sid_player_set_boost(SidPlayer* player, float boost) {
 void sid_player_set_disable_looping(SidPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
+}
+
+void sid_player_set_debug_output(SidPlayer* player, bool enabled) {
+    if (!player) return;
+    player->debug_enabled = enabled;
+
+    if (enabled) {
+        fprintf(stderr, "\n=== SID PLAYER DEBUG MODE ENABLED ===\n");
+        fprintf(stderr, "Showing all SID register writes and voice activity\n\n");
+    }
+}
+
+void sid_player_print_state(SidPlayer* player) {
+    if (!player) return;
+
+    uint32_t time_ms = player->time_ms;
+    uint32_t minutes = time_ms / 60000;
+    uint32_t seconds = (time_ms / 1000) % 60;
+    uint32_t millis = time_ms % 1000;
+
+    fprintf(stderr, "\n");
+    fprintf(stderr, "============================================================\n");
+    fprintf(stderr, "SID STATE SNAPSHOT at %02u:%02u.%03u\n", minutes, seconds, millis);
+    fprintf(stderr, "============================================================\n\n");
+
+    for (int voice = 0; voice < 3; voice++) {
+        fprintf(stderr, "VOICE %d:\n", voice + 1);
+
+        uint8_t base = voice * 7;
+        uint16_t freq = (player->sid_regs[base + 1] << 8) | player->sid_regs[base];
+        uint16_t pw = (player->sid_regs[base + 3] << 8) | player->sid_regs[base + 2];
+        uint8_t ctrl = player->sid_regs[base + 4];
+        uint8_t ad = player->sid_regs[base + 5];
+        uint8_t sr = player->sid_regs[base + 6];
+
+        float hz = freq * 0.0596f;
+        fprintf(stderr, "  Frequency: $%04X (%u Hz)\n", freq, (uint32_t)hz);
+        fprintf(stderr, "  Pulse Width: $%03X\n", pw);
+        fprintf(stderr, "  Control: $%02X [", ctrl);
+        if (ctrl & 0x80) fprintf(stderr, "NOISE ");
+        if (ctrl & 0x40) fprintf(stderr, "PULSE ");
+        if (ctrl & 0x20) fprintf(stderr, "SAW ");
+        if (ctrl & 0x10) fprintf(stderr, "TRI ");
+        if (ctrl & 0x08) fprintf(stderr, "TEST ");
+        if (ctrl & 0x04) fprintf(stderr, "RING ");
+        if (ctrl & 0x02) fprintf(stderr, "SYNC ");
+        if (ctrl & 0x01) fprintf(stderr, "GATE");
+        fprintf(stderr, "]\n");
+        fprintf(stderr, "  Attack/Decay: $%02X (A=%d D=%d)\n", ad, (ad >> 4) & 0xF, ad & 0xF);
+        fprintf(stderr, "  Sustain/Release: $%02X (S=%d R=%d)\n\n", sr, (sr >> 4) & 0xF, sr & 0xF);
+    }
+
+    fprintf(stderr, "FILTER:\n");
+    uint16_t fc = ((player->sid_regs[22] & 0x07) << 8) | player->sid_regs[21];
+    uint8_t res_filt = player->sid_regs[23];
+    uint8_t mode_vol = player->sid_regs[24];
+
+    fprintf(stderr, "  Cutoff: $%03X\n", fc);
+    fprintf(stderr, "  Resonance: %d\n", (res_filt >> 4) & 0xF);
+    fprintf(stderr, "  Voice routing: V1=%s V2=%s V3=%s\n",
+            (res_filt & 0x01) ? "FILT" : "DIR",
+            (res_filt & 0x02) ? "FILT" : "DIR",
+            (res_filt & 0x04) ? "FILT" : "DIR");
+    fprintf(stderr, "  Mode: $%02X [", mode_vol);
+    if (mode_vol & 0x40) fprintf(stderr, "HP ");
+    if (mode_vol & 0x20) fprintf(stderr, "BP ");
+    if (mode_vol & 0x10) fprintf(stderr, "LP ");
+    fprintf(stderr, "]\n");
+    fprintf(stderr, "  Volume: %d\n", mode_vol & 0x0F);
+
+    fprintf(stderr, "\n============================================================\n\n");
 }

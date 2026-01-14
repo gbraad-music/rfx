@@ -210,6 +210,23 @@ void sid_player_set_boost(SidPlayer* player, float boost);
  */
 void sid_player_set_disable_looping(SidPlayer* player, bool disable);
 
+/* ============================================================================
+ * Debug/Analysis
+ * ============================================================================ */
+
+/**
+ * Enable tracker-style debug output
+ * Shows register writes, notes, waveforms in real-time
+ * @param enabled true to enable debug output, false to disable
+ */
+void sid_player_set_debug_output(SidPlayer* player, bool enabled);
+
+/**
+ * Print current SID register state snapshot
+ * Useful for capturing exact state at a specific moment
+ */
+void sid_player_print_state(SidPlayer* player);
+
 #ifdef __cplusplus
 }
 #endif

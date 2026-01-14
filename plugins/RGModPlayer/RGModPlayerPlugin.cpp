@@ -1,7 +1,7 @@
 #include "DistrhoPlugin.hpp"
 
 extern "C" {
-#include "../../synth/mod_player.h"
+#include "../../players/mod_player.h"
 }
 
 #include <cstring>

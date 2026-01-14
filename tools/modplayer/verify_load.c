@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "../../synth/mod_player.h"
+#include "../../players/mod_player.h"
 
 int main() {
     FILE* f = fopen("/mnt/e/Modules/genchorus2.mod", "rb");

@@ -10,7 +10,7 @@
  */
 
 #include "ahx_player.h"
-#include "ahx_synth_core.h"
+#include "../synth/ahx_synth_core.h"
 #include "tracker_modulator.h"
 #include "tracker_sequence.h"
 #include "tracker_voice.h"

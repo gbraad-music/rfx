@@ -128,6 +128,10 @@ int synth_sid_get_sync(SynthSID* sid, uint8_t voice);
 void synth_sid_set_pitch_bend(SynthSID* sid, uint8_t voice, float bend);
 float synth_sid_get_pitch_bend(SynthSID* sid, uint8_t voice);
 
+// TEST bit (resets oscillator phase, silences voice)
+void synth_sid_set_test(SynthSID* sid, uint8_t voice, int enabled);
+int synth_sid_get_test(SynthSID* sid, uint8_t voice);
+
 // ============================================================================
 // Filter Parameters
 // ============================================================================

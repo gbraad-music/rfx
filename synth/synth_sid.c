@@ -52,6 +52,7 @@ typedef struct {
     int ring_mod;          // Ring modulation enable
     int sync;              // Hard sync enable
     int gate;              // Gate on/off
+    int test;              // TEST bit (resets oscillator)
     float pitch_bend;      // Pitch bend amount (-1.0 to +1.0)
 
     // LFSR for noise (25-bit like real SID)
@@ -273,6 +274,7 @@ SynthSID* synth_sid_create(int sample_rate) {
         sid->voices[i].env_state = ENV_OFF;
         sid->voices[i].noise_lfsr = 0x1FFFFFF; // Initialize LFSR
         sid->voices[i].pitch_bend = 0.0f; // No bend initially
+        sid->voices[i].test = 0; // TEST bit off
     }
 
     // Initialize filter
@@ -352,6 +354,13 @@ void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_
         // Process each voice
         for (int v = 0; v < SID_VOICES; v++) {
             SIDVoice* voice = &sid->voices[v];
+
+            // TEST bit: reset oscillator and silence voice
+            if (voice->test) {
+                voice->phase = 0;
+                voice->noise_lfsr = 0x1FFFFFF; // Reset LFSR to initial state
+                continue; // Skip processing (voice is silenced)
+            }
 
             // Update envelope
             update_envelope(voice, delta_time);
@@ -569,4 +578,14 @@ void synth_sid_set_pitch_bend(SynthSID* sid, uint8_t voice, float bend) {
 float synth_sid_get_pitch_bend(SynthSID* sid, uint8_t voice) {
     if (!sid || voice >= SID_VOICES) return 0.0f;
     return sid->voices[voice].pitch_bend;
+}
+
+void synth_sid_set_test(SynthSID* sid, uint8_t voice, int enabled) {
+    if (!sid || voice >= SID_VOICES) return;
+    sid->voices[voice].test = enabled;
+}
+
+int synth_sid_get_test(SynthSID* sid, uint8_t voice) {
+    if (!sid || voice >= SID_VOICES) return 0;
+    return sid->voices[voice].test;
 }

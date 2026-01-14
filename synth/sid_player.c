@@ -414,6 +414,9 @@ static void handle_sid_voice_control(SidPlayer* player, uint8_t voice, uint8_t v
 
     synth_sid_set_waveform(player->synth, voice, sid_waveform);
 
+    /* TEST bit (resets oscillator) */
+    synth_sid_set_test(player->synth, voice, (value & 0x08) != 0);
+
     /* Sync and ring modulation */
     synth_sid_set_sync(player->synth, voice, (value & 0x02) != 0);
     synth_sid_set_ring_mod(player->synth, voice, (value & 0x04) != 0);

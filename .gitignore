@@ -60,3 +60,6 @@ Thumbs.db
 /tools/*.wav
 /tools/*.png
 
+# web
+web/players/
+web/synths/

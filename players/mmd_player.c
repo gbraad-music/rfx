@@ -10,6 +10,7 @@
 #include "mmd_player.h"
 #include "tracker_voice.h"
 #include "tracker_mixer.h"
+#include "pattern_sequencer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -96,6 +97,11 @@ static const uint16_t period_table[12 * 10] = {
     // Octave 9
     3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2, 2
 };
+
+// Forward declarations for callbacks
+static void mmd_on_tick(void* user_data, uint8_t tick);
+static void mmd_on_row(void* user_data, uint16_t pattern_index,
+                       uint16_t pattern_number, uint16_t row);
 
 // MMD2 Sample structure
 typedef struct {
@@ -267,6 +273,9 @@ struct MedPlayer {
     uint8_t track_volumes[MAX_CHANNELS];
     int8_t track_pans[MAX_CHANNELS];
 
+    // Pattern sequencer (NEW - handles timing/position/flow control)
+    PatternSequencer* sequencer;
+
     // Playback state
     bool playing;
     bool disable_looping;   // If true, stop playback instead of looping
@@ -298,6 +307,16 @@ MedPlayer* med_player_create(void) {
     MedPlayer* player = (MedPlayer*)calloc(1, sizeof(MedPlayer));
     if (!player) return NULL;
 
+    // Create pattern sequencer
+    player->sequencer = pattern_sequencer_create();
+    if (!player->sequencer) {
+        free(player);
+        return NULL;
+    }
+
+    // Set sequencer to tick-based mode (MMD uses BPM timing like MOD)
+    pattern_sequencer_set_mode(player->sequencer, PS_MODE_TICK_BASED);
+
     player->bpm = 125;
     player->speed = 6;
 
@@ -314,6 +333,11 @@ MedPlayer* med_player_create(void) {
 // Destroy player instance
 void med_player_destroy(MedPlayer* player) {
     if (!player) return;
+
+    // Destroy pattern sequencer
+    if (player->sequencer) {
+        pattern_sequencer_destroy(player->sequencer);
+    }
 
     // Free sample data
     for (int i = 0; i < MAX_SAMPLES; i++) {
@@ -1211,6 +1235,24 @@ bool med_player_load(MedPlayer* player, const uint8_t* data, size_t size) {
 
     // fprintf(stderr, "med_player: File loaded successfully!\n");
 
+    // Configure pattern sequencer with song structure
+    pattern_sequencer_set_song(player->sequencer,
+                              player->play_seq,
+                              player->song_length,
+                              player->blocks[0].num_lines);  // Use first block's line count as default
+    pattern_sequencer_set_speed(player->sequencer, player->speed);
+    pattern_sequencer_set_bpm(player->sequencer, player->bpm);
+    pattern_sequencer_set_loop_range(player->sequencer, player->loop_start, player->loop_end);
+
+    // Set up sequencer callbacks
+    PatternSequencerCallbacks callbacks = {
+        .on_tick = mmd_on_tick,
+        .on_row = mmd_on_row,
+        .on_pattern_change = NULL,
+        .on_song_end = NULL
+    };
+    pattern_sequencer_set_callbacks(player->sequencer, &callbacks, player);
+
     return true;
 }
 
@@ -1473,7 +1515,30 @@ static void process_tick(MedPlayer* player) {
                 chan->portamento_up = 0;
                 chan->portamento_down = 0;
             }
-            // TODO: Add more effects (vibrato, arpeggio, etc.)
+
+            // Flow control effects (NEW - now supported via pattern_sequencer)
+            else if (note->command == 0x0B) {  // Position Jump - jump to pattern
+                pattern_sequencer_position_jump(player->sequencer, note->param);
+            }
+            else if (note->command == 0x0D) {  // Pattern Break - skip to next pattern at row N
+                // Parameter is in BCD format: high nibble = tens, low nibble = ones
+                uint8_t row = ((note->param >> 4) * 10) + (note->param & 0x0F);
+                pattern_sequencer_pattern_break(player->sequencer, row);
+            }
+            else if (note->command == 0x0F) {  // Set speed/BPM
+                if (note->param > 0) {
+                    if (note->param < 32) {
+                        // Speed (ticks per row)
+                        player->speed = note->param;
+                        pattern_sequencer_set_speed(player->sequencer, note->param);
+                    } else {
+                        // BPM
+                        player->bpm = note->param;
+                        pattern_sequencer_set_bpm(player->sequencer, note->param);
+                    }
+                }
+            }
+            // TODO: Add more effects (vibrato, arpeggio, E-commands, etc.)
         }
 
         // Fire position callback
@@ -1589,10 +1654,127 @@ static void process_tick(MedPlayer* player) {
     }
 }
 
+// Pattern sequencer callbacks
+static void mmd_on_tick(void* user_data, uint8_t tick) {
+    MedPlayer* player = (MedPlayer*)user_data;
+
+    // Process per-tick portamento effects for all channels
+    for (int ch = 0; ch < player->num_tracks; ch++) {
+        MedChannel* chan = &player->channels[ch];
+
+        // Portamento up
+        if (chan->portamento_up > 0 && chan->period > 0) {
+            chan->period -= chan->portamento_up;
+            if (chan->period < 113) chan->period = 113;
+        }
+
+        // Portamento down
+        if (chan->portamento_down > 0 && chan->period > 0) {
+            chan->period += chan->portamento_down;
+            if (chan->period > 856) chan->period = 856;
+        }
+    }
+}
+
+static void mmd_on_row(void* user_data, uint16_t pattern_index,
+                      uint16_t pattern_number, uint16_t row) {
+    MedPlayer* player = (MedPlayer*)user_data;
+
+    // Update position tracking (for compatibility)
+    player->current_order = pattern_index;
+    player->current_pattern = pattern_number;
+    player->current_row = row;
+
+    // Get block/pattern
+    MedBlock* block = &player->blocks[pattern_number];
+    if (!block->notes) return;
+
+    // Process all channels for this row
+    for (int ch = 0; ch < player->num_tracks; ch++) {
+        int note_idx = row * block->num_tracks + ch;
+        MMD2Note* note = &block->notes[note_idx];
+        MedChannel* chan = &player->channels[ch];
+
+        // Trigger new note if present
+        if (note->note > 0) {
+            bool inst_changed = trigger_note(player, ch, note->note, note->instrument);
+
+            // When instrument NUMBER is specified, ALWAYS reset volume to that instrument's default
+            if (note->instrument > 0 && chan->sample) {
+                uint8_t default_vol = chan->sample->volume;
+                chan->volume = default_vol * 2;
+                if (chan->volume > 127) chan->volume = 127;
+                chan->current_volume = chan->volume;
+                chan->volume_set = true;
+            } else if (!chan->volume_set) {
+                chan->volume = player->max_volume;
+                chan->current_volume = player->max_volume;
+                chan->volume_set = true;
+            }
+        }
+
+        // Process volume command AFTER note trigger
+        if (note->command == 0x0C) {  // Set volume
+            if (player->vol_hex) {
+                chan->volume = (note->param > 127) ? 127 : note->param;
+            } else {
+                uint8_t new_vol = (note->param > 64) ? 64 : note->param;
+                chan->volume = new_vol * 2;
+                if (chan->volume > 127) chan->volume = 127;
+            }
+            chan->volume_set = true;
+            chan->current_volume = chan->volume;
+        }
+
+        // Process other effects
+        if (note->command == 0x01) {  // Portamento up
+            if (note->param != 0) {
+                chan->portamento_up = note->param;
+                chan->portamento_down = 0;
+            }
+        } else if (note->command == 0x02) {  // Portamento down
+            if (note->param != 0) {
+                chan->portamento_down = note->param;
+                chan->portamento_up = 0;
+            }
+        } else if (note->command == 0x00 && note->param == 0x00) {
+            chan->portamento_up = 0;
+            chan->portamento_down = 0;
+        }
+        // Flow control effects
+        else if (note->command == 0x0B) {  // Position Jump
+            pattern_sequencer_position_jump(player->sequencer, note->param);
+        }
+        else if (note->command == 0x0D) {  // Pattern Break
+            uint8_t break_row = ((note->param >> 4) * 10) + (note->param & 0x0F);
+            pattern_sequencer_pattern_break(player->sequencer, break_row);
+        }
+        else if (note->command == 0x0F) {  // Set speed/BPM
+            if (note->param > 0) {
+                if (note->param < 32) {
+                    player->speed = note->param;
+                    pattern_sequencer_set_speed(player->sequencer, note->param);
+                } else {
+                    player->bpm = note->param;
+                    pattern_sequencer_set_bpm(player->sequencer, note->param);
+                }
+            }
+        }
+    }
+
+    // Fire position callback
+    if (player->position_callback) {
+        player->position_callback(player->current_order, player->current_pattern,
+                                player->current_row, player->callback_user_data);
+    }
+}
+
 // Start playback
 void med_player_start(MedPlayer* player) {
     if (player) {
         player->playing = true;
+        // Start pattern sequencer (handles position initialization and first row processing)
+        pattern_sequencer_start(player->sequencer);
         // fprintf(stderr, "med_player: Playback started\n");
     }
 }
@@ -1601,6 +1783,8 @@ void med_player_start(MedPlayer* player) {
 void med_player_stop(MedPlayer* player) {
     if (player) {
         player->playing = false;
+        // Stop pattern sequencer
+        pattern_sequencer_stop(player->sequencer);
         // fprintf(stderr, "med_player: Playback stopped\n");
     }
 }
@@ -1620,15 +1804,16 @@ void med_player_process_channels(MedPlayer* player,
                                  float sample_rate) {
     if (!player || !left_out || !right_out) return;
 
-    // Calculate samples per tick
-    // Standard ProTracker formula: samples_per_tick = sample_rate * 2.5 / BPM
-    // Speed (ticks/row) doesn't affect tick length, only how many ticks per row
-    player->samples_per_tick = (uint32_t)(sample_rate * 2.5f / (float)player->bpm);
+    // Process pattern sequencer timing (calls mmd_on_tick and mmd_on_row callbacks)
+    if (player->playing) {
+        pattern_sequencer_process(player->sequencer, frames, sample_rate);
+    }
 
     // Volume ramp rate: 10ms ramp time for smooth transitions
     float ramp_time = 0.010f;  // 10 milliseconds
     float ramp_rate = player->max_volume / (ramp_time * sample_rate);
 
+    // Render audio for each frame
     for (size_t i = 0; i < frames; i++) {
         float left = 0.0f;
         float right = 0.0f;
@@ -1792,13 +1977,6 @@ void med_player_process_channels(MedPlayer* player,
 
         left_out[i] = left;
         right_out[i] = right;
-
-        // Process tick timing
-        player->sample_counter++;
-        if (player->sample_counter >= player->samples_per_tick) {
-            player->sample_counter = 0;
-            process_tick(player);
-        }
     }
 }
 
@@ -1820,12 +1998,7 @@ void med_player_get_position(const MedPlayer* player, uint8_t* out_pattern, uint
 void med_player_set_position(MedPlayer* player, uint8_t pattern, uint16_t row) {
     if (!player) return;
     // Pattern parameter is actually order index (to match MOD player behavior)
-    player->current_order = pattern;
-    if (player->play_seq && player->current_order < player->song_length) {
-        player->current_pattern = player->play_seq[player->current_order];
-    }
-    player->current_row = row;
-    player->tick = 0;
+    pattern_sequencer_set_position(player->sequencer, pattern, row);
 }
 
 // Get song length
@@ -1867,7 +2040,10 @@ float med_player_get_channel_volume(const MedPlayer* player, uint8_t channel) {
 // Set BPM
 void med_player_set_bpm(MedPlayer* player, uint16_t bpm) {
     if (!player) return;
-    if (bpm > 0) player->bpm = bpm;
+    if (bpm > 0) {
+        player->bpm = bpm;
+        pattern_sequencer_set_bpm(player->sequencer, bpm);
+    }
 }
 
 // Get BPM
@@ -1886,6 +2062,9 @@ void med_player_set_loop_range(MedPlayer* player, uint16_t start_order, uint16_t
 
     player->loop_start = start_order;
     player->loop_end = end_order;
+
+    // Update pattern sequencer loop range
+    pattern_sequencer_set_loop_range(player->sequencer, start_order, end_order);
 }
 
 // Set disable looping

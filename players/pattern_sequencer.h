@@ -30,6 +30,25 @@ extern "C" {
 typedef struct PatternSequencer PatternSequencer;
 
 /**
+ * Timing mode: controls how samples_per_tick is calculated
+ */
+typedef enum {
+    /**
+     * Tick-based mode (MOD/MMD): Uses BPM for timing
+     * samples_per_tick = (2.5 * sample_rate) / bpm
+     * One "tick" represents a ProTracker CIA timer period
+     */
+    PS_MODE_TICK_BASED,
+
+    /**
+     * Frame-based mode (AHX/HVL): Uses fixed 50Hz frame rate
+     * samples_per_tick = sample_rate / 50.0
+     * One "tick" represents a 50Hz PAL video frame (20ms)
+     */
+    PS_MODE_FRAME_BASED
+} PatternSequencerMode;
+
+/**
  * Sequencer event callbacks
  * These allow format-specific implementations to hook into the timing engine
  */
@@ -68,6 +87,7 @@ typedef struct {
 /**
  * Create a new pattern sequencer
  * Returns NULL on allocation failure
+ * Default mode: PS_MODE_TICK_BASED
  */
 PatternSequencer* pattern_sequencer_create(void);
 
@@ -75,6 +95,16 @@ PatternSequencer* pattern_sequencer_create(void);
  * Destroy a pattern sequencer
  */
 void pattern_sequencer_destroy(PatternSequencer* seq);
+
+/**
+ * Set timing mode
+ * @param mode PS_MODE_TICK_BASED (MOD/MMD) or PS_MODE_FRAME_BASED (AHX)
+ *
+ * IMPORTANT: Call this BEFORE pattern_sequencer_start()
+ * - Tick-based: BPM controls timing, speed controls ticks per row
+ * - Frame-based: Fixed 50Hz, speed (tempo) controls frames per row
+ */
+void pattern_sequencer_set_mode(PatternSequencer* seq, PatternSequencerMode mode);
 
 /**
  * Set callbacks for format-specific behavior

@@ -459,12 +459,19 @@ void mod_player_set_loop_range(ModPlayer* player, uint8_t start_pattern, uint8_t
 
     player->loop_start = start_pattern;
     player->loop_end = end_pattern;
+
+    // Update sequencer loop range
+    pattern_sequencer_set_loop_range(player->sequencer, start_pattern, end_pattern);
 }
 
 void mod_player_get_position(const ModPlayer* player, uint8_t* pattern, uint16_t* row) {
     if (!player) return;
-    if (pattern) *pattern = player->current_pattern_index;
-    if (row) *row = player->current_row;
+
+    uint16_t pattern_index, pattern_num, row16;
+    pattern_sequencer_get_position(player->sequencer, &pattern_index, &pattern_num, &row16);
+
+    if (pattern) *pattern = (uint8_t)pattern_index;
+    if (row) *row = row16;
 }
 
 void mod_player_set_position_callback(ModPlayer* player, ModPlayerPositionCallback callback, void* user_data) {
@@ -476,9 +483,7 @@ void mod_player_set_position_callback(ModPlayer* player, ModPlayerPositionCallba
 void mod_player_set_position(ModPlayer* player, uint8_t pattern, uint16_t row) {
     if (!player) return;
     if (pattern < player->song_length && row < MOD_PATTERN_ROWS) {
-        player->current_pattern_index = pattern;
-        player->current_row = row;
-        player->tick = 0;
+        pattern_sequencer_set_position(player->sequencer, pattern, row);
     }
 }
 
@@ -487,12 +492,14 @@ void mod_player_set_bpm(ModPlayer* player, uint8_t bpm) {
     if (bpm < 32) bpm = 32;
     if (bpm > 255) bpm = 255;
     player->bpm = bpm;
+    pattern_sequencer_set_bpm(player->sequencer, bpm);
 }
 
 void mod_player_set_speed(ModPlayer* player, uint8_t speed) {
     if (!player) return;
     if (speed == 0) speed = 1;
     player->speed = speed;
+    pattern_sequencer_set_speed(player->sequencer, speed);
 }
 
 void mod_player_set_channel_mute(ModPlayer* player, uint8_t channel, bool muted) {
@@ -540,6 +547,8 @@ uint8_t mod_player_get_song_length(const ModPlayer* player) {
 void mod_player_set_disable_looping(ModPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
+    // Update sequencer looping (inverse logic: disable -> !enabled)
+    pattern_sequencer_set_looping(player->sequencer, !disable);
 }
 
 // Process note for a channel
@@ -725,10 +734,7 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
             break;
 
         case 0xB:  // Position jump - jump to pattern
-            // Store for potential B+D combination
-            player->position_jump_pending = true;
-            player->jump_to_pattern = note->effect_param;
-            player->jump_to_row = 0;  // Default to row 0 if no D effect
+            pattern_sequencer_position_jump(player->sequencer, note->effect_param);
             break;
 
         case 0xC:  // Set volume
@@ -741,16 +747,7 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                 // Parameter is in BCD format: high nibble = tens, low nibble = ones
                 uint8_t row = ((note->effect_param >> 4) * 10) + (note->effect_param & 0x0F);
                 if (row >= MOD_PATTERN_ROWS) row = 0;
-
-                // If B was also on this row, use B's pattern; otherwise next pattern
-                if (!player->position_jump_pending) {
-                    player->jump_to_pattern = player->current_pattern_index + 1;
-                    if (player->jump_to_pattern >= player->song_length) {
-                        player->jump_to_pattern = player->loop_start;
-                    }
-                }
-                player->jump_to_row = row;
-                player->position_jump_pending = true;
+                pattern_sequencer_pattern_break(player->sequencer, row);
             }
             break;
 
@@ -782,24 +779,10 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
                     case 0x6:  // Pattern loop
                         if (sub_param == 0) {
                             // E60: Set loop start point
-                            player->pattern_loop_row = player->current_row;
+                            pattern_sequencer_set_pattern_loop_start(player->sequencer);
                         } else {
                             // E6x: Loop back x times
-                            if (player->pattern_loop_count == 0) {
-                                // First encounter - set counter to x (will loop x times)
-                                player->pattern_loop_count = sub_param;
-                                player->pattern_loop_pending = true;
-                            } else {
-                                // Subsequent encounters - decrement and check
-                                player->pattern_loop_count--;
-                                if (player->pattern_loop_count > 0) {
-                                    // Still more loops to go - set flag to jump back
-                                    player->pattern_loop_pending = true;
-                                } else {
-                                    // Done looping - reset counter for next time
-                                    player->pattern_loop_count = 0;
-                                }
-                            }
+                            pattern_sequencer_execute_pattern_loop(player->sequencer, sub_param);
                         }
                         break;
 
@@ -831,10 +814,7 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
 
                     case 0xE:  // Pattern delay
                         // Delay pattern by N rows (repeat current row N times)
-                        // Only trigger on first encounter, not during repeats
-                        if (!player->in_pattern_delay_repeat) {
-                            player->pattern_delay = sub_param;
-                        }
+                        pattern_sequencer_pattern_delay(player->sequencer, sub_param);
                         break;
                 }
             }
@@ -843,9 +823,13 @@ static void process_note(ModPlayer* player, uint8_t channel, const ModNote* note
         case 0xF:  // Set speed/BPM
             if (note->effect_param > 0) {
                 if (note->effect_param < 32) {
-                    player->speed = note->effect_param;
+                    // Speed (ticks per row)
+                    pattern_sequencer_set_speed(player->sequencer, note->effect_param);
+                    player->speed = note->effect_param;  // Keep in sync for legacy code
                 } else {
-                    player->bpm = note->effect_param;
+                    // BPM
+                    pattern_sequencer_set_bpm(player->sequencer, note->effect_param);
+                    player->bpm = note->effect_param;  // Keep in sync for legacy code
                 }
             }
             break;
@@ -1109,117 +1093,13 @@ void mod_player_process_channels(ModPlayer* player,
                                   uint32_t sample_rate) {
     if (!player || !left || !right) return;
 
-    // Calculate samples per tick
-    // BPM to samples per tick: (2.5 * sample_rate) / BPM
-    // NOTE: Speed (ticks/row) does NOT affect tick duration!
-    player->samples_per_tick = (2.5f * sample_rate) / (float)player->bpm;
+    // Process pattern sequencer timing (calls mod_on_tick and mod_on_row callbacks)
+    if (player->playing) {
+        pattern_sequencer_process(player->sequencer, frames, sample_rate);
+    }
 
+    // Render audio for each frame
     for (uint32_t i = 0; i < frames; i++) {
-        // Process player timing
-        if (player->playing) {
-            if (player->sample_accumulator >= player->samples_per_tick) {
-                player->sample_accumulator -= player->samples_per_tick;
-                player->tick++;
-
-                if (player->tick >= player->speed) {
-                    // Move to next row
-                    player->tick = 0;
-
-                    // Handle pattern delay (EEx - repeat row N times)
-                    if (player->pattern_delay > 0) {
-                        player->pattern_delay--;
-                        player->in_pattern_delay_repeat = true;  // Mark as repeat
-                        // Don't advance row, just process it again
-                    }
-                    // Handle pattern loop (E6x - jump back to loop start)
-                    else if (player->pattern_loop_pending) {
-                        player->pattern_loop_pending = false;
-                        player->current_row = player->pattern_loop_row;
-                        player->in_pattern_delay_repeat = false;  // New row
-                        trigger_position_callback(player);  // Notify position change
-                        // Don't increment, we're jumping back
-                    } else {
-                        player->current_row++;
-                        player->in_pattern_delay_repeat = false;  // New row
-
-                        if (player->current_row >= MOD_PATTERN_ROWS) {
-                            // Move to next pattern
-                            player->current_row = 0;
-                            player->current_pattern_index++;
-
-                            // Reset pattern loop state when changing patterns
-                            player->pattern_loop_row = 0;
-                            player->pattern_loop_count = 0;
-                            player->pattern_loop_pending = false;
-
-                            // Handle loop
-                            if (player->current_pattern_index > player->loop_end) {
-                                if (player->disable_looping) {
-                                    // Stop playback instead of looping
-                                    player->playing = false;
-                                    return;
-                                } else {
-                                    player->current_pattern_index = player->loop_start;
-                                }
-                            }
-                        }
-
-                        trigger_position_callback(player);  // Notify position change
-                    }
-
-                    // Process notes for this row
-                    if (player->current_pattern_index < player->song_length) {
-                        uint8_t pattern_num = player->song_positions[player->current_pattern_index];
-
-                        if (pattern_num < player->num_patterns) {
-                            // Clear position jump flag at start of row
-                            player->position_jump_pending = false;
-
-                            // Process all channels
-                            for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
-                                uint32_t pattern_index = pattern_num * (MOD_MAX_CHANNELS * MOD_PATTERN_ROWS) +
-                                                        player->current_row * MOD_MAX_CHANNELS + c;
-                                const ModNote* note = &player->patterns[pattern_index];
-                                process_note(player, c, note);
-                            }
-
-                            // Apply position jump if B or D was triggered
-                            if (player->position_jump_pending) {
-                                // Check if we're jumping backwards (looping)
-                                if (player->disable_looping && player->jump_to_pattern <= player->current_pattern_index) {
-                                    player->playing = false;
-                                    return;
-                                }
-
-                                player->current_pattern_index = player->jump_to_pattern;
-                                player->current_row = player->jump_to_row;
-                                player->position_jump_pending = false;
-
-                                // Reset pattern loop state when jumping
-                                player->pattern_loop_row = 0;
-                                player->pattern_loop_count = 0;
-                                player->pattern_loop_pending = false;
-                                player->pattern_delay = 0;  // Reset pattern delay
-                                player->in_pattern_delay_repeat = false;  // Clear delay repeat flag
-
-                                trigger_position_callback(player);  // Notify position change
-
-                                // Don't let row advance happen naturally
-                                player->current_row--;  // Will be incremented by main loop
-                            }
-                        }
-                    }
-                }
-
-                // Process per-tick effects
-                for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
-                    process_effects(player, c);
-                }
-            }
-
-            player->sample_accumulator += 1.0f;
-        }
-
         // Render each channel and optionally write to individual outputs
         TrackerMixerChannel mix_channels[MOD_MAX_CHANNELS];
         for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {

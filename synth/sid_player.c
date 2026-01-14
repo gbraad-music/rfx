@@ -5,9 +5,12 @@
 
 #include "sid_player.h"
 #include "synth_sid.h"
+#include "cpu_6502.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <math.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -47,32 +50,13 @@ typedef struct {
     uint16_t reserved;       /* Reserved */
 } __attribute__((packed)) PsidHeader;
 
-/* 6502 CPU state */
-typedef struct {
-    uint16_t pc;        /* Program counter */
-    uint8_t a;          /* Accumulator */
-    uint8_t x;          /* X register */
-    uint8_t y;          /* Y register */
-    uint8_t sp;         /* Stack pointer */
-    uint8_t p;          /* Processor status */
-
-    /* Status flags */
-    uint8_t flag_n;     /* Negative */
-    uint8_t flag_v;     /* Overflow */
-    uint8_t flag_b;     /* Break */
-    uint8_t flag_d;     /* Decimal */
-    uint8_t flag_i;     /* Interrupt disable */
-    uint8_t flag_z;     /* Zero */
-    uint8_t flag_c;     /* Carry */
-} CPU6502;
-
 /* Player state */
 struct SidPlayer {
     /* SID synthesizer */
     SynthSID* synth;
 
     /* CPU and memory */
-    CPU6502 cpu;
+    CPU6502Context cpu_ctx;
     uint8_t memory[MEMORY_SIZE];
 
     /* Song information */
@@ -132,13 +116,19 @@ static inline uint32_t read_be32(const uint8_t* data) {
 /* Forward declaration */
 static void handle_sid_voice_control(SidPlayer* player, uint8_t voice, uint8_t value);
 
-static uint8_t mem_read(SidPlayer* player, uint16_t addr) {
+/* Memory access callbacks for CPU emulator */
+static uint8_t cpu_mem_read(void* userdata, uint16_t addr) {
+    SidPlayer* player = (SidPlayer*)userdata;
     /* SID registers (read mostly return 0 or noise) */
     if (addr >= SID_BASE && addr < SID_BASE + 0x20) {
         return player->sid_regs[addr - SID_BASE];
     }
-
     return player->memory[addr];
+}
+
+/* Legacy wrapper (for internal use) */
+static uint8_t mem_read(SidPlayer* player, uint16_t addr) {
+    return cpu_mem_read(player, addr);
 }
 
 static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
@@ -377,24 +367,14 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
     player->memory[addr] = value;
 }
 
+/* CPU memory write callback */
+static void cpu_mem_write(void* userdata, uint16_t addr, uint8_t value) {
+    mem_write((SidPlayer*)userdata, addr, value);
+}
+
 /* ============================================================================
- * 6502 CPU Emulation (Minimal - just enough for SID players)
+ * SID Control
  * ============================================================================ */
-
-static void cpu_push(SidPlayer* player, uint8_t value) {
-    player->memory[0x0100 + player->cpu.sp] = value;
-    player->cpu.sp--;
-}
-
-static uint8_t cpu_pull(SidPlayer* player) {
-    player->cpu.sp++;
-    return player->memory[0x0100 + player->cpu.sp];
-}
-
-static void cpu_set_nz(CPU6502* cpu, uint8_t value) {
-    cpu->flag_z = (value == 0);
-    cpu->flag_n = (value & 0x80) != 0;
-}
 
 /* Helper function to handle SID control register writes */
 static void handle_sid_voice_control(SidPlayer* player, uint8_t voice, uint8_t value) {
@@ -460,1027 +440,7 @@ static void handle_sid_voice_control(SidPlayer* player, uint8_t voice, uint8_t v
     }
 }
 
-/* Execute one instruction, return number of cycles */
-static int cpu_step(SidPlayer* player) {
-    CPU6502* cpu = &player->cpu;
-    uint16_t pc_start = cpu->pc;
-    uint8_t opcode = mem_read(player, cpu->pc++);
-    int cycles = 2;  /* Most instructions are 2+ cycles */
 
-    static int unknown_count = 0;
-    static int instr_count = 0;
-    bool is_unknown = false;
-
-    switch (opcode) {
-        /* ADC - Add with Carry */
-        case 0x65: /* Zero Page */ {
-            uint8_t value = mem_read(player, mem_read(player, cpu->pc++));
-            uint16_t result = cpu->a + value + cpu->flag_c;
-            cpu->flag_c = result > 0xFF;
-            cpu->flag_v = ((cpu->a ^ result) & (value ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 3;
-            break;
-        }
-        case 0x69: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            uint16_t result = cpu->a + value + cpu->flag_c;
-            cpu->flag_c = result > 0xFF;
-            cpu->flag_v = ((cpu->a ^ result) & (value ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        }
-        case 0x6D: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a + value + cpu->flag_c;
-            cpu->flag_c = result > 0xFF;
-            cpu->flag_v = ((cpu->a ^ result) & (value ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0x79: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a + value + cpu->flag_c;
-            cpu->flag_c = result > 0xFF;
-            cpu->flag_v = ((cpu->a ^ result) & (value ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0x7D: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a + value + cpu->flag_c;
-            cpu->flag_c = result > 0xFF;
-            cpu->flag_v = ((cpu->a ^ result) & (value ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-
-        /* AND - Logical AND */
-        case 0x25: /* Zero Page */
-            cpu->a &= mem_read(player, mem_read(player, cpu->pc++));
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 3;
-            break;
-        case 0x29: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            cpu->a &= value;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        }
-        case 0x2D: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            cpu->a &= mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0x39: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            cpu->a &= mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0x3D: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            cpu->a &= mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-
-        /* BCC - Branch if Carry Clear */
-        case 0x90: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (!cpu->flag_c) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BCS - Branch if Carry Set */
-        case 0xB0: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (cpu->flag_c) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BEQ - Branch if Equal (Z set) */
-        case 0xF0: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (cpu->flag_z) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BIT - Test Bits */
-        case 0x24: /* Zero Page */ {
-            uint8_t value = mem_read(player, mem_read(player, cpu->pc++));
-            cpu->flag_z = (cpu->a & value) == 0;
-            cpu->flag_n = (value & 0x80) != 0;
-            cpu->flag_v = (value & 0x40) != 0;
-            cycles = 3;
-            break;
-        }
-        case 0x2C: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_z = (cpu->a & value) == 0;
-            cpu->flag_n = (value & 0x80) != 0;
-            cpu->flag_v = (value & 0x40) != 0;
-            cycles = 4;
-            break;
-        }
-
-        /* BMI - Branch if Minus (N set) */
-        case 0x30: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (cpu->flag_n) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BNE - Branch if Not Equal (Z clear) */
-        case 0xD0: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (!cpu->flag_z) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BPL - Branch if Plus (N clear) */
-        case 0x10: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (!cpu->flag_n) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BVC - Branch if Overflow Clear */
-        case 0x50: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (!cpu->flag_v) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* BVS - Branch if Overflow Set */
-        case 0x70: {
-            int8_t offset = (int8_t)mem_read(player, cpu->pc++);
-            if (cpu->flag_v) {
-                cpu->pc += offset;
-                cycles = 3;
-            }
-            break;
-        }
-
-        /* ASL - Arithmetic Shift Left */
-        case 0x0A: /* Accumulator */
-            cpu->flag_c = (cpu->a & 0x80) != 0;
-            cpu->a <<= 1;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        case 0x06: { /* Zero Page */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint8_t value = mem_read(player, zp);
-            cpu->flag_c = (value & 0x80) != 0;
-            value <<= 1;
-            mem_write(player, zp, value);
-            cpu_set_nz(cpu, value);
-            cycles = 5;
-            break;
-        }
-        case 0x0E: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_c = (value & 0x80) != 0;
-            value <<= 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0x1E: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_c = (value & 0x80) != 0;
-            value <<= 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 7;
-            break;
-        }
-
-        /* CLC - Clear Carry */
-        case 0x18:
-            cpu->flag_c = 0;
-            break;
-
-        /* CLD - Clear Decimal */
-        case 0xD8:
-            cpu->flag_d = 0;
-            break;
-
-        /* CLI - Clear Interrupt Disable */
-        case 0x58:
-            cpu->flag_i = 0;
-            break;
-
-        /* CMP - Compare Accumulator */
-        case 0xC5: { /* Zero Page */
-            uint8_t value = mem_read(player, mem_read(player, cpu->pc++));
-            uint16_t result = cpu->a - value;
-            cpu->flag_c = cpu->a >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            cycles = 3;
-            break;
-        }
-        case 0xC9: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            uint16_t result = cpu->a - value;
-            cpu->flag_c = cpu->a >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            break;
-        }
-        case 0xCD: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value;
-            cpu->flag_c = cpu->a >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            cycles = 4;
-            break;
-        }
-        case 0xD9: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value;
-            cpu->flag_c = cpu->a >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            cycles = 4;
-            break;
-        }
-        case 0xDD: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value;
-            cpu->flag_c = cpu->a >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            cycles = 4;
-            break;
-        }
-
-        /* CPX - Compare X */
-        case 0xE0: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            uint16_t result = cpu->x - value;
-            cpu->flag_c = cpu->x >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            break;
-        }
-        case 0xEC: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->x - value;
-            cpu->flag_c = cpu->x >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            cycles = 4;
-            break;
-        }
-
-        /* CPY - Compare Y */
-        case 0xC0: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            uint16_t result = cpu->y - value;
-            cpu->flag_c = cpu->y >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            break;
-        }
-        case 0xCC: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->y - value;
-            cpu->flag_c = cpu->y >= value;
-            cpu_set_nz(cpu, result & 0xFF);
-            cycles = 4;
-            break;
-        }
-
-        /* DEC - Decrement Memory */
-        case 0xC6: /* Zero Page */ {
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint8_t value = mem_read(player, zp) - 1;
-            mem_write(player, zp, value);
-            cpu_set_nz(cpu, value);
-            cycles = 5;
-            break;
-        }
-        case 0xCE: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr) - 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0xDE: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr) - 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 7;
-            break;
-        }
-
-        /* DEX - Decrement X */
-        case 0xCA:
-            cpu->x--;
-            cpu_set_nz(cpu, cpu->x);
-            break;
-
-        /* DEY - Decrement Y */
-        case 0x88:
-            cpu->y--;
-            cpu_set_nz(cpu, cpu->y);
-            break;
-
-        /* INC - Increment Memory */
-        case 0xE6: /* Zero Page */ {
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint8_t value = mem_read(player, zp) + 1;
-            mem_write(player, zp, value);
-            cpu_set_nz(cpu, value);
-            cycles = 5;
-            break;
-        }
-        case 0xEE: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr) + 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0xFE: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr) + 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 7;
-            break;
-        }
-
-        /* INX - Increment X */
-        case 0xE8:
-            cpu->x++;
-            cpu_set_nz(cpu, cpu->x);
-            break;
-
-        /* INY - Increment Y */
-        case 0xC8:
-            cpu->y++;
-            cpu_set_nz(cpu, cpu->y);
-            break;
-
-        /* JMP - Jump */
-        case 0x4C: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            cpu->pc = addr;
-            cycles = 3;
-            break;
-        }
-        case 0x6C: { /* Indirect */
-            uint16_t ptr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            /* Handle 6502 page boundary bug */
-            uint16_t addr;
-            if ((ptr & 0xFF) == 0xFF) {
-                addr = mem_read(player, ptr) | (mem_read(player, ptr & 0xFF00) << 8);
-            } else {
-                addr = mem_read(player, ptr) | (mem_read(player, ptr + 1) << 8);
-            }
-            cpu->pc = addr;
-            cycles = 5;
-            break;
-        }
-
-        /* JSR - Jump to Subroutine */
-        case 0x20: {
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t ret_addr = cpu->pc - 1;
-            cpu_push(player, (ret_addr >> 8) & 0xFF);
-            cpu_push(player, ret_addr & 0xFF);
-            cpu->pc = addr;
-            cycles = 6;
-            break;
-        }
-
-        /* LDA - Load Accumulator */
-        case 0xA5: /* Zero Page */
-            cpu->a = mem_read(player, mem_read(player, cpu->pc++));
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 3;
-            break;
-        case 0xA9: /* Immediate */
-            cpu->a = mem_read(player, cpu->pc++);
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        case 0xAD: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            cpu->a = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0xB9: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            cpu->a = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0xB1: { /* (Indirect),Y */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint16_t base = mem_read(player, zp) | (mem_read(player, (zp + 1) & 0xFF) << 8);
-            uint16_t addr = base + cpu->y;
-            cpu->a = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 5;
-            break;
-        }
-        case 0xBD: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            cpu->a = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-
-        /* LDX - Load X */
-        case 0xA2: /* Immediate */
-            cpu->x = mem_read(player, cpu->pc++);
-            cpu_set_nz(cpu, cpu->x);
-            break;
-        case 0xA6: /* Zero Page */
-            cpu->x = mem_read(player, mem_read(player, cpu->pc++));
-            cpu_set_nz(cpu, cpu->x);
-            cycles = 3;
-            break;
-        case 0xAE: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            cpu->x = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->x);
-            cycles = 4;
-            break;
-        }
-        case 0xBE: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            cpu->x = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->x);
-            cycles = 4;
-            break;
-        }
-
-        /* LDY - Load Y */
-        case 0xA0: /* Immediate */
-            cpu->y = mem_read(player, cpu->pc++);
-            cpu_set_nz(cpu, cpu->y);
-            break;
-        case 0xA4: /* Zero Page */
-            cpu->y = mem_read(player, mem_read(player, cpu->pc++));
-            cpu_set_nz(cpu, cpu->y);
-            cycles = 3;
-            break;
-        case 0xAC: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            cpu->y = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->y);
-            cycles = 4;
-            break;
-        }
-        case 0xBC: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            cpu->y = mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->y);
-            cycles = 4;
-            break;
-        }
-
-        /* LSR - Logical Shift Right */
-        case 0x4A: /* Accumulator */
-            cpu->flag_c = cpu->a & 0x01;
-            cpu->a >>= 1;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-
-        /* NOP - No Operation */
-        case 0xEA:
-            break;
-
-        /* ORA - Logical OR */
-        case 0x05: /* Zero Page */
-            cpu->a |= mem_read(player, mem_read(player, cpu->pc++));
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 3;
-            break;
-        case 0x09: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            cpu->a |= value;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        }
-        case 0x0D: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            cpu->a |= mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0x11: { /* (Indirect),Y */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint16_t base = mem_read(player, zp) | (mem_read(player, (zp + 1) & 0xFF) << 8);
-            uint16_t addr = base + cpu->y;
-            cpu->a |= mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 5;
-            break;
-        }
-        case 0x19: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            cpu->a |= mem_read(player, addr);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-
-        /* PHA - Push Accumulator */
-        case 0x48:
-            cpu_push(player, cpu->a);
-            cycles = 3;
-            break;
-
-        /* PLA - Pull Accumulator */
-        case 0x68:
-            cpu->a = cpu_pull(player);
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-
-        /* RTI - Return from Interrupt */
-        case 0x40:
-            cpu->p = cpu_pull(player);
-            cpu->pc = cpu_pull(player) | (cpu_pull(player) << 8);
-            cycles = 6;
-            break;
-
-        /* ROR - Rotate Right */
-        case 0x6A: { /* Accumulator */
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = cpu->a & 0x01;
-            cpu->a = (cpu->a >> 1) | (old_carry << 7);
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        }
-        case 0x66: { /* Zero Page */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint8_t value = mem_read(player, zp);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = value & 0x01;
-            value = (value >> 1) | (old_carry << 7);
-            mem_write(player, zp, value);
-            cpu_set_nz(cpu, value);
-            cycles = 5;
-            break;
-        }
-        case 0x6E: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = value & 0x01;
-            value = (value >> 1) | (old_carry << 7);
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0x7E: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = value & 0x01;
-            value = (value >> 1) | (old_carry << 7);
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 7;
-            break;
-        }
-
-        /* ROL - Rotate Left */
-        case 0x2A: { /* Accumulator */
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = (cpu->a & 0x80) != 0;
-            cpu->a = (cpu->a << 1) | old_carry;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        }
-        case 0x26: { /* Zero Page */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint8_t value = mem_read(player, zp);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = (value & 0x80) != 0;
-            value = (value << 1) | old_carry;
-            mem_write(player, zp, value);
-            cpu_set_nz(cpu, value);
-            cycles = 5;
-            break;
-        }
-        case 0x2E: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = (value & 0x80) != 0;
-            value = (value << 1) | old_carry;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0x36: { /* Zero Page,X */
-            uint8_t zp = (mem_read(player, cpu->pc++) + cpu->x) & 0xFF;
-            uint8_t value = mem_read(player, zp);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = (value & 0x80) != 0;
-            value = (value << 1) | old_carry;
-            mem_write(player, zp, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0x3E: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = (value & 0x80) != 0;
-            value = (value << 1) | old_carry;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 7;
-            break;
-        }
-
-        /* RTS - Return from Subroutine */
-        case 0x60:
-            cpu->pc = (cpu_pull(player) | (cpu_pull(player) << 8)) + 1;
-            cycles = 6;
-            break;
-
-        /* SBC - Subtract with Carry */
-        case 0xE5: { /* Zero Page */
-            uint8_t value = mem_read(player, mem_read(player, cpu->pc++));
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 3;
-            break;
-        }
-        case 0xE9: { /* Immediate */
-            uint8_t value = mem_read(player, cpu->pc++);
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-        }
-        case 0xED: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0xF9: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0xF1: { /* (Indirect),Y */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint16_t base = mem_read(player, zp) | (mem_read(player, (zp + 1) & 0xFF) << 8);
-            uint16_t addr = base + cpu->y;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 5;
-            break;
-        }
-        case 0xFD: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 4;
-            break;
-        }
-
-        /* SEC - Set Carry */
-        case 0x38:
-            cpu->flag_c = 1;
-            break;
-
-        /* SED - Set Decimal */
-        case 0xF8:
-            cpu->flag_d = 1;
-            break;
-
-        /* SEI - Set Interrupt Disable */
-        case 0x78:
-            cpu->flag_i = 1;
-            break;
-
-        /* STA - Store Accumulator */
-        case 0x85: /* Zero Page */
-            mem_write(player, mem_read(player, cpu->pc++), cpu->a);
-            cycles = 3;
-            break;
-        case 0x95: /* Zero Page,X */
-            mem_write(player, (mem_read(player, cpu->pc++) + cpu->x) & 0xFF, cpu->a);
-            cycles = 4;
-            break;
-        case 0x8D: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            mem_write(player, addr, cpu->a);
-            cycles = 4;
-            break;
-        }
-        case 0x91: { /* (Indirect),Y */
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint16_t base = mem_read(player, zp) | (mem_read(player, (zp + 1) & 0xFF) << 8);
-            uint16_t addr = base + cpu->y;
-            mem_write(player, addr, cpu->a);
-            cycles = 6;
-            break;
-        }
-        case 0x99: { /* Absolute,Y */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->y;
-            mem_write(player, addr, cpu->a);
-            cycles = 5;
-            break;
-        }
-        case 0x9D: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            mem_write(player, addr, cpu->a);
-            cycles = 5;
-            break;
-        }
-
-        /* STX - Store X */
-        case 0x86: /* Zero Page */
-            mem_write(player, mem_read(player, cpu->pc++), cpu->x);
-            cycles = 3;
-            break;
-        case 0x8E: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            mem_write(player, addr, cpu->x);
-            cycles = 4;
-            break;
-        }
-
-        /* STY - Store Y */
-        case 0x84: /* Zero Page */
-            mem_write(player, mem_read(player, cpu->pc++), cpu->y);
-            cycles = 3;
-            break;
-        case 0x8C: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            mem_write(player, addr, cpu->y);
-            cycles = 4;
-            break;
-        }
-
-        /* TAX - Transfer A to X */
-        case 0xAA:
-            cpu->x = cpu->a;
-            cpu_set_nz(cpu, cpu->x);
-            break;
-
-        /* TAY - Transfer A to Y */
-        case 0xA8:
-            cpu->y = cpu->a;
-            cpu_set_nz(cpu, cpu->y);
-            break;
-
-        /* TXA - Transfer X to A */
-        case 0x8A:
-            cpu->a = cpu->x;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-
-        /* TYA - Transfer Y to A */
-        case 0x98:
-            cpu->a = cpu->y;
-            cpu_set_nz(cpu, cpu->a);
-            break;
-
-        /* EOR - Exclusive OR */
-        case 0x49: /* Immediate */
-            cpu->a ^= mem_read(player, cpu->pc++);
-            cpu_set_nz(cpu, cpu->a);
-            break;
-
-        /* LSR - Logical Shift Right */
-        case 0x4E: { /* Absolute */
-            uint16_t addr = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_c = value & 0x01;
-            value >>= 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 6;
-            break;
-        }
-        case 0x5E: { /* Absolute,X */
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_c = value & 0x01;
-            value >>= 1;
-            mem_write(player, addr, value);
-            cpu_set_nz(cpu, value);
-            cycles = 7;
-            break;
-        }
-
-        /* Illegal/undocumented opcodes - implement as close approximations */
-        /* Many SID files use these! */
-
-        /* SLO (ASL + ORA) - (Indirect,X) */
-        case 0x03: {
-            uint8_t zp = (mem_read(player, cpu->pc++) + cpu->x) & 0xFF;
-            uint16_t addr = mem_read(player, zp) | (mem_read(player, (zp + 1) & 0xFF) << 8);
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_c = (value & 0x80) != 0;
-            value <<= 1;
-            mem_write(player, addr, value);
-            cpu->a |= value;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 8;
-            break;
-        }
-
-        /* RLA (ROL + AND) - Zero Page,X */
-        case 0x37: {
-            uint8_t zp = (mem_read(player, cpu->pc++) + cpu->x) & 0xFF;
-            uint8_t value = mem_read(player, zp);
-            uint8_t old_carry = cpu->flag_c;
-            cpu->flag_c = (value & 0x80) != 0;
-            value = (value << 1) | old_carry;
-            mem_write(player, zp, value);
-            cpu->a &= value;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 6;
-            break;
-        }
-
-        /* SRE (LSR + EOR) - (Indirect),Y */
-        case 0x53: {
-            uint8_t zp = mem_read(player, cpu->pc++);
-            uint16_t base = mem_read(player, zp) | (mem_read(player, (zp + 1) & 0xFF) << 8);
-            uint16_t addr = base + cpu->y;
-            uint8_t value = mem_read(player, addr);
-            cpu->flag_c = value & 0x01;
-            value >>= 1;
-            mem_write(player, addr, value);
-            cpu->a ^= value;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 8;
-            break;
-        }
-
-        /* DEC Accumulator (illegal NOP) */
-        case 0x3A:
-            /* On real 6502, this is a NOP */
-            cycles = 2;
-            break;
-
-        /* NOP - Zero Page,X (illegal) */
-        case 0x74:
-            cpu->pc++;  /* Skip zero page operand */
-            cycles = 4;
-            break;
-
-        /* ISC (INC + SBC) - Absolute,X */
-        case 0xFF: {
-            uint16_t base = mem_read(player, cpu->pc++) | (mem_read(player, cpu->pc++) << 8);
-            uint16_t addr = base + cpu->x;
-            uint8_t value = mem_read(player, addr) + 1;
-            mem_write(player, addr, value);
-            /* Then SBC */
-            uint16_t result = cpu->a - value - (1 - cpu->flag_c);
-            cpu->flag_c = result < 0x100;
-            cpu->flag_v = ((cpu->a ^ value) & (cpu->a ^ result) & 0x80) != 0;
-            cpu->a = result & 0xFF;
-            cpu_set_nz(cpu, cpu->a);
-            cycles = 7;
-            break;
-        }
-
-        /* Unknown/unimplemented instruction - treat as NOP */
-        default:
-            is_unknown = true;
-            if (unknown_count < 20) {
-                fprintf(stderr, "Unknown opcode $%02X at $%04X (A=%02X X=%02X Y=%02X)\n",
-                        opcode, pc_start, cpu->a, cpu->x, cpu->y);
-                unknown_count++;
-            }
-            /* Try to skip operand bytes based on opcode pattern */
-            /* This is a rough heuristic */
-            switch (opcode & 0x1F) {
-                case 0x19: case 0x1D: case 0x1E:  /* Absolute,X/Y or Absolute */
-                case 0x0D: case 0x0E: case 0x0C:
-                    cpu->pc += 2;
-                    break;
-                case 0x11: case 0x01:  /* (Indirect),Y or (Indirect,X) */
-                case 0x05: case 0x06:  /* Zero Page */
-                case 0x15: case 0x16:  /* Zero Page,X/Y */
-                    cpu->pc += 1;
-                    break;
-                default:
-                    /* Immediate or implied - no operand or 1 byte */
-                    if ((opcode & 0x0F) == 0x09) {
-                        cpu->pc += 1;  /* Immediate */
-                    }
-                    break;
-            }
-            break;
-    }
-
-    instr_count++;
-
-    return cycles;
-}
 
 /* ============================================================================
  * Lifecycle
@@ -1495,6 +455,9 @@ SidPlayer* sid_player_create(void) {
         free(player);
         return NULL;
     }
+
+    /* Initialize CPU emulator with memory callbacks */
+    cpu_init(&player->cpu_ctx, player, cpu_mem_read, cpu_mem_write);
 
     player->boost = 1.0f;
     player->is_pal = true;  /* Default to PAL */
@@ -1604,34 +567,32 @@ void sid_player_start(SidPlayer* player) {
     #endif
 
     /* Reset CPU */
-    memset(&player->cpu, 0, sizeof(CPU6502));
-    player->cpu.sp = 0xFF;
-    player->cpu.p = 0x04;  /* IRQ disable */
+    cpu_reset(&player->cpu_ctx);
 
     /* Call init routine */
     /* Setup for JSR to init routine */
-    player->cpu.pc = player->init_address;
-    player->cpu.a = player->current_song;
+    player->cpu_ctx.cpu.pc = player->init_address;
+    player->cpu_ctx.cpu.a = player->current_song;
 
     /* Execute init routine (with cycle limit) */
     int total_cycles = 0;
     /* Push fake return address */
-    cpu_push(player, 0xFF);
-    cpu_push(player, 0xFF);
+    cpu_push(&player->cpu_ctx, 0xFF);
+    cpu_push(&player->cpu_ctx, 0xFF);
 
     /* Run until RTS or cycle limit */
     while (total_cycles < MAX_CYCLES_PER_FRAME) {
-        uint16_t pc_before = player->cpu.pc;
-        int cycles = cpu_step(player);
+        uint16_t pc_before = player->cpu_ctx.cpu.pc;
+        int cycles = cpu_step(&player->cpu_ctx);
         total_cycles += cycles;
 
         /* Check if returned (RTS to 0xFFFF will wrap) */
-        if (player->cpu.pc == 0x0000 || player->cpu.pc == 0xFFFF) {
+        if (player->cpu_ctx.cpu.pc == 0x0000 || player->cpu_ctx.cpu.pc == 0xFFFF) {
             break;
         }
 
         /* Detect infinite loops */
-        if (player->cpu.pc == pc_before) {
+        if (player->cpu_ctx.cpu.pc == pc_before) {
             break;
         }
     }
@@ -1783,27 +744,27 @@ void sid_player_process_voices(SidPlayer* player,
             player->frame_counter -= samples_per_frame;
 
             /* Setup CPU for play routine call */
-            player->cpu.pc = player->play_address;
+            player->cpu_ctx.cpu.pc = player->play_address;
 
             /* Push fake return address */
-            uint8_t saved_sp = player->cpu.sp;
-            cpu_push(player, 0xFF);
-            cpu_push(player, 0xFF);
+            uint8_t saved_sp = player->cpu_ctx.cpu.sp;
+            cpu_push(&player->cpu_ctx, 0xFF);
+            cpu_push(&player->cpu_ctx, 0xFF);
 
             /* Execute play routine */
             int total_cycles = 0;
             while (total_cycles < MAX_CYCLES_PER_FRAME) {
-                int cycles = cpu_step(player);
+                int cycles = cpu_step(&player->cpu_ctx);
                 total_cycles += cycles;
 
                 /* Check if returned */
-                if (player->cpu.pc == 0x0000 || player->cpu.pc == 0xFFFF) {
+                if (player->cpu_ctx.cpu.pc == 0x0000 || player->cpu_ctx.cpu.pc == 0xFFFF) {
                     break;
                 }
 
                 /* Restore SP if it looks stuck */
-                if (player->cpu.sp < saved_sp - 10) {
-                    player->cpu.sp = saved_sp;
+                if (player->cpu_ctx.cpu.sp < saved_sp - 10) {
+                    player->cpu_ctx.cpu.sp = saved_sp;
                     break;
                 }
             }

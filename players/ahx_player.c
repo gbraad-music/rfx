@@ -15,6 +15,7 @@
 #include "tracker_sequence.h"
 #include "tracker_voice.h"
 #include "tracker_mixer.h"
+#include "pattern_sequencer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -37,6 +38,11 @@ typedef struct AhxStep AhxStep;
 typedef struct AhxSong AhxSong;
 typedef struct AhxVoice AhxVoice;
 typedef struct AhxWaves AhxWaves;
+
+// Forward declarations for callbacks
+static void ahx_on_frame(void* user_data, uint8_t frame);
+static void ahx_on_step(void* user_data, uint16_t pattern_index,
+                        uint16_t pattern_number, uint16_t row);
 
 // Structure definitions (matching C++ classes)
 struct AhxPListEntry {
@@ -153,6 +159,9 @@ struct AhxPlayer {
     AhxVoice Voices[4];
     AhxWaves* Waves;
     int OurWaves;
+
+    // Pattern sequencer (NEW - handles timing/position/flow control)
+    PatternSequencer* sequencer;
 
     int StepWaitFrames, GetNewPosition, SongEndReached, TimingValue;
     int PatternBreak;
@@ -699,6 +708,38 @@ static void init_subsong(AhxPlayer* player, int nr) {
     player->Voices[2].PanMultRight = player->panning_right[defpanright];
     player->Voices[3].PanMultLeft = player->panning_left[defpanleft];
     player->Voices[3].PanMultRight = player->panning_right[defpanleft];
+
+    // Configure pattern sequencer with song structure
+    // AHX uses sequential positions (0, 1, 2, ...), so create a simple sequence
+    uint16_t* position_sequence = malloc(player->Song.PositionNr * sizeof(uint16_t));
+    if (position_sequence) {
+        for (int i = 0; i < player->Song.PositionNr; i++) {
+            position_sequence[i] = i;
+        }
+        pattern_sequencer_set_song(player->sequencer,
+                                  position_sequence,
+                                  player->Song.PositionNr,
+                                  player->Song.TrackLength);
+        free(position_sequence);
+    }
+
+    pattern_sequencer_set_speed(player->sequencer, player->Tempo);
+    // Note: BPM not used in frame-based mode, but set to a reasonable default
+    pattern_sequencer_set_bpm(player->sequencer, 125);
+
+    // Set loop range (loop from restart position to end)
+    pattern_sequencer_set_loop_range(player->sequencer,
+                                    player->Song.Restart,
+                                    player->Song.PositionNr - 1);
+
+    // Set up sequencer callbacks
+    PatternSequencerCallbacks callbacks = {
+        .on_tick = ahx_on_frame,     // "tick" = "frame" in AHX terminology
+        .on_row = ahx_on_step,       // "row" = "step" in AHX terminology
+        .on_pattern_change = NULL,
+        .on_song_end = NULL
+    };
+    pattern_sequencer_set_callbacks(player->sequencer, &callbacks, player);
 }
 
 // ProcessStep - from AHX.cpp line 399
@@ -1327,6 +1368,55 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
     }
 }
 
+// Pattern sequencer callbacks
+static void ahx_on_frame(void* user_data, uint8_t frame) {
+    AhxPlayer* player = (AhxPlayer*)user_data;
+
+    // Process per-frame effects for all voices
+    for (int v = 0; v < 4; v++) {
+        player_process_frame(player, v);
+    }
+
+    // Update playing time counter
+    player->PlayingTime++;
+
+    // Call player_set_audio for all voices to prepare waveforms
+    for (int v = 0; v < 4; v++) {
+        player_set_audio(player, v);
+    }
+
+    // Call position callback if position changed
+    if (player->position_callback &&
+        (player->last_position != player->PosNr || player->last_row != player->NoteNr)) {
+        player->last_position = player->PosNr;
+        player->last_row = player->NoteNr;
+        player->position_callback(0, player->PosNr, player->NoteNr, player->position_callback_userdata);
+    }
+}
+
+static void ahx_on_step(void* user_data, uint16_t pattern_index,
+                        uint16_t pattern_number, uint16_t row) {
+    AhxPlayer* player = (AhxPlayer*)user_data;
+
+    // Update position tracking
+    player->PosNr = pattern_index;
+    player->NoteNr = row;
+
+    // Set up tracks and transpose for this position
+    int next_pos = (player->PosNr + 1 == player->Song.PositionNr) ? 0 : (player->PosNr + 1);
+    for (int v = 0; v < 4; v++) {
+        player->Voices[v].Track = player->Song.Positions[player->PosNr].Track[v];
+        player->Voices[v].Transpose = player->Song.Positions[player->PosNr].Transpose[v];
+        player->Voices[v].NextTrack = player->Song.Positions[next_pos].Track[v];
+        player->Voices[v].NextTranspose = player->Song.Positions[next_pos].Transpose[v];
+    }
+
+    // Process step for all voices (trigger notes, handle effects)
+    for (int v = 0; v < 4; v++) {
+        player_process_step(player, v);
+    }
+}
+
 // PlayIRQ - from AHX.cpp line 338
 static void player_play_irq(AhxPlayer* player) {
     if (player->StepWaitFrames <= 0) {
@@ -1408,6 +1498,17 @@ AhxPlayer* ahx_player_create(void) {
     waves_generate(player->Waves);
     player->OurWaves = 1;
 
+    // Create pattern sequencer
+    player->sequencer = pattern_sequencer_create();
+    if (!player->sequencer) {
+        free(player->Waves);
+        free(player);
+        return NULL;
+    }
+
+    // Set sequencer to frame-based mode (AHX uses 50Hz timing)
+    pattern_sequencer_set_mode(player->sequencer, PS_MODE_FRAME_BASED);
+
     // Initialize waveform table
     player->WaveformTab[0] = player->Waves->Triangle04;
     player->WaveformTab[1] = player->Waves->Sawtooth04;
@@ -1462,6 +1563,11 @@ void ahx_player_destroy(AhxPlayer* player) {
         free(player->Waves);
     }
 
+    // Destroy pattern sequencer
+    if (player->sequencer) {
+        pattern_sequencer_destroy(player->sequencer);
+    }
+
     free(player);
 }
 
@@ -1514,11 +1620,17 @@ const char* ahx_player_get_title(const AhxPlayer* player) {
 void ahx_player_start(AhxPlayer* player) {
     if (!player) return;
     player->Playing = 1;
+
+    // Start pattern sequencer (handles position initialization and first step processing)
+    pattern_sequencer_start(player->sequencer);
 }
 
 void ahx_player_stop(AhxPlayer* player) {
     if (!player) return;
     player->Playing = 0;
+
+    // Stop pattern sequencer
+    pattern_sequencer_stop(player->sequencer);
 }
 
 bool ahx_player_is_playing(const AhxPlayer* player) {
@@ -1555,15 +1667,10 @@ void ahx_player_process_channels(AhxPlayer* player,
     // Update sample rate for delta calculations
     player->current_sample_rate = sample_rate;
 
-    int samples_per_frame = sample_rate / 50 / player->Song.SpeedMultiplier;
+    // Process pattern sequencer timing (calls ahx_on_frame and ahx_on_step callbacks)
+    pattern_sequencer_process(player->sequencer, num_samples, sample_rate);
 
     for (size_t i = 0; i < num_samples; i++) {
-        // Check if we need to process next frame (50Hz IRQ)
-        if (player->frame_counter <= 0) {
-            player_play_irq(player);
-            player->frame_counter = samples_per_frame;
-        }
-
         // Render each voice and prepare for mixing
         TrackerMixerChannel mix_channels[4];
 
@@ -1614,8 +1721,6 @@ void ahx_player_process_channels(AhxPlayer* player,
         // Apply mixgain as scaling factor (mixgain is typically 256, normalize to 1.0)
         float scaling = player->mixgain / 256.0f;
         tracker_mixer_mix_stereo(mix_channels, 4, &left[i], &right[i], scaling);
-
-        player->frame_counter--;
     }
 }
 

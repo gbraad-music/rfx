@@ -1,0 +1,284 @@
+/*
+ * WebAssembly Bindings for RGSID Synthesizer
+ * Provides wrapper functions for JavaScript integration
+ */
+
+#include <emscripten.h>
+#include <stdlib.h>
+#include <string.h>
+#include "synth/synth_sid.h"
+#include "synth/synth_sid_cc.h"
+
+// Simple wrapper for SID synth
+typedef struct {
+    SynthSID* sid;
+    float sample_rate;
+} SIDSynthInstance;
+
+// Wrapper functions that JavaScript expects (regroove_synth_* interface)
+
+EMSCRIPTEN_KEEPALIVE
+SIDSynthInstance* regroove_synth_create(int engine, float sample_rate) {
+    // engine parameter ignored - always create SID
+    SIDSynthInstance* instance = (SIDSynthInstance*)malloc(sizeof(SIDSynthInstance));
+    if (!instance) return NULL;
+
+    instance->sample_rate = sample_rate;
+    instance->sid = synth_sid_create((int)sample_rate);
+
+    if (!instance->sid) {
+        free(instance);
+        return NULL;
+    }
+
+    return instance;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_destroy(SIDSynthInstance* synth) {
+    if (synth) {
+        if (synth->sid) {
+            synth_sid_destroy(synth->sid);
+        }
+        free(synth);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_reset(SIDSynthInstance* synth) {
+    if (!synth || !synth->sid) return;
+    synth_sid_reset(synth->sid);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_note_on(SIDSynthInstance* synth, uint8_t note, uint8_t velocity) {
+    if (!synth || !synth->sid) {
+        emscripten_log(EM_LOG_ERROR, "[RGSID] note_on: synth is NULL!");
+        return;
+    }
+
+    // Route to voice 0 by default (web UI can control voice routing)
+    synth_sid_note_on(synth->sid, 0, note, velocity);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_note_off(SIDSynthInstance* synth, uint8_t note) {
+    if (!synth || !synth->sid) return;
+
+    // Release all voices (simple approach for web)
+    for (int i = 0; i < 3; i++) {
+        synth_sid_note_off(synth->sid, i);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_control_change(SIDSynthInstance* synth, uint8_t controller, uint8_t value) {
+    if (!synth || !synth->sid) return;
+
+    // Use the SID CC handler for MIDIbox compatibility
+    synth_sid_handle_cc(synth->sid, controller, value);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_pitch_bend(SIDSynthInstance* synth, int value) {
+    if (!synth || !synth->sid) return;
+
+    // Apply pitch bend to all voices
+    for (int i = 0; i < 3; i++) {
+        synth_sid_handle_pitch_bend_midi(synth->sid, i, (uint16_t)value);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_all_notes_off(SIDSynthInstance* synth) {
+    if (!synth || !synth->sid) return;
+    synth_sid_all_notes_off(synth->sid);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_process_f32(SIDSynthInstance* synth, float* buffer, int frames, float sample_rate) {
+    if (!synth || !synth->sid || !buffer) return;
+
+    // SID synth already outputs stereo interleaved
+    synth_sid_process_f32(synth->sid, buffer, frames, (int)sample_rate);
+}
+
+// Parameter interface - maps to SID synth parameters
+// Total parameters: 31 (8 per voice x 3 + 7 filter/global)
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_get_parameter_count(SIDSynthInstance* synth) {
+    return 31;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float regroove_synth_get_parameter(SIDSynthInstance* synth, int index) {
+    // TODO: Implement parameter getters if needed
+    return 0.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_set_parameter(SIDSynthInstance* synth, int index, float value) {
+    if (!synth || !synth->sid) return;
+
+    // Parameter mapping (matches RGSID_SynthPlugin.cpp):
+    // Voice 1: 0-7, Voice 2: 8-15, Voice 3: 16-23, Filter: 24-28
+
+    int voice = index / 8;  // Which voice (0-2)
+    int param = index % 8;  // Which parameter within voice
+
+    if (voice < 3) {
+        // Voice parameters
+        switch (param) {
+            case 0:  // Waveform
+                synth_sid_set_waveform(synth->sid, voice, (uint8_t)value);
+                break;
+            case 1:  // Pulse Width
+                synth_sid_set_pulse_width(synth->sid, voice, value);
+                break;
+            case 2:  // Attack
+                synth_sid_set_attack(synth->sid, voice, value);
+                break;
+            case 3:  // Decay
+                synth_sid_set_decay(synth->sid, voice, value);
+                break;
+            case 4:  // Sustain
+                synth_sid_set_sustain(synth->sid, voice, value);
+                break;
+            case 5:  // Release
+                synth_sid_set_release(synth->sid, voice, value);
+                break;
+            case 6:  // Ring Mod
+                synth_sid_set_ring_mod(synth->sid, voice, value > 0.5f);
+                break;
+            case 7:  // Sync
+                synth_sid_set_sync(synth->sid, voice, value > 0.5f);
+                break;
+        }
+    } else {
+        // Filter and global parameters (24-30)
+        switch (index) {
+            case 24:  // Filter Mode
+                synth_sid_set_filter_mode(synth->sid, (SIDFilterMode)(int)value);
+                break;
+            case 25:  // Filter Cutoff
+                synth_sid_set_filter_cutoff(synth->sid, value);
+                break;
+            case 26:  // Filter Resonance
+                synth_sid_set_filter_resonance(synth->sid, value);
+                break;
+            case 27:  // Filter Voice 1
+                synth_sid_set_filter_voice(synth->sid, 0, value > 0.5f);
+                break;
+            case 28:  // Filter Voice 2
+                synth_sid_set_filter_voice(synth->sid, 1, value > 0.5f);
+                break;
+            case 29:  // Filter Voice 3
+                synth_sid_set_filter_voice(synth->sid, 2, value > 0.5f);
+                break;
+            case 30:  // Volume
+                synth_sid_set_volume(synth->sid, value);
+                break;
+        }
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* regroove_synth_get_parameter_name(int index) {
+    static const char* names[] = {
+        // Voice 1 (0-7)
+        "V1 Waveform", "V1 Pulse Width", "V1 Attack", "V1 Decay",
+        "V1 Sustain", "V1 Release", "V1 Ring Mod", "V1 Sync",
+        // Voice 2 (8-15)
+        "V2 Waveform", "V2 Pulse Width", "V2 Attack", "V2 Decay",
+        "V2 Sustain", "V2 Release", "V2 Ring Mod", "V2 Sync",
+        // Voice 3 (16-23)
+        "V3 Waveform", "V3 Pulse Width", "V3 Attack", "V3 Decay",
+        "V3 Sustain", "V3 Release", "V3 Ring Mod", "V3 Sync",
+        // Filter/Global (24-30)
+        "Filter Mode", "Filter Cutoff", "Filter Resonance",
+        "Filter V1", "Filter V2", "Filter V3", "Volume"
+    };
+
+    if (index < 0 || index >= 31) return "";
+    return names[index];
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* regroove_synth_get_parameter_label(int index) {
+    return "";  // No units for most parameters
+}
+
+EMSCRIPTEN_KEEPALIVE
+float regroove_synth_get_parameter_default(int index) {
+    // Simple defaults
+    if (index % 8 == 0) return 4.0f;  // Waveform: Pulse
+    if (index % 8 == 1) return 0.5f;  // Pulse Width: 50%
+    if (index % 8 == 4) return 0.7f;  // Sustain: 70%
+    if (index == 28) return 0.7f;      // Volume: 70%
+    return 0.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float regroove_synth_get_parameter_min(int index) {
+    return 0.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+float regroove_synth_get_parameter_max(int index) {
+    if (index % 8 == 0) return 15.0f;  // Waveform (bitfield)
+    if (index == 24) return 3.0f;       // Filter mode (0-3)
+    return 1.0f;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_get_parameter_group(int index) {
+    if (index < 8) return 0;   // Voice 1
+    if (index < 16) return 1;  // Voice 2
+    if (index < 24) return 2;  // Voice 3
+    return 3;                   // Filter/Global
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* regroove_synth_get_group_name(int group) {
+    static const char* groups[] = { "Voice 1", "Voice 2", "Voice 3", "Filter/Global" };
+    if (group < 0 || group >= 4) return "";
+    return groups[group];
+}
+
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_parameter_is_integer(int index) {
+    // Waveform and filter mode are integers
+    if (index % 8 == 0 || index == 24) return 1;
+    // Ring mod and sync are booleans (treated as integer)
+    if (index % 8 == 6 || index % 8 == 7) return 1;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_get_engine(SIDSynthInstance* synth) {
+    return 2;  // SID engine ID (different from AHX which is 1)
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* regroove_synth_get_engine_name(int engine) {
+    return "RGSID";
+}
+
+// Helper: Create audio buffer for JavaScript
+EMSCRIPTEN_KEEPALIVE
+void* synth_create_audio_buffer(int frames) {
+    // Stereo interleaved buffer
+    return malloc(frames * 2 * sizeof(float));
+}
+
+// Helper: Destroy audio buffer
+EMSCRIPTEN_KEEPALIVE
+void synth_destroy_audio_buffer(void* buffer) {
+    free(buffer);
+}
+
+// Helper: Get buffer size in bytes
+EMSCRIPTEN_KEEPALIVE
+int synth_get_buffer_size_bytes(int frames) {
+    return frames * 2 * sizeof(float);  // Stereo interleaved
+}

@@ -1,7 +1,7 @@
-// RGAHXSynth - WASM-based AHX synthesizer for Regroove visualization
-// Wraps the RGAHX WASM synth in an AudioWorklet
+// RGSIDSynth - WASM-based SID synthesizer for Regroove visualization
+// Wraps the RGSID WASM synth in an AudioWorklet
 
-class RGAHXSynth {
+class RGSIDSynth {
     constructor(audioContext) {
         this.audioContext = audioContext;
         this.workletNode = null;
@@ -20,7 +20,7 @@ class RGAHXSynth {
     }
 
     async initialize() {
-        console.log('[RGAHXSynth] 🎛️ Initializing WASM AHX Synth...');
+        console.log('[RGSIDSynth] 🎛️ Initializing WASM SID Synth...');
         try {
             // Frequency analyzer is now managed externally (shared MIDI analyzer in app.js)
             this.frequencyAnalyzer = null;
@@ -36,7 +36,7 @@ class RGAHXSynth {
 
             // Audio graph: worklet → masterGain → speakerGain → destination
             this.masterGain.connect(this.speakerGain);
-            console.log('[RGAHXSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
+            console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
             await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=180');
@@ -52,7 +52,7 @@ class RGAHXSynth {
                 if (type === 'needWasm') {
                     this.loadWasm();
                 } else if (type === 'ready') {
-                    console.log('[RGAHXSynth] ✅ WASM AHX Synth ready');
+                    console.log('[RGSIDSynth] ✅ WASM SID Synth ready');
                     this.wasmReady = true;
 
                     // Process any pending notes
@@ -65,28 +65,28 @@ class RGAHXSynth {
                     }
                     this.pendingNotes = [];
                 } else if (type === 'error') {
-                    console.error('[RGAHXSynth] WASM error:', data);
+                    console.error('[RGSIDSynth] WASM error:', data);
                 }
             };
 
             this.isActive = true;
 
-            console.log('[RGAHXSynth] Initialized - waiting for WASM...');
+            console.log('[RGSIDSynth] Initialized - waiting for WASM...');
             return true;
         } catch (error) {
-            console.error('[RGAHXSynth] Failed to initialize:', error);
+            console.error('[RGSIDSynth] Failed to initialize:', error);
             return false;
         }
     }
 
     async loadWasm() {
         try {
-            console.log('[RGAHXSynth] Loading WASM...');
+            console.log('[RGSIDSynth] Loading WASM...');
 
             // Fetch both JS glue code and WASM binary
             const [jsResponse, wasmResponse] = await Promise.all([
-                fetch('synths/rgahxsynth.js'),
-                fetch('synths/rgahxsynth.wasm')
+                fetch('synths/rgsidsynth.js'),
+                fetch('synths/rgsidsynth.wasm')
             ]);
 
             const jsCode = await jsResponse.text();
@@ -99,13 +99,13 @@ class RGAHXSynth {
                     jsCode: jsCode,
                     wasmBytes: wasmBytes,
                     sampleRate: this.audioContext.sampleRate,
-                    engine: 1 // RGAHX engine ID
+                    engine: 2 // RGSID engine ID
                 }
             });
 
-            console.log('[RGAHXSynth] WASM sent to worklet');
+            console.log('[RGSIDSynth] WASM sent to worklet');
         } catch (error) {
-            console.error('[RGAHXSynth] Failed to load WASM:', error);
+            console.error('[RGSIDSynth] Failed to load WASM:', error);
         }
     }
 
@@ -141,38 +141,22 @@ class RGAHXSynth {
         });
     }
 
-    setupBeatSynth() {
-        // Simple beat oscillator (could use RG909 later)
-        this.beatOscillator = this.audioContext.createOscillator();
-        this.beatOscillator.type = 'sine';
-        this.beatOscillator.frequency.value = 60; // Deep bass
+    handleControlChange(controller, value) {
+        if (!this.isActive || !this.wasmReady || !this.workletNode) return;
 
-        this.beatGain = this.audioContext.createGain();
-        this.beatGain.gain.value = 0;
-
-        this.beatOscillator.connect(this.beatGain);
-        this.beatGain.connect(this.masterGain);
-
-        this.beatOscillatorStopped = false;
-
-        try {
-            this.beatOscillator.start();
-            console.log('[RGAHXSynth] Beat oscillator started');
-        } catch (e) {
-            console.warn('[RGAHXSynth] Beat oscillator failed to start:', e.message);
-            this.beatOscillatorStopped = true;
-        }
+        this.workletNode.port.postMessage({
+            type: 'controlChange',
+            data: { controller, value }
+        });
     }
 
-    handleBeat(intensity = 1.0) {
-        if (!this.beatGain || this.beatOscillatorStopped) return;
+    setParameter(index, value) {
+        if (!this.isActive || !this.wasmReady || !this.workletNode) return;
 
-        const now = this.audioContext.currentTime;
-        this.beatGain.gain.cancelScheduledValues(now);
-        this.beatGain.gain.setValueAtTime(0, now);
-        this.beatGain.gain.linearRampToValueAtTime(intensity * 0.8, now + 0.01);
-        this.beatGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-        this.beatGain.gain.linearRampToValueAtTime(0, now + 0.31);
+        this.workletNode.port.postMessage({
+            type: 'setParameter',
+            data: { index, value }
+        });
     }
 
     stopAll() {
@@ -188,7 +172,7 @@ class RGAHXSynth {
      */
     connect(destination) {
         if (!this.masterGain) {
-            console.warn('[RGAHXSynth] Cannot connect - not initialized');
+            console.warn('[RGSIDSynth] Cannot connect - not initialized');
             return destination;
         }
         return this.masterGain.connect(destination);
@@ -212,20 +196,20 @@ class RGAHXSynth {
 
     async setAudible(enabled) {
         if (!this.speakerGain) {
-            console.error('[RGAHXSynth] ❌ setAudible called but speakerGain is null!');
+            console.error('[RGSIDSynth] ❌ setAudible called but speakerGain is null!');
             return;
         }
 
         this.isAudible = enabled;
-        console.log(`[RGAHXSynth] setAudible(${enabled})`);
+        console.log(`[RGSIDSynth] setAudible(${enabled})`);
 
         // Resume AudioContext if needed
         if (enabled && this.audioContext.state === 'suspended') {
             try {
                 await this.audioContext.resume();
-                console.log('[RGAHXSynth] AudioContext resumed');
+                console.log('[RGSIDSynth] AudioContext resumed');
             } catch (error) {
-                console.error('[RGAHXSynth] Failed to resume AudioContext:', error);
+                console.error('[RGSIDSynth] Failed to resume AudioContext:', error);
                 return;
             }
         }
@@ -236,11 +220,11 @@ class RGAHXSynth {
         this.speakerGain.gain.setValueAtTime(this.speakerGain.gain.value, currentTime);
         this.speakerGain.gain.linearRampToValueAtTime(enabled ? 1.0 : 0.0, currentTime + 0.05);
 
-        console.log(`[RGAHXSynth] ✅ ${enabled ? 'AUDIBLE' : 'MUTED'}`);
+        console.log(`[RGSIDSynth] ✅ ${enabled ? 'AUDIBLE' : 'MUTED'}`);
     }
 
     destroy() {
-        console.log('[RGAHXSynth] Destroying...');
+        console.log('[RGSIDSynth] Destroying...');
 
         this.isActive = false;
 
@@ -272,7 +256,7 @@ class RGAHXSynth {
         // Clear event listeners
         this.listeners.clear();
 
-        console.log('[RGAHXSynth] Destroyed');
+        console.log('[RGSIDSynth] Destroyed');
     }
 
     // Event emitter interface
@@ -299,7 +283,7 @@ class RGAHXSynth {
             try {
                 callback(data);
             } catch (error) {
-                console.error(`[RGAHXSynth] Error in ${event} listener:`, error);
+                console.error(`[RGSIDSynth] Error in ${event} listener:`, error);
             }
         }
     }

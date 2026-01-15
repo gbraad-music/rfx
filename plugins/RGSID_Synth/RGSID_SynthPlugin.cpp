@@ -1,5 +1,6 @@
 #include "DistrhoPlugin.hpp"
 #include "../../synth/synth_sid.h"
+#include "../../synth/synth_sid_cc.h"
 #include <cstring>
 #include <cmath>
 
@@ -506,7 +507,16 @@ protected:
                     break;
 
                 case 0xB0: // Control Change
-                    // Future: Map MIDI CCs to parameters
+                    if (event.size >= 3) {
+                        synth_sid_handle_cc(fSID, data[1], data[2]);
+                    }
+                    break;
+
+                case 0xE0: // Pitch Bend
+                    if (event.size >= 3) {
+                        uint16_t bend_value = data[1] | (data[2] << 7);
+                        synth_sid_handle_pitch_bend_midi(fSID, voice, bend_value);
+                    }
                     break;
             }
         }

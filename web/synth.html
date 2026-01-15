@@ -420,6 +420,7 @@
                 <button id="btnInitSimple">Initialize Simple Synth</button>
                 <button id="btnInitRGResonate1">Initialize RGResonate1</button>
                 <button id="btnInitRGAHX">Initialize RGAHX</button>
+                <button id="btnInitRGSID">Initialize RGSID</button>
                 <button id="btnInitRG1Piano">Initialize RG1Piano</button>
                 <button id="btnInitRGSFZ">Initialize RGSFZ Sampler</button>
             </div>
@@ -427,6 +428,7 @@
                 Simple: Basic Web Audio oscillators<br>
                 RGResonate1: WASM polyphonic synthesizer with resonant filters<br>
                 RGAHX: WASM Amiga AHX/HivelyTracker synthesizer (authentic algorithms)<br>
+                RGSID: WASM Commodore 64 SID chip synthesizer (3-voice, filter, ring mod)<br>
                 RG1Piano: WASM M1 Piano with modal synthesis<br>
                 RGSFZ: SFZ sampler with WAV sample playback
             </div>
@@ -596,6 +598,222 @@
                 </div>
             </div>
 
+            <!-- RGSID Synth Controls (shown after initialization) -->
+            <div id="rgsidControls" style="display: none; margin: 20px auto; max-width: 900px; padding: 25px; background: rgba(30, 30, 30, 0.5); border-radius: 8px; border: 1px solid rgba(0, 102, 255, 0.3);">
+                <div style="text-align: center; margin-bottom: 20px; color: #0066FF; font-size: 1.1em; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">
+                    RGSID - Commodore 64 SID Chip
+                </div>
+
+                <!-- Voice 1 Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Voice 1</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Waveform</label>
+                            <select id="sidV1Waveform" style="width: 120px; padding: 6px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                                <option value="0">Off</option>
+                                <option value="1">Triangle</option>
+                                <option value="2">Sawtooth</option>
+                                <option value="4" selected>Pulse</option>
+                                <option value="8">Noise</option>
+                                <option value="3">Tri+Saw</option>
+                                <option value="5">Tri+Pulse</option>
+                                <option value="6">Saw+Pulse</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">PW</div>
+                            <svg-slider id="sidV1PW" value="50" min="0" max="100" width="40" color="#0066FF" style="height: 120px;"></svg-slider>
+                            <div id="sidV1PWVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">50%</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Attack</div>
+                            <svg-slider id="sidV1Attack" value="0" min="0" max="100" width="35" color="#CF1A37" style="height: 120px;"></svg-slider>
+                            <div id="sidV1AttackVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Decay</div>
+                            <svg-slider id="sidV1Decay" value="50" min="0" max="100" width="35" color="#E29E1A" style="height: 120px;"></svg-slider>
+                            <div id="sidV1DecayVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">50</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Sustain</div>
+                            <svg-slider id="sidV1Sustain" value="70" min="0" max="100" width="35" color="#50C878" style="height: 120px;"></svg-slider>
+                            <div id="sidV1SustainVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">70</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Release</div>
+                            <svg-slider id="sidV1Release" value="30" min="0" max="100" width="35" color="#8E44AD" style="height: 120px;"></svg-slider>
+                            <div id="sidV1ReleaseVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">30</div>
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Ring Mod</label>
+                            <input type="checkbox" id="sidV1Ring" style="width: 20px; height: 20px;">
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Sync</label>
+                            <input type="checkbox" id="sidV1Sync" style="width: 20px; height: 20px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Voice 2 Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Voice 2</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Waveform</label>
+                            <select id="sidV2Waveform" style="width: 120px; padding: 6px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                                <option value="0">Off</option>
+                                <option value="1">Triangle</option>
+                                <option value="2" selected>Sawtooth</option>
+                                <option value="4">Pulse</option>
+                                <option value="8">Noise</option>
+                                <option value="3">Tri+Saw</option>
+                                <option value="5">Tri+Pulse</option>
+                                <option value="6">Saw+Pulse</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">PW</div>
+                            <svg-slider id="sidV2PW" value="50" min="0" max="100" width="40" color="#00CC66" style="height: 120px;"></svg-slider>
+                            <div id="sidV2PWVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">50%</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Attack</div>
+                            <svg-slider id="sidV2Attack" value="0" min="0" max="100" width="35" color="#CF1A37" style="height: 120px;"></svg-slider>
+                            <div id="sidV2AttackVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Decay</div>
+                            <svg-slider id="sidV2Decay" value="50" min="0" max="100" width="35" color="#E29E1A" style="height: 120px;"></svg-slider>
+                            <div id="sidV2DecayVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">50</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Sustain</div>
+                            <svg-slider id="sidV2Sustain" value="70" min="0" max="100" width="35" color="#50C878" style="height: 120px;"></svg-slider>
+                            <div id="sidV2SustainVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">70</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Release</div>
+                            <svg-slider id="sidV2Release" value="30" min="0" max="100" width="35" color="#8E44AD" style="height: 120px;"></svg-slider>
+                            <div id="sidV2ReleaseVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">30</div>
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Ring Mod</label>
+                            <input type="checkbox" id="sidV2Ring" style="width: 20px; height: 20px;">
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Sync</label>
+                            <input type="checkbox" id="sidV2Sync" style="width: 20px; height: 20px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Voice 3 Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Voice 3</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Waveform</label>
+                            <select id="sidV3Waveform" style="width: 120px; padding: 6px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                                <option value="0">Off</option>
+                                <option value="1" selected>Triangle</option>
+                                <option value="2">Sawtooth</option>
+                                <option value="4">Pulse</option>
+                                <option value="8">Noise</option>
+                                <option value="3">Tri+Saw</option>
+                                <option value="5">Tri+Pulse</option>
+                                <option value="6">Saw+Pulse</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">PW</div>
+                            <svg-slider id="sidV3PW" value="50" min="0" max="100" width="40" color="#FF6B6B" style="height: 120px;"></svg-slider>
+                            <div id="sidV3PWVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">50%</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Attack</div>
+                            <svg-slider id="sidV3Attack" value="0" min="0" max="100" width="35" color="#CF1A37" style="height: 120px;"></svg-slider>
+                            <div id="sidV3AttackVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Decay</div>
+                            <svg-slider id="sidV3Decay" value="50" min="0" max="100" width="35" color="#E29E1A" style="height: 120px;"></svg-slider>
+                            <div id="sidV3DecayVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">50</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Sustain</div>
+                            <svg-slider id="sidV3Sustain" value="70" min="0" max="100" width="35" color="#50C878" style="height: 120px;"></svg-slider>
+                            <div id="sidV3SustainVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">70</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Release</div>
+                            <svg-slider id="sidV3Release" value="30" min="0" max="100" width="35" color="#8E44AD" style="height: 120px;"></svg-slider>
+                            <div id="sidV3ReleaseVal" style="color: var(--text-primary); font-size: 0.7em; font-weight: bold;">30</div>
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Ring Mod</label>
+                            <input type="checkbox" id="sidV3Ring" style="width: 20px; height: 20px;">
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Sync</label>
+                            <input type="checkbox" id="sidV3Sync" style="width: 20px; height: 20px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Group -->
+                <div style="margin-bottom: 25px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Filter</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start; flex-wrap: wrap;">
+                        <div style="text-align: center;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">Mode</label>
+                            <select id="sidFilterMode" style="width: 120px; padding: 6px; background: #1a1a1a; color: #d0d0d0; border: 1px solid #444; border-radius: 4px; font-size: 0.85em;">
+                                <option value="0">Off</option>
+                                <option value="1" selected>Low Pass</option>
+                                <option value="2">Band Pass</option>
+                                <option value="3">High Pass</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Cutoff</div>
+                            <svg-slider id="sidFilterCutoff" value="50" min="0" max="100" width="45" color="#E74C3C" style="height: 140px;"></svg-slider>
+                            <div id="sidFilterCutoffVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">50</div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Resonance</div>
+                            <svg-slider id="sidFilterRes" value="0" min="0" max="100" width="45" color="#E74C3C" style="height: 140px;"></svg-slider>
+                            <div id="sidFilterResVal" style="color: var(--text-primary); font-size: 0.75em; font-weight: bold;">0</div>
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">V1 → Flt</label>
+                            <input type="checkbox" id="sidFilterV1" checked style="width: 20px; height: 20px;">
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">V2 → Flt</label>
+                            <input type="checkbox" id="sidFilterV2" style="width: 20px; height: 20px;">
+                        </div>
+                        <div style="text-align: center; padding: 0 10px;">
+                            <label style="display: block; margin-bottom: 8px; color: #d0d0d0; font-size: 0.65em; font-weight: bold; text-transform: uppercase;">V3 → Flt</label>
+                            <input type="checkbox" id="sidFilterV3" style="width: 20px; height: 20px;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Global Group -->
+                <div style="margin-bottom: 10px;">
+                    <div style="color: #888; font-size: 0.7em; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 5px;">Global</div>
+                    <div style="display: flex; gap: 15px; justify-content: center; align-items: flex-start;">
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                            <div style="color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Volume</div>
+                            <svg-slider id="sidVolume" value="70" min="0" max="100" width="50" color="#00CC66" style="height: 150px;"></svg-slider>
+                            <div id="sidVolumeVal" style="color: var(--text-primary); font-size: 0.8em; font-weight: bold;">70</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- RGSFZ Sampler Controls (shown after initialization) -->
             <div id="rgsfzControls" style="display: none; margin-top: 15px; padding: 15px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 4px;">
                 <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
@@ -678,6 +896,7 @@
     <script src="external/midi-audio-synth.js"></script>
     <script src="external/rgresonate1-synth.js"></script>
     <script src="external/rgahxsynth-synth.js"></script>
+    <script src="external/rgsid-synth.js"></script>
     <script src="external/rg1piano-synth.js"></script>
     <script src="external/rg909-drum.js"></script>
     <script src="external/rgsfz-synth.js"></script>
@@ -755,6 +974,7 @@
             document.getElementById('btnInitSimple').addEventListener('click', () => initializeSynth('simple'));
             document.getElementById('btnInitRGResonate1').addEventListener('click', () => initializeSynth('rgresonate1'));
             document.getElementById('btnInitRGAHX').addEventListener('click', () => initializeSynth('rgahx'));
+            document.getElementById('btnInitRGSID').addEventListener('click', () => initializeSynth('rgsid'));
             document.getElementById('btnInitRG1Piano').addEventListener('click', () => initializeSynth('rg1piano'));
             document.getElementById('btnInitRGSFZ').addEventListener('click', initializeRGSFZ);
 
@@ -766,6 +986,9 @@
 
             // RGAHX parameter controls
             setupRGAHXControls();
+
+            // RGSID parameter controls
+            setupRGSIDControls();
 
             // Drum pads
             document.querySelectorAll('.drum-pad').forEach(pad => {
@@ -957,6 +1180,174 @@
             });
         }
 
+        function updateSIDParameter(index, value) {
+            if (!currentSynth || !currentSynth.setParameter) {
+                return;
+            }
+
+            // Use the synth's setParameter method
+            currentSynth.setParameter(index, value);
+        }
+
+        function setupRGSIDControls() {
+            // Voice 1 - Waveform
+            document.getElementById('sidV1Waveform').addEventListener('change', (e) => {
+                updateSIDParameter(0, parseFloat(e.target.value));
+            });
+
+            // Voice 1 - Pulse Width
+            document.getElementById('sidV1PW').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV1PWVal').textContent = value + '%';
+                updateSIDParameter(1, value / 100.0);
+            });
+
+            // Voice 1 - ADSR
+            document.getElementById('sidV1Attack').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV1AttackVal').textContent = value;
+                updateSIDParameter(2, value / 100.0);
+            });
+            document.getElementById('sidV1Decay').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV1DecayVal').textContent = value;
+                updateSIDParameter(3, value / 100.0);
+            });
+            document.getElementById('sidV1Sustain').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV1SustainVal').textContent = value;
+                updateSIDParameter(4, value / 100.0);
+            });
+            document.getElementById('sidV1Release').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV1ReleaseVal').textContent = value;
+                updateSIDParameter(5, value / 100.0);
+            });
+
+            // Voice 1 - Ring Mod & Sync
+            document.getElementById('sidV1Ring').addEventListener('change', (e) => {
+                updateSIDParameter(6, e.target.checked ? 1.0 : 0.0);
+            });
+            document.getElementById('sidV1Sync').addEventListener('change', (e) => {
+                updateSIDParameter(7, e.target.checked ? 1.0 : 0.0);
+            });
+
+            // Voice 2 - Waveform
+            document.getElementById('sidV2Waveform').addEventListener('change', (e) => {
+                updateSIDParameter(8, parseFloat(e.target.value));
+            });
+
+            // Voice 2 - Pulse Width
+            document.getElementById('sidV2PW').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV2PWVal').textContent = value + '%';
+                updateSIDParameter(9, value / 100.0);
+            });
+
+            // Voice 2 - ADSR
+            document.getElementById('sidV2Attack').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV2AttackVal').textContent = value;
+                updateSIDParameter(10, value / 100.0);
+            });
+            document.getElementById('sidV2Decay').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV2DecayVal').textContent = value;
+                updateSIDParameter(11, value / 100.0);
+            });
+            document.getElementById('sidV2Sustain').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV2SustainVal').textContent = value;
+                updateSIDParameter(12, value / 100.0);
+            });
+            document.getElementById('sidV2Release').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV2ReleaseVal').textContent = value;
+                updateSIDParameter(13, value / 100.0);
+            });
+
+            // Voice 2 - Ring Mod & Sync
+            document.getElementById('sidV2Ring').addEventListener('change', (e) => {
+                updateSIDParameter(14, e.target.checked ? 1.0 : 0.0);
+            });
+            document.getElementById('sidV2Sync').addEventListener('change', (e) => {
+                updateSIDParameter(15, e.target.checked ? 1.0 : 0.0);
+            });
+
+            // Voice 3 - Waveform
+            document.getElementById('sidV3Waveform').addEventListener('change', (e) => {
+                updateSIDParameter(16, parseFloat(e.target.value));
+            });
+
+            // Voice 3 - Pulse Width
+            document.getElementById('sidV3PW').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV3PWVal').textContent = value + '%';
+                updateSIDParameter(17, value / 100.0);
+            });
+
+            // Voice 3 - ADSR
+            document.getElementById('sidV3Attack').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV3AttackVal').textContent = value;
+                updateSIDParameter(18, value / 100.0);
+            });
+            document.getElementById('sidV3Decay').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV3DecayVal').textContent = value;
+                updateSIDParameter(19, value / 100.0);
+            });
+            document.getElementById('sidV3Sustain').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV3SustainVal').textContent = value;
+                updateSIDParameter(20, value / 100.0);
+            });
+            document.getElementById('sidV3Release').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidV3ReleaseVal').textContent = value;
+                updateSIDParameter(21, value / 100.0);
+            });
+
+            // Voice 3 - Ring Mod & Sync
+            document.getElementById('sidV3Ring').addEventListener('change', (e) => {
+                updateSIDParameter(22, e.target.checked ? 1.0 : 0.0);
+            });
+            document.getElementById('sidV3Sync').addEventListener('change', (e) => {
+                updateSIDParameter(23, e.target.checked ? 1.0 : 0.0);
+            });
+
+            // Filter
+            document.getElementById('sidFilterMode').addEventListener('change', (e) => {
+                updateSIDParameter(24, parseFloat(e.target.value));
+            });
+            document.getElementById('sidFilterCutoff').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidFilterCutoffVal').textContent = value;
+                updateSIDParameter(25, value / 100.0);
+            });
+            document.getElementById('sidFilterRes').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidFilterResVal').textContent = value;
+                updateSIDParameter(26, value / 100.0);
+            });
+            document.getElementById('sidFilterV1').addEventListener('change', (e) => {
+                updateSIDParameter(27, e.target.checked ? 1.0 : 0.0);
+            });
+            document.getElementById('sidFilterV2').addEventListener('change', (e) => {
+                updateSIDParameter(28, e.target.checked ? 1.0 : 0.0);
+            });
+            document.getElementById('sidFilterV3').addEventListener('change', (e) => {
+                updateSIDParameter(29, e.target.checked ? 1.0 : 0.0);
+            });
+
+            // Volume
+            document.getElementById('sidVolume').addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                document.getElementById('sidVolumeVal').textContent = value;
+                updateSIDParameter(30, value / 100.0);
+            });
+        }
+
         async function initializeSynth(engine) {
             // Resume AudioContext if needed
             if (audioContext.state === 'suspended') {
@@ -994,6 +1385,8 @@
                 currentSynth = new RGResonate1Synth(audioContext);
             } else if (engine === 'rgahx') {
                 currentSynth = new RGAHXSynth(audioContext);
+            } else if (engine === 'rgsid') {
+                currentSynth = new RGSIDSynth(audioContext);
             } else if (engine === 'rg1piano') {
                 currentSynth = new RG1PianoSynth(audioContext);
             } else {
@@ -1001,6 +1394,49 @@
             }
 
             await currentSynth.initialize();
+
+            // Initialize RGSID parameters to match UI defaults
+            if (engine === 'rgsid') {
+                // Wait a bit for WASM to be ready
+                setTimeout(() => {
+                    // Voice 1 defaults
+                    updateSIDParameter(0, 4);      // Waveform: Pulse
+                    updateSIDParameter(1, 0.5);    // Pulse Width: 50%
+                    updateSIDParameter(2, 0.0);    // Attack: 0
+                    updateSIDParameter(3, 0.5);    // Decay: 50
+                    updateSIDParameter(4, 0.7);    // Sustain: 70
+                    updateSIDParameter(5, 0.3);    // Release: 30
+
+                    // Voice 2 defaults
+                    updateSIDParameter(8, 2);      // Waveform: Sawtooth
+                    updateSIDParameter(9, 0.5);    // Pulse Width: 50%
+                    updateSIDParameter(10, 0.0);   // Attack: 0
+                    updateSIDParameter(11, 0.5);   // Decay: 50
+                    updateSIDParameter(12, 0.7);   // Sustain: 70
+                    updateSIDParameter(13, 0.3);   // Release: 30
+
+                    // Voice 3 defaults
+                    updateSIDParameter(16, 4);     // Waveform: Pulse
+                    updateSIDParameter(17, 0.5);   // Pulse Width: 50%
+                    updateSIDParameter(18, 0.0);   // Attack: 0
+                    updateSIDParameter(19, 0.5);   // Decay: 50
+                    updateSIDParameter(20, 0.7);   // Sustain: 70
+                    updateSIDParameter(21, 0.3);   // Release: 30
+
+                    // Filter defaults
+                    updateSIDParameter(24, 1);     // Filter Mode: Low Pass
+                    updateSIDParameter(25, 0.5);   // Filter Cutoff: 50
+                    updateSIDParameter(26, 0.0);   // Filter Resonance: 0
+                    updateSIDParameter(27, 1.0);   // Filter V1: ENABLED
+                    updateSIDParameter(28, 0.0);   // Filter V2: disabled
+                    updateSIDParameter(29, 0.0);   // Filter V3: disabled
+
+                    // Volume default
+                    updateSIDParameter(30, 0.7);   // Volume: 70%
+
+                    console.log('[RGSID] Default parameters initialized');
+                }, 500);
+            }
 
             // Connect synth to shared analyzer
             currentSynth.masterGain.connect(sharedAnalyzer.inputGain);
@@ -1012,6 +1448,7 @@
             let engineName = 'Simple';
             if (engine === 'rgresonate1') engineName = 'RGResonate1';
             else if (engine === 'rgahx') engineName = 'RGAHX';
+            else if (engine === 'rgsid') engineName = 'RGSID';
             else if (engine === 'rg1piano') engineName = 'RG1Piano';
 
             synthStatus.innerHTML = `Synth: <span>${engineName}</span>`;
@@ -1020,16 +1457,19 @@
             document.getElementById('btnInitSimple').textContent = engine === 'simple' ? 'Simple Synth Initialized' : 'Initialize Simple Synth';
             document.getElementById('btnInitRGResonate1').textContent = engine === 'rgresonate1' ? 'RGResonate1 Initialized' : 'Initialize RGResonate1';
             document.getElementById('btnInitRGAHX').textContent = engine === 'rgahx' ? 'RGAHX Initialized' : 'Initialize RGAHX';
+            document.getElementById('btnInitRGSID').textContent = engine === 'rgsid' ? 'RGSID Initialized' : 'Initialize RGSID';
             document.getElementById('btnInitRG1Piano').textContent = engine === 'rg1piano' ? 'RG1Piano Initialized' : 'Initialize RG1Piano';
 
             // Disable active button
             document.getElementById('btnInitSimple').disabled = engine === 'simple';
             document.getElementById('btnInitRGResonate1').disabled = engine === 'rgresonate1';
             document.getElementById('btnInitRGAHX').disabled = engine === 'rgahx';
+            document.getElementById('btnInitRGSID').disabled = engine === 'rgsid';
             document.getElementById('btnInitRG1Piano').disabled = engine === 'rg1piano';
 
             // Show/hide engine-specific controls
             document.getElementById('rgahxControls').style.display = engine === 'rgahx' ? 'block' : 'none';
+            document.getElementById('rgsidControls').style.display = engine === 'rgsid' ? 'block' : 'none';
 
             // Don't call setAudible(true) - already connected through analyzer
             // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)

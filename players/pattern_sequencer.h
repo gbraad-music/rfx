@@ -192,6 +192,11 @@ void pattern_sequencer_get_position(const PatternSequencer* seq,
                                     uint16_t* row);
 
 /**
+ * Get song length (number of patterns in song order)
+ */
+uint16_t pattern_sequencer_get_song_length(const PatternSequencer* seq);
+
+/**
  * Jump to specific position
  * @param pattern_index Index in pattern order (NOT pattern number)
  * @param row Row within pattern

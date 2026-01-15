@@ -243,6 +243,14 @@ uint8_t mod_player_get_song_length(const ModPlayer* player);
  */
 void mod_player_set_disable_looping(ModPlayer* player, bool disable);
 
+/**
+ * Get underlying PatternSequencer (for advanced control with RegrooveController)
+ * WARNING: Do not destroy the returned sequencer - it's owned by the player
+ * @param player Player instance
+ * @return Pattern sequencer instance or NULL
+ */
+struct PatternSequencer* mod_player_get_sequencer(ModPlayer* player);
+
 #ifdef __cplusplus
 }
 #endif

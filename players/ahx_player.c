@@ -1753,3 +1753,7 @@ void ahx_player_set_disable_looping(AhxPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
 }
+
+PatternSequencer* ahx_player_get_sequencer(AhxPlayer* player) {
+    return player ? player->sequencer : NULL;
+}

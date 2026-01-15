@@ -199,6 +199,14 @@ void med_player_set_disable_looping(MedPlayer* player, bool disable);
  */
 uint8_t med_player_get_num_channels(const MedPlayer* player);
 
+/**
+ * Get underlying PatternSequencer (for advanced control with RegrooveController)
+ * WARNING: Do not destroy the returned sequencer - it's owned by the player
+ * @param player Player instance
+ * @return Pattern sequencer instance or NULL
+ */
+struct PatternSequencer* med_player_get_sequencer(MedPlayer* player);
+
 #ifdef __cplusplus
 }
 #endif

@@ -14,7 +14,7 @@
  *   1-4 - Toggle channel mute
  */
 
-#include "../../synth/deck_player.h"
+#include "../../players/deck_player.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

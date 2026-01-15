@@ -1658,6 +1658,9 @@ static void process_tick(MedPlayer* player) {
 static void mmd_on_tick(void* user_data, uint8_t tick) {
     MedPlayer* player = (MedPlayer*)user_data;
 
+    // Update tick counter (needed for portamento and other per-tick effects)
+    player->tick = tick;
+
     // Process per-tick portamento effects for all channels
     for (int ch = 0; ch < player->num_tracks; ch++) {
         MedChannel* chan = &player->channels[ch];
@@ -2076,4 +2079,8 @@ void med_player_set_disable_looping(MedPlayer* player, bool disable) {
 uint8_t med_player_get_num_channels(const MedPlayer* player) {
     if (!player) return 0;
     return player->num_tracks;
+}
+
+PatternSequencer* med_player_get_sequencer(MedPlayer* player) {
+    return player ? player->sequencer : NULL;
 }

@@ -22,18 +22,20 @@ endif()
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../players
     ${CMAKE_CURRENT_SOURCE_DIR}/../../synth
 )
 
 # AHX Player Test executable
 add_executable(ahx_player_test
     ahx_player_test.c
-    ../../synth/ahx_player.c
+    ../../players/ahx_player.c
     ../../synth/ahx_synth_core.c
-    ../../synth/tracker_modulator.c
-    ../../synth/tracker_sequence.c
-    ../../synth/tracker_voice.c
-    ../../synth/tracker_mixer.c
+    ../../players/tracker_modulator.c
+    ../../players/tracker_sequence.c
+    ../../players/tracker_voice.c
+    ../../players/tracker_mixer.c
+    ../../players/pattern_sequencer.c
 )
 
 # Link libraries

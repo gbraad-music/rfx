@@ -563,13 +563,14 @@ uint32_t ahx_synth_voice_process(AhxSynthVoice* voice, float* output, uint32_t n
         }
         voice->samples_in_frame++;
 
-        // Get sample from voice playback
-        int32_t left, right;
-        tracker_voice_get_stereo_sample(&voice->voice_playback, &left, &right);
+        // Get raw sample from voice playback (without volume/panning applied)
+        int32_t sample = tracker_voice_get_sample(&voice->voice_playback);
 
         // Apply volume and convert to float
-        float sample = ((float)(left + right) / 2.0f) * (voice->VoiceVolume / 64.0f) / 32768.0f;
-        output[i] = sample;
+        // Reduce output to 50% to prevent clipping when mixing 4 voices
+        float sample_f = sample / 32768.0f;
+        float vol = (voice->VoiceVolume / 64.0f) * 0.5f;
+        output[i] = sample_f * vol;
 
         if (!voice->TrackOn) {
             // Voice stopped - clear remaining buffer

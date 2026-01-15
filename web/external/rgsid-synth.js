@@ -19,6 +19,87 @@ class RGSIDSynth {
         this.pendingNotes = [];
     }
 
+    /**
+     * Get parameter metadata (LV2-style descriptor)
+     */
+    static getParameterInfo() {
+        return [
+            // Voice 1 (0-7)
+            { index: 0, name: "Waveform", type: "enum", group: "Voice 1", default: 4,
+              options: [
+                {value: 0, label: "Off"}, {value: 1, label: "Triangle"},
+                {value: 2, label: "Sawtooth"}, {value: 4, label: "Pulse"},
+                {value: 8, label: "Noise"}, {value: 3, label: "Tri+Saw"},
+                {value: 5, label: "Tri+Pulse"}, {value: 6, label: "Saw+Pulse"}
+              ]
+            },
+            { index: 1, name: "PW", type: "float", min: 0, max: 100, default: 50, unit: "%", group: "Voice 1", scale: "normalized", width: 40 },
+            { index: 2, name: "Attack", type: "float", min: 0, max: 100, default: 0, group: "Voice 1", scale: "normalized", width: 35 },
+            { index: 3, name: "Decay", type: "float", min: 0, max: 100, default: 50, group: "Voice 1", scale: "normalized", width: 35 },
+            { index: 4, name: "Sustain", type: "float", min: 0, max: 100, default: 70, group: "Voice 1", scale: "normalized", width: 35 },
+            { index: 5, name: "Release", type: "float", min: 0, max: 100, default: 30, group: "Voice 1", scale: "normalized", width: 35 },
+            { index: 6, name: "Ring Mod", type: "boolean", default: false, group: "Voice 1" },
+            { index: 7, name: "Sync", type: "boolean", default: false, group: "Voice 1" },
+
+            // Voice 2 (8-15)
+            { index: 8, name: "Waveform", type: "enum", group: "Voice 2", default: 2,
+              options: [
+                {value: 0, label: "Off"}, {value: 1, label: "Triangle"},
+                {value: 2, label: "Sawtooth"}, {value: 4, label: "Pulse"},
+                {value: 8, label: "Noise"}, {value: 3, label: "Tri+Saw"},
+                {value: 5, label: "Tri+Pulse"}, {value: 6, label: "Saw+Pulse"}
+              ]
+            },
+            { index: 9, name: "PW", type: "float", min: 0, max: 100, default: 50, unit: "%", group: "Voice 2", scale: "normalized", width: 40 },
+            { index: 10, name: "Attack", type: "float", min: 0, max: 100, default: 0, group: "Voice 2", scale: "normalized", width: 35 },
+            { index: 11, name: "Decay", type: "float", min: 0, max: 100, default: 50, group: "Voice 2", scale: "normalized", width: 35 },
+            { index: 12, name: "Sustain", type: "float", min: 0, max: 100, default: 70, group: "Voice 2", scale: "normalized", width: 35 },
+            { index: 13, name: "Release", type: "float", min: 0, max: 100, default: 30, group: "Voice 2", scale: "normalized", width: 35 },
+            { index: 14, name: "Ring Mod", type: "boolean", default: false, group: "Voice 2" },
+            { index: 15, name: "Sync", type: "boolean", default: false, group: "Voice 2" },
+
+            // Voice 3 (16-23)
+            { index: 16, name: "Waveform", type: "enum", group: "Voice 3", default: 4,
+              options: [
+                {value: 0, label: "Off"}, {value: 1, label: "Triangle"},
+                {value: 2, label: "Sawtooth"}, {value: 4, label: "Pulse"},
+                {value: 8, label: "Noise"}, {value: 3, label: "Tri+Saw"},
+                {value: 5, label: "Tri+Pulse"}, {value: 6, label: "Saw+Pulse"}
+              ]
+            },
+            { index: 17, name: "PW", type: "float", min: 0, max: 100, default: 50, unit: "%", group: "Voice 3", scale: "normalized", width: 40 },
+            { index: 18, name: "Attack", type: "float", min: 0, max: 100, default: 0, group: "Voice 3", scale: "normalized", width: 35 },
+            { index: 19, name: "Decay", type: "float", min: 0, max: 100, default: 50, group: "Voice 3", scale: "normalized", width: 35 },
+            { index: 20, name: "Sustain", type: "float", min: 0, max: 100, default: 70, group: "Voice 3", scale: "normalized", width: 35 },
+            { index: 21, name: "Release", type: "float", min: 0, max: 100, default: 30, group: "Voice 3", scale: "normalized", width: 35 },
+            { index: 22, name: "Ring Mod", type: "boolean", default: false, group: "Voice 3" },
+            { index: 23, name: "Sync", type: "boolean", default: false, group: "Voice 3" },
+
+            // Filter (24-29)
+            { index: 24, name: "Mode", type: "enum", group: "Filter", default: 1,
+              options: [
+                {value: 0, label: "Off"}, {value: 1, label: "Low Pass"},
+                {value: 2, label: "Band Pass"}, {value: 3, label: "High Pass"}
+              ]
+            },
+            { index: 25, name: "Cutoff", type: "float", min: 0, max: 100, default: 50, group: "Filter", scale: "normalized", width: 45, height: 140 },
+            { index: 26, name: "Resonance", type: "float", min: 0, max: 100, default: 0, group: "Filter", scale: "normalized", width: 45, height: 140 },
+            { index: 27, name: "V1 → Flt", type: "boolean", default: true, group: "Filter" },
+            { index: 28, name: "V2 → Flt", type: "boolean", default: false, group: "Filter" },
+            { index: 29, name: "V3 → Flt", type: "boolean", default: false, group: "Filter" },
+
+            // Global (30)
+            { index: 30, name: "Volume", type: "float", min: 0, max: 100, default: 70, group: "Global", scale: "normalized", width: 50, height: 150 }
+        ];
+    }
+
+    /**
+     * Instance method for parameter info (delegates to static)
+     */
+    getParameterInfo() {
+        return RGSIDSynth.getParameterInfo();
+    }
+
     async initialize() {
         console.log('[RGSIDSynth] 🎛️ Initializing WASM SID Synth...');
         try {
@@ -287,4 +368,22 @@ class RGSIDSynth {
             }
         }
     }
+}
+
+// Register synth in registry (auto-discovery)
+if (typeof SynthRegistry !== 'undefined') {
+    SynthRegistry.register({
+        id: 'rgsid',
+        name: 'RGSID',
+        displayName: 'RGSID - Commodore 64 SID Chip',
+        description: '3-voice synthesizer with filter, ring modulation, and hard sync',
+        engineId: 2,
+        class: RGSIDSynth,
+        wasmFiles: {
+            js: 'synths/rgsidsynth.js',
+            wasm: 'synths/rgsidsynth.wasm'
+        },
+        category: 'synthesizer',
+        getParameterInfo: RGSIDSynth.getParameterInfo
+    });
 }

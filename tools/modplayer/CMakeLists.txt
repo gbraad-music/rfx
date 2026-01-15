@@ -22,15 +22,16 @@ endif()
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../synth
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../players
 )
 
 # MOD Player Test executable
 add_executable(mod_player_test
     mod_player_test.c
-    ../../synth/mod_player.c
-    ../../synth/tracker_voice.c
-    ../../synth/tracker_mixer.c
+    ../../players/mod_player.c
+    ../../players/tracker_voice.c
+    ../../players/tracker_mixer.c
+    ../../players/pattern_sequencer.c
 )
 
 # Link libraries

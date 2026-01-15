@@ -27,15 +27,16 @@ endif()
 # Include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../synth
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../players
 )
 
 # MMD Player Test executable sources
 set(MEDPLAYER_SOURCES
     med_player_test.c
-    ../../synth/mmd_player.c
-    ../../synth/tracker_voice.c
-    ../../synth/tracker_mixer.c
+    ../../players/mmd_player.c
+    ../../players/tracker_voice.c
+    ../../players/tracker_mixer.c
+    ../../players/pattern_sequencer.c
 )
 
 # Add synth sources if MMD_SYNTH_SUPPORT is enabled

@@ -72,6 +72,7 @@ void deck_player_set_bpm(DeckPlayer* player, uint16_t bpm);
 
 // Loop control
 void deck_player_set_loop_range(DeckPlayer* player, uint16_t start_order, uint16_t end_order);
+void deck_player_set_disable_looping(DeckPlayer* player, bool disable);
 
 // Channel muting (channels 0-3, supports up to 4 channels)
 void deck_player_set_channel_mute(DeckPlayer* player, uint8_t channel, bool muted);

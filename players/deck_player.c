@@ -332,6 +332,24 @@ void deck_player_set_loop_range(DeckPlayer* player, uint16_t start_order, uint16
     }
 }
 
+void deck_player_set_disable_looping(DeckPlayer* player, bool disable) {
+    if (!player) return;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            mod_player_set_disable_looping(player->mod_player, disable);
+            break;
+        case DECK_PLAYER_MED:
+            med_player_set_disable_looping(player->med_player, disable);
+            break;
+        case DECK_PLAYER_AHX:
+            // AHX doesn't support disable looping
+            break;
+        default:
+            break;
+    }
+}
+
 void deck_player_set_channel_mute(DeckPlayer* player, uint8_t channel, bool muted) {
     if (!player || channel >= 4) return;
 

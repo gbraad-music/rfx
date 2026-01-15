@@ -344,15 +344,8 @@ double pattern_sequencer_get_samples_per_tick(const PatternSequencer* seq) {
     return seq ? seq->samples_per_tick : 0.0;
 }
 
-// Main process function
-void pattern_sequencer_process(PatternSequencer* seq,
-                               uint32_t frames,
-                               uint32_t sample_rate) {
-    if (!seq || !seq->playing || !seq->pattern_order || seq->order_length == 0) {
-        return;
-    }
-
-    // Calculate samples per tick based on mode
+// Helper to recalculate timing (called when BPM changes or at start of buffer)
+static inline void recalculate_timing(PatternSequencer* seq, uint32_t sample_rate) {
     if (seq->mode == PS_MODE_TICK_BASED) {
         // Tick-based (MOD/MMD): BPM controls timing
         // samples_per_tick = (2.5 * sample_rate) / BPM
@@ -364,10 +357,21 @@ void pattern_sequencer_process(PatternSequencer* seq,
         // This matches PAL video frame rate (20ms per frame)
         seq->samples_per_tick = sample_rate / 50.0;
     }
+}
+
+// Main process function
+void pattern_sequencer_process(PatternSequencer* seq,
+                               uint32_t frames,
+                               uint32_t sample_rate) {
+    if (!seq || !seq->playing || !seq->pattern_order || seq->order_length == 0) {
+        return;
+    }
+
+    // Calculate samples per tick at start of buffer
+    // NOTE: This will be recalculated mid-buffer if BPM changes (see pattern_sequencer_set_bpm)
+    recalculate_timing(seq, sample_rate);
 
     for (uint32_t frame = 0; frame < frames; frame++) {
-        seq->sample_accumulator += 1.0;
-
         // Check if it's time for a tick
         if (seq->sample_accumulator >= seq->samples_per_tick) {
             seq->sample_accumulator -= seq->samples_per_tick;
@@ -479,7 +483,143 @@ void pattern_sequencer_process(PatternSequencer* seq,
 tick_done:
             (void)0; // Empty statement for label
         }
+
+        // Increment sample accumulator AFTER tick processing
+        // This matches the original MOD player timing and prevents systematic drift
+        seq->sample_accumulator += 1.0;
     }
+
+    // Update last position
+    seq->last_pattern_index = seq->current_pattern_index;
+    seq->last_row = seq->current_row;
+}
+
+// Update timing (call once per buffer for efficiency)
+void pattern_sequencer_update_timing(PatternSequencer* seq, uint32_t sample_rate) {
+    if (!seq) return;
+    recalculate_timing(seq, sample_rate);
+}
+
+// Process a single sample (optimized for per-sample loops)
+void pattern_sequencer_process_sample(PatternSequencer* seq) {
+    if (!seq || !seq->playing || !seq->pattern_order || seq->order_length == 0) {
+        return;
+    }
+
+    // Check if it's time for a tick
+    if (seq->sample_accumulator >= seq->samples_per_tick) {
+        seq->sample_accumulator -= seq->samples_per_tick;
+
+        // Handle pattern loop jump
+        if (seq->pattern_loop_pending) {
+            seq->pattern_loop_pending = false;
+            seq->current_row = seq->pattern_loop_row;
+            seq->tick = 0;
+            // Don't continue to normal row advance
+            goto tick_done;
+        }
+
+        // Tick callback (called every tick)
+        if (seq->callbacks.on_tick) {
+            seq->callbacks.on_tick(seq->user_data, seq->tick);
+        }
+
+        seq->tick++;
+
+        // Check if it's time to advance to next row
+        if (seq->tick >= seq->speed) {
+            seq->tick = 0;
+
+            // Handle pattern delay
+            if (seq->pattern_delay > 0) {
+                seq->pattern_delay--;
+                seq->in_pattern_delay = true;
+                // Process same row again, but don't trigger on_row
+                goto tick_done;
+            }
+            seq->in_pattern_delay = false;
+
+            // Row callback (called when advancing to new row)
+            if (seq->callbacks.on_row && seq->pattern_order) {
+                uint16_t pattern_num = seq->pattern_order[seq->current_pattern_index];
+                seq->callbacks.on_row(seq->user_data,
+                                     seq->current_pattern_index,
+                                     pattern_num,
+                                     seq->current_row);
+            }
+
+            // Handle pending jump (B or D effect)
+            if (seq->jump_pending) {
+                seq->jump_pending = false;
+
+                // Clamp to valid range
+                if (seq->jump_to_pattern >= seq->order_length) {
+                    seq->jump_to_pattern = 0;
+                }
+
+                seq->current_pattern_index = seq->jump_to_pattern;
+                seq->current_row = seq->jump_to_row;
+
+                // Clear pattern loop on jump
+                seq->pattern_loop_row = 0;
+                seq->pattern_loop_count = 0;
+
+                // Trigger pattern change callback
+                if (seq->callbacks.on_pattern_change && seq->pattern_order) {
+                    uint16_t pattern_num = seq->pattern_order[seq->current_pattern_index];
+                    seq->callbacks.on_pattern_change(seq->user_data,
+                                                     seq->current_pattern_index,
+                                                     pattern_num);
+                }
+            } else {
+                // Normal row advance
+                seq->current_row++;
+
+                // Check if we've reached end of pattern
+                if (seq->current_row >= seq->rows_per_pattern) {
+                    seq->current_row = 0;
+                    seq->current_pattern_index++;
+
+                    // Clear pattern loop when advancing to new pattern
+                    seq->pattern_loop_row = 0;
+                    seq->pattern_loop_count = 0;
+
+                    // Check if we've reached end of song order
+                    if (seq->current_pattern_index > seq->loop_end) {
+                        // Song ended
+                        bool should_continue = true;
+
+                        if (seq->callbacks.on_song_end) {
+                            should_continue = seq->callbacks.on_song_end(seq->user_data);
+                        }
+
+                        if (should_continue && seq->looping_enabled) {
+                            // Loop back to start
+                            seq->current_pattern_index = seq->loop_start;
+                        } else {
+                            // Stop playback
+                            seq->playing = false;
+                            return;
+                        }
+                    }
+
+                    // Trigger pattern change callback
+                    if (seq->callbacks.on_pattern_change && seq->pattern_order) {
+                        uint16_t pattern_num = seq->pattern_order[seq->current_pattern_index];
+                        seq->callbacks.on_pattern_change(seq->user_data,
+                                                         seq->current_pattern_index,
+                                                         pattern_num);
+                    }
+                }
+            }
+        }
+
+tick_done:
+        (void)0; // Empty statement for label
+    }
+
+    // Increment sample accumulator AFTER tick processing
+    seq->sample_accumulator += 1.0;
 
     // Update last position
     seq->last_pattern_index = seq->current_pattern_index;

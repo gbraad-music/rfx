@@ -1,12 +1,14 @@
 /*
  * Simple SDL2-based SID Player Test
  *
- * Usage: ./sid_player_test <filename.sid> [-o output.wav] [-v voices] [-s subsong] [-d]
+ * Usage: ./sid_player_test <filename.sid> [-o output.wav] [-v voices] [-s subsong] [-p] [-d]
  *
  * Options:
  *   -o <file>     Render to WAV file (use '-' for stdout)
  *   -v <123>      Render only specified voices (e.g., -v 13 for voices 1 and 3)
  *   -s <num>      Select subsong (default 0)
+ *   -p            Force PAL timing (50Hz, overrides file header)
+ *   -n            Force NTSC timing (60Hz, overrides file header)
  *   -d            Enable debug/tracker output
  *
  * Controls (interactive mode):
@@ -365,7 +367,7 @@ void run_interactive(SidPlayer* player) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <filename.sid> [-o output.wav] [-v voices] [-s subsong] [-d]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <filename.sid> [-o output.wav] [-v voices] [-s subsong] [-p] [-n] [-d]\n", argv[0]);
         return 1;
     }
 
@@ -374,6 +376,8 @@ int main(int argc, char** argv) {
     const char* voice_mask = NULL;
     int subsong = 0;
     bool debug_mode = false;
+    bool force_pal = false;
+    bool force_ntsc = false;
 
     /* Parse arguments */
     for (int i = 2; i < argc; i++) {
@@ -383,6 +387,10 @@ int main(int argc, char** argv) {
             voice_mask = argv[++i];
         } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
             subsong = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "-p") == 0) {
+            force_pal = true;
+        } else if (strcmp(argv[i], "-n") == 0) {
+            force_ntsc = true;
         } else if (strcmp(argv[i], "-d") == 0) {
             debug_mode = true;
         }
@@ -431,6 +439,15 @@ int main(int argc, char** argv) {
     }
 
     free(file_data);
+
+    /* Force PAL or NTSC timing if requested */
+    if (force_pal) {
+        fprintf(stderr, "Forcing PAL timing (50Hz)\n");
+        sid_player_set_pal_mode(player, true);
+    } else if (force_ntsc) {
+        fprintf(stderr, "Forcing NTSC timing (60Hz)\n");
+        sid_player_set_pal_mode(player, false);
+    }
 
     /* Set subsong */
     if (subsong > 0 && subsong < sid_player_get_num_subsongs(player)) {

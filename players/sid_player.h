@@ -210,6 +210,18 @@ void sid_player_set_boost(SidPlayer* player, float boost);
  */
 void sid_player_set_disable_looping(SidPlayer* player, bool disable);
 
+/**
+ * Force PAL or NTSC timing mode (overrides file header detection)
+ * @param is_pal true for PAL (50Hz), false for NTSC (60Hz)
+ */
+void sid_player_set_pal_mode(SidPlayer* player, bool is_pal);
+
+/**
+ * Get current timing mode
+ * @return true if PAL (50Hz), false if NTSC (60Hz)
+ */
+bool sid_player_is_pal(const SidPlayer* player);
+
 /* ============================================================================
  * Debug/Analysis
  * ============================================================================ */

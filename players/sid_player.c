@@ -544,8 +544,25 @@ bool sid_player_load(SidPlayer* player, const uint8_t* data, size_t size) {
     player->current_song = player->start_song;
     player->speed_flags = speed;
 
-    /* Determine if current song is PAL or NTSC */
-    player->is_pal = (speed & (1 << player->current_song)) != 0;
+    /* Determine if current song is PAL or NTSC
+     * Speed flag convention:
+     * - Bit set (1) = PAL (50Hz) - European C64
+     * - Bit clear (0) = NTSC (60Hz) - American C64
+     * - All bits 0 = Unspecified, default to PAL (most common)
+     */
+    if (speed == 0) {
+        /* No speed specified - default to PAL (most C64 games are European) */
+        player->is_pal = true;
+    } else {
+        /* Check bit for this subsong */
+        player->is_pal = (speed & (1 << player->current_song)) != 0;
+    }
+
+    /* Debug output for timing mode */
+    fprintf(stderr, "SID Timing: %s (speed flag: 0x%08X, subsong: %d)%s\n",
+            player->is_pal ? "PAL (50Hz)" : "NTSC (60Hz)",
+            speed, player->current_song,
+            speed == 0 ? " [defaulted to PAL]" : "");
 
     /* Initialize gate tracking */
     memset(player->prev_gate, 0, sizeof(player->prev_gate));
@@ -737,8 +754,6 @@ void sid_player_process_voices(SidPlayer* player,
     double samples_per_frame = sample_rate / frame_rate;
 
     for (size_t i = 0; i < num_samples; i++) {
-        player->frame_counter += 1.0;
-
         /* Call play routine at frame rate */
         if (player->frame_counter >= samples_per_frame) {
             player->frame_counter -= samples_per_frame;
@@ -780,6 +795,9 @@ void sid_player_process_voices(SidPlayer* player,
             }
         }
 
+        /* Increment sample accumulator AFTER frame processing */
+        player->frame_counter += 1.0;
+
         /* Generate one sample from SID chip */
         float stereo[2];
         synth_sid_process_f32(player->synth, stereo, 1, sample_rate);
@@ -814,6 +832,16 @@ void sid_player_set_boost(SidPlayer* player, float boost) {
 void sid_player_set_disable_looping(SidPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
+}
+
+void sid_player_set_pal_mode(SidPlayer* player, bool is_pal) {
+    if (!player) return;
+    player->is_pal = is_pal;
+}
+
+bool sid_player_is_pal(const SidPlayer* player) {
+    if (!player) return true;  // Default to PAL
+    return player->is_pal;
 }
 
 void sid_player_set_debug_output(SidPlayer* player, bool enabled) {

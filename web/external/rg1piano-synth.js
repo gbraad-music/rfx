@@ -39,7 +39,7 @@ class RG1PianoSynth {
             console.log('[RG1Piano] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (reuse synth-worklet, with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=173');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=181');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -98,7 +98,7 @@ class RG1PianoSynth {
                 data: {
                     jsCode: jsCode,
                     wasmBytes: wasmBytes,
-                    engine: 2 // RG1Piano engine ID
+                    engine: 3 // RG1Piano engine ID
                 }
             });
 

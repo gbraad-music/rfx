@@ -352,10 +352,10 @@ static inline void recalculate_timing(PatternSequencer* seq, uint32_t sample_rat
         // This matches standard ProTracker CIA timer timing
         seq->samples_per_tick = (2.5 * sample_rate) / (double)seq->bpm;
     } else {
-        // Frame-based (AHX/HVL): Fixed 50Hz frame rate
-        // samples_per_tick = sample_rate / 50.0
-        // This matches PAL video frame rate (20ms per frame)
-        seq->samples_per_tick = sample_rate / 50.0;
+        // Frame-based (AHX/HVL): BPM represents frame rate in Hz
+        // samples_per_tick = sample_rate / frame_rate
+        // Default is 50Hz (PAL), but can be adjusted via SpeedMultiplier (50, 100, 150, 200)
+        seq->samples_per_tick = sample_rate / (double)seq->bpm;
     }
 }
 

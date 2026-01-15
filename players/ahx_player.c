@@ -110,7 +110,6 @@ struct AhxVoice {
     // Public mixing variables
     int VoiceVolume, VoicePeriod;
     int16_t VoiceBuffer[0x281];  // 16-bit wavetable for higher quality
-    uint32_t Delta;  // HVL: Pre-calculated sample delta (16.16 fixed-point)
 
     // Internal state
     int Track, Transpose;
@@ -176,7 +175,6 @@ struct AhxPlayer {
     int VolumeTable[65][256];  // Kept for compatibility but not used in HVL mode
     float Boost;
     int Oversampling;
-    int pos[4];  // Sample positions for each voice
     int frame_counter;  // Frame timing counter for 50Hz IRQ
     int mixgain;  // HVL mixing gain
     int panning_left[256];   // HVL panning table
@@ -393,7 +391,6 @@ static void voice_init(AhxVoice* voice) {
     voice->TrackOn = 1;
     voice->TrackMasterVolume = 0x40;
     voice->WNRandom = 0x280;
-    voice->Delta = 1;
 }
 
 // Convert player's AhxInstrument to AhxCoreInstrument for synthesis core
@@ -1254,13 +1251,12 @@ static void player_set_audio(AhxPlayer* player, int v) {
         player->Voices[v].VoicePeriod = player->Voices[v].AudioPeriod;
     }
 
-    // Calculate delta for mixing (HVL: done once per frame, not per sample!)
+    // Update TrackerVoice period (for rendering via tracker_voice_get_stereo_sample)
     if (player->Voices[v].VoicePeriod) {
-        double freq = Period2Freq(player->Voices[v].VoicePeriod);
-        uint32_t delta = (uint32_t)(freq / (double)player->current_sample_rate);
-        if (delta > (0x280 << 16)) delta -= (0x280 << 16);
-        if (delta == 0) delta = 1;
-        player->Voices[v].Delta = delta;
+        tracker_voice_set_period(&player->Voices[v].voice_playback,
+                                player->Voices[v].VoicePeriod,
+                                AMIGA_PAULA_PAL_CLK,
+                                player->current_sample_rate);
     }
 
     if (player->Voices[v].NewWaveform) {
@@ -1274,6 +1270,11 @@ static void player_set_audio(AhxPlayer* player, int v) {
             }
         }
         player->Voices[v].VoiceBuffer[0x280] = player->Voices[v].VoiceBuffer[0];
+
+        // Update TrackerVoice with new waveform (for rendering via tracker_voice_get_stereo_sample)
+        tracker_voice_set_waveform_16bit(&player->Voices[v].voice_playback,
+                                         player->Voices[v].VoiceBuffer,
+                                         0x280);
     }
 }
 
@@ -1467,6 +1468,12 @@ static void player_play_irq(AhxPlayer* player) {
                 }
             }
             player->GetNewPosition = 1;
+        }
+
+        // Sync position to pattern_sequencer for regroove support
+        // This allows regroove to track and modify position
+        if (player->sequencer) {
+            pattern_sequencer_set_position(player->sequencer, player->PosNr, player->NoteNr);
         }
     }
 
@@ -1667,60 +1674,64 @@ void ahx_player_process_channels(AhxPlayer* player,
     // Update sample rate for delta calculations
     player->current_sample_rate = sample_rate;
 
-    // Process pattern sequencer timing (calls ahx_on_frame and ahx_on_step callbacks)
-    pattern_sequencer_process(player->sequencer, num_samples, sample_rate);
+    // Calculate frame timing (critical for correct playback)
+    int samples_per_frame = sample_rate / 50 / player->Song.SpeedMultiplier;
+    size_t output_pos = 0;
 
-    for (size_t i = 0; i < num_samples; i++) {
-        // Render each voice and prepare for mixing
-        TrackerMixerChannel mix_channels[4];
-
-        for (int v = 0; v < 4; v++) {
-            float sample = 0.0f;
-
-            if (!player->channel_muted[v] && player->Voices[v].VoiceVolume > 0) {
-                // Wrap position if needed
-                if (player->pos[v] >= (0x280 << 16))
-                    player->pos[v] -= 0x280 << 16;
-
-                // Read 16-bit sample from wavetable
-                const int16_t* waveform = (const int16_t*)player->Voices[v].VoiceBuffer;
-                int16_t sample_val = waveform[player->pos[v] >> 16];
-
-                // Convert to float and apply volume
-                // 16-bit sample range is -32768 to 32767
-                // Volume is 0-64, so normalize both
-                sample = (sample_val / 32768.0f) * (player->Voices[v].VoiceVolume / 64.0f);
-
-                // Advance position
-                player->pos[v] += player->Voices[v].Delta;
-            }
-
-            // Prepare channel for mixing
-            // AHX uses pre-calculated pan multipliers (0-127 range)
-            // Convert to normalized panning for shared mixer
-            // PanMultLeft=127, PanMultRight=0 → pan = -1.0 (hard left)
-            // PanMultLeft=0, PanMultRight=127 → pan = 1.0 (hard right)
-            // PanMultLeft=64, PanMultRight=64 → pan = 0.0 (center)
-            int panl = player->Voices[v].PanMultLeft;
-            int panr = player->Voices[v].PanMultRight;
-            float pan = ((float)panr - (float)panl) / 127.0f;
-            if (pan < -1.0f) pan = -1.0f;
-            if (pan > 1.0f) pan = 1.0f;
-
-            mix_channels[v].sample = sample;
-            mix_channels[v].panning = pan;
-            mix_channels[v].enabled = 1;
-
-            // Write to individual channel output if buffer provided
-            if (channel_outputs && channel_outputs[v]) {
-                channel_outputs[v][i] = sample;
-            }
+    // CHUNK-BASED RENDERING: Process in batches between frame updates
+    // This is critical for waveform quality - waveforms must be updated at frame boundaries
+    while (output_pos < num_samples && player->Playing) {
+        // Check if we need to process next frame (50Hz IRQ with SpeedMultiplier)
+        if (player->frame_counter <= 0) {
+            // Call the IRQ handler which processes step/frame logic
+            player_play_irq(player);
+            player->frame_counter = samples_per_frame;
         }
 
-        // Mix to stereo using shared mixer
-        // Apply mixgain as scaling factor (mixgain is typically 256, normalize to 1.0)
-        float scaling = player->mixgain / 256.0f;
-        tracker_mixer_mix_stereo(mix_channels, 4, &left[i], &right[i], scaling);
+        // Calculate chunk size: minimum of remaining samples and samples until next frame
+        int chunk_samples = (int)(num_samples - output_pos);
+        if (chunk_samples > player->frame_counter) {
+            chunk_samples = player->frame_counter;
+        }
+
+        // Render chunk with current waveforms using TrackerVoice (same as synth core)
+        for (int i = 0; i < chunk_samples; i++) {
+            size_t out_idx = output_pos + i;
+            float a = 0.0f, b = 0.0f;
+
+            for (int v = 0; v < 4; v++) {
+                if (player->channel_muted[v] || !player->Voices[v].TrackOn) continue;
+
+                // Use TrackerVoice to get raw sample (without volume/panning applied)
+                int32_t sample = tracker_voice_get_sample(&player->Voices[v].voice_playback);
+
+                // Convert to float and apply volume
+                // Reduce per-voice output to 50% to prevent clipping when mixing 4 voices
+                float sample_f = sample / 32768.0f;
+                float vol = (player->Voices[v].VoiceVolume / 64.0f) * 0.5f;
+
+                // Apply panning (values are 0-255)
+                float pan_l = player->Voices[v].PanMultLeft / 255.0f;
+                float pan_r = player->Voices[v].PanMultRight / 255.0f;
+
+                a += sample_f * vol * pan_l;
+                b += sample_f * vol * pan_r;
+
+                // Write to individual channel output if buffer provided
+                if (channel_outputs && channel_outputs[v]) {
+                    channel_outputs[v][out_idx] = sample_f * vol;
+                }
+            }
+
+            // Apply mixgain and clamp
+            float gain = player->mixgain / 256.0f;
+            left[out_idx] = CLAMP(a * gain, -1.0f, 1.0f);
+            right[out_idx] = CLAMP(b * gain, -1.0f, 1.0f);
+        }
+
+        // Advance counters
+        player->frame_counter -= chunk_samples;
+        output_pos += chunk_samples;
     }
 }
 

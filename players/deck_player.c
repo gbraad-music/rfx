@@ -343,7 +343,7 @@ void deck_player_set_disable_looping(DeckPlayer* player, bool disable) {
             med_player_set_disable_looping(player->med_player, disable);
             break;
         case DECK_PLAYER_AHX:
-            // AHX doesn't support disable looping
+            ahx_player_set_disable_looping(player->ahx_player, disable);
             break;
         default:
             break;

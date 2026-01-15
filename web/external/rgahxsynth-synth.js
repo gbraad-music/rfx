@@ -19,6 +19,62 @@ class RGAHXSynth {
         this.pendingNotes = [];
     }
 
+    /**
+     * Get parameter metadata (LV2-style descriptor)
+     */
+    static getParameterInfo() {
+        return [
+            // Oscillator (0-2)
+            { index: 0, name: "Waveform", type: "enum", group: "Oscillator", default: 1,
+              options: [
+                {value: 0, label: "Triangle"},
+                {value: 1, label: "Sawtooth"},
+                {value: 2, label: "Square"},
+                {value: 3, label: "Noise"}
+              ]
+            },
+            { index: 1, name: "Wave Len", type: "int", min: 0, max: 5, default: 4, group: "Oscillator", width: 40 },
+            { index: 2, name: "Volume", type: "int", min: 0, max: 64, default: 64, group: "Oscillator", width: 40 },
+
+            // Envelope (3-9)
+            { index: 3, name: "A Time", type: "int", min: 0, max: 255, default: 1, group: "Envelope", width: 35, height: 150 },
+            { index: 4, name: "A Vol", type: "int", min: 0, max: 64, default: 64, group: "Envelope", width: 35, height: 150 },
+            { index: 5, name: "D Time", type: "int", min: 0, max: 255, default: 20, group: "Envelope", width: 35, height: 150 },
+            { index: 6, name: "D Vol", type: "int", min: 0, max: 64, default: 48, group: "Envelope", width: 35, height: 150 },
+            { index: 7, name: "S Time", type: "int", min: 0, max: 255, default: 0, group: "Envelope", width: 35, height: 150, format: "sustain" },
+            { index: 8, name: "R Time", type: "int", min: 0, max: 255, default: 30, group: "Envelope", width: 35, height: 150 },
+            { index: 9, name: "R Vol", type: "int", min: 0, max: 64, default: 0, group: "Envelope", width: 35, height: 150 },
+
+            // Filter (10-13)
+            { index: 10, name: "Lower", type: "int", min: 0, max: 63, default: 1, group: "Filter", width: 40 },
+            { index: 11, name: "Upper", type: "int", min: 0, max: 63, default: 63, group: "Filter", width: 40 },
+            { index: 12, name: "Speed", type: "int", min: 0, max: 63, default: 0, group: "Filter", width: 40 },
+            { index: 13, name: "Enable", type: "boolean", default: false, group: "Filter" },
+
+            // PWM / Square (14-17)
+            { index: 14, name: "Lower", type: "int", min: 0, max: 63, default: 1, group: "PWM", width: 40 },
+            { index: 15, name: "Upper", type: "int", min: 0, max: 63, default: 63, group: "PWM", width: 40 },
+            { index: 16, name: "Speed", type: "int", min: 0, max: 63, default: 0, group: "PWM", width: 40 },
+            { index: 17, name: "Enable", type: "boolean", default: false, group: "PWM" },
+
+            // Vibrato (18-20)
+            { index: 18, name: "Delay", type: "int", min: 0, max: 255, default: 0, group: "Vibrato", width: 40 },
+            { index: 19, name: "Depth", type: "int", min: 0, max: 255, default: 0, group: "Vibrato", width: 40 },
+            { index: 20, name: "Speed", type: "int", min: 0, max: 255, default: 0, group: "Vibrato", width: 40 },
+
+            // Hard Cut Release (21-22)
+            { index: 21, name: "Enable", type: "boolean", default: false, group: "Hard Cut Release" },
+            { index: 22, name: "Frames", type: "int", min: 0, max: 255, default: 0, group: "Hard Cut Release", width: 40 }
+        ];
+    }
+
+    /**
+     * Instance method for parameter info (delegates to static)
+     */
+    getParameterInfo() {
+        return RGAHXSynth.getParameterInfo();
+    }
+
     async initialize() {
         console.log('[RGAHXSynth] 🎛️ Initializing WASM AHX Synth...');
         try {
@@ -184,6 +240,38 @@ class RGAHXSynth {
     }
 
     /**
+     * Set parameter by index (for auto-generated UI)
+     * Maps index to named parameter for worklet
+     */
+    setParameter(index, value) {
+        if (!this.isActive || !this.wasmReady || !this.workletNode) return;
+
+        // Map index to parameter name
+        const paramMap = {
+            0: 'waveform', 1: 'wave_length', 2: 'osc_volume',
+            3: 'attack_frames', 4: 'attack_volume', 5: 'decay_frames',
+            6: 'decay_volume', 7: 'sustain_frames', 8: 'release_frames',
+            9: 'release_volume', 10: 'filter_lower', 11: 'filter_upper',
+            12: 'filter_speed', 13: 'filter_enable', 14: 'square_lower',
+            15: 'square_upper', 16: 'square_speed', 17: 'square_enable',
+            18: 'vibrato_delay', 19: 'vibrato_depth', 20: 'vibrato_speed',
+            21: 'hard_cut_release', 22: 'hard_cut_frames'
+        };
+
+        const param = paramMap[index];
+        if (!param) {
+            console.warn(`[RGAHXSynth] Unknown parameter index: ${index}`);
+            return;
+        }
+
+        // Send to worklet
+        this.workletNode.port.postMessage({
+            type: 'setParam',
+            data: { param, value }
+        });
+    }
+
+    /**
      * Connect this synth to a destination node (Web Audio API standard)
      */
     connect(destination) {
@@ -303,4 +391,22 @@ class RGAHXSynth {
             }
         }
     }
+}
+
+// Register synth in registry (auto-discovery)
+if (typeof SynthRegistry !== 'undefined') {
+    SynthRegistry.register({
+        id: 'rgahx',
+        name: 'RGAHX',
+        displayName: 'RGAHX - Amiga AHX/HivelyTracker',
+        description: 'Authentic Amiga AHX synthesizer with waveform generation',
+        engineId: 1,
+        class: RGAHXSynth,
+        wasmFiles: {
+            js: 'synths/rgahxsynth.js',
+            wasm: 'synths/rgahxsynth.wasm'
+        },
+        category: 'synthesizer',
+        getParameterInfo: RGAHXSynth.getParameterInfo
+    });
 }

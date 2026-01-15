@@ -30,6 +30,7 @@ set(DECKPLAYER_SOURCES
     ../../players/mod_player.c
     ../../players/mmd_player.c
     ../../players/ahx_player.c
+    ../../players/sid_player.c
     ../../players/pattern_sequencer.c
     ../../players/tracker_mixer.c
     ../../players/tracker_voice.c
@@ -40,9 +41,12 @@ set(DECKPLAYER_SOURCES
     ../../synth/synth_envelope.c
     ../../synth/synth_lfo.c
     ../../synth/synth_sample_player.c
+    ../../synth/synth_sid.c
     ../../synth/ahx_synth_core.c
     ../../synth/ahx_instrument.c
     ../../synth/ahx_preset.c
+    # CPU emulator for SID
+    ../../common/cpu_6502.c
 )
 
 # Create executable

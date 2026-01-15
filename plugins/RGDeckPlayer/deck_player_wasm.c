@@ -1,5 +1,5 @@
 /*
- * WebAssembly Bindings for Deck Player (MOD/MED/AHX)
+ * WebAssembly Bindings for Deck Player (MOD/MED/AHX/SID)
  * Unified player abstraction for all tracker formats
  */
 
@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
-#include "../../synth/deck_player.h"
+#include "../../players/deck_player.h"
 
 // Position callback state (stored in player wrapper)
 typedef struct {

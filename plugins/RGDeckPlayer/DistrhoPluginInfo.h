@@ -1,5 +1,5 @@
 /*
- * RGModPlayer - Regroove MOD File Player
+ * RGDeckPlayer - Regroove Unified Tracker Player
  * DISTRHO Plugin Framework (DPF)
  */
 
@@ -7,13 +7,13 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 // Display strings
-#define RGMODPLAYER_DISPLAY_NAME "RGModPlayer - ProTracker Module Player"
-#define RGMODPLAYER_DESCRIPTION "4-Channel ProTracker MOD File Player"
-#define RGMODPLAYER_WINDOW_TITLE "RGModPlayer"
+#define RGDECKPLAYER_DISPLAY_NAME "RGDeckPlayer - Unified Tracker Player"
+#define RGDECKPLAYER_DESCRIPTION "MOD/MED/AHX/SID File Player"
+#define RGDECKPLAYER_WINDOW_TITLE "RGDeckPlayer"
 
 #define DISTRHO_PLUGIN_BRAND "Regroove"
-#define DISTRHO_PLUGIN_NAME  RGMODPLAYER_DISPLAY_NAME
-#define DISTRHO_PLUGIN_URI   "https://music.gbraad.nl/regrooved/rgmodplayer"
+#define DISTRHO_PLUGIN_NAME  RGDECKPLAYER_DISPLAY_NAME
+#define DISTRHO_PLUGIN_URI   "https://music.gbraad.nl/regrooved/rgdeckplayer"
 
 #define DISTRHO_PLUGIN_HAS_UI        1
 #define DISTRHO_PLUGIN_IS_RT_SAFE    1

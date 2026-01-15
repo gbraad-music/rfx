@@ -68,6 +68,9 @@ void ahx_player_set_position_callback(AhxPlayer* player, AhxPositionCallback cal
 // Get current playback position
 void ahx_player_get_position(const AhxPlayer* player, uint16_t* position, uint16_t* row);
 
+// Get song length (number of positions in play sequence)
+uint16_t ahx_player_get_song_length(const AhxPlayer* player);
+
 // Render audio samples
 // Outputs stereo float samples in range [-1.0, 1.0]
 // left and right arrays must have space for 'num_samples' floats
@@ -106,6 +109,9 @@ void ahx_player_set_oversampling(AhxPlayer* player, bool enabled);
 
 // Disable looping (for rendering to file)
 void ahx_player_set_disable_looping(AhxPlayer* player, bool disable);
+
+// Set loop range (for pattern loop button)
+void ahx_player_set_loop_range(AhxPlayer* player, uint16_t start, uint16_t end);
 
 /**
  * Get underlying PatternSequencer (for advanced control with RegrooveController)

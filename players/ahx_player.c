@@ -191,6 +191,8 @@ struct AhxPlayer {
 
     // Looping control
     bool disable_looping;
+    uint16_t loop_start;
+    uint16_t loop_end;
 
     // Sample rate for delta calculation
     int current_sample_rate;
@@ -688,6 +690,9 @@ static void init_subsong(AhxPlayer* player, int nr) {
     player->GetNewPosition = 1;
     player->SongEndReached = 0;
     player->TimingValue = player->PlayingTime = 0;
+    player->disable_looping = false;  // Enable looping by default
+    player->loop_start = 0;
+    player->loop_end = player->Song.PositionNr - 1;  // Full song by default
 
     for (int v = 0; v < 4; v++) {
         voice_init(&player->Voices[v]);
@@ -1460,14 +1465,21 @@ static void player_play_irq(AhxPlayer* player) {
             player->PosNr = player->PosJump;
             player->PosJump = 0;
 
-            if (player->PosNr == player->Song.PositionNr) {
+            // Check loop range FIRST (before song-end check)
+            if (player->PosNr > player->loop_end) {
+                player->PosNr = player->loop_start;
+                player->GetNewPosition = 1;
+            } else if (player->PosNr >= player->Song.PositionNr) {
+                // Song end - loop back to restart
                 player->SongEndReached = 1;
                 player->PosNr = player->Song.Restart;
                 if (player->disable_looping) {
                     player->Playing = 0;
                 }
+                player->GetNewPosition = 1;
+            } else {
+                player->GetNewPosition = 1;
             }
-            player->GetNewPosition = 1;
         }
 
         // Sync position to pattern_sequencer for regroove support
@@ -1657,6 +1669,11 @@ void ahx_player_get_position(const AhxPlayer* player, uint16_t* position, uint16
     if (row) *row = player->NoteNr;
 }
 
+uint16_t ahx_player_get_song_length(const AhxPlayer* player) {
+    if (!player) return 0;
+    return player->Song.PositionNr;
+}
+
 void ahx_player_process_channels(AhxPlayer* player,
                                    float* left,
                                    float* right,
@@ -1763,6 +1780,12 @@ void ahx_player_set_oversampling(AhxPlayer* player, bool enabled) {
 void ahx_player_set_disable_looping(AhxPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
+}
+
+void ahx_player_set_loop_range(AhxPlayer* player, uint16_t start, uint16_t end) {
+    if (!player) return;
+    player->loop_start = start;
+    player->loop_end = end;
 }
 
 PatternSequencer* ahx_player_get_sequencer(AhxPlayer* player) {

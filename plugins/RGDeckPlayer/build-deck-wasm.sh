@@ -61,10 +61,12 @@ EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}]"
 
 # Source files - unified deck player approach
 SOURCES="deck_player_wasm.c"
-SOURCES="$SOURCES ../../synth/deck_player.c"
+SOURCES="$SOURCES ../../players/deck_player.c"
 SOURCES="$SOURCES ../../players/mod_player.c"
 SOURCES="$SOURCES ../../players/mmd_player.c"
 SOURCES="$SOURCES ../../players/ahx_player.c"
+SOURCES="$SOURCES ../../players/sid_player.c"
+SOURCES="$SOURCES ../../players/pattern_sequencer.c"
 
 # Shared tracker components
 SOURCES="$SOURCES ../../players/tracker_mixer.c"
@@ -72,11 +74,18 @@ SOURCES="$SOURCES ../../players/tracker_voice.c"
 SOURCES="$SOURCES ../../players/tracker_modulator.c"
 SOURCES="$SOURCES ../../players/tracker_sequence.c"
 
-# Synth components (for MMD and AHX)
+# Synth components (for MMD, AHX, and SID)
 SOURCES="$SOURCES ../../synth/synth_oscillator.c"
 SOURCES="$SOURCES ../../synth/synth_envelope.c"
 SOURCES="$SOURCES ../../synth/synth_lfo.c"
-# Note: wavetable is header-only (wavetable.h), no .c file needed
+SOURCES="$SOURCES ../../synth/synth_sample_player.c"
+SOURCES="$SOURCES ../../synth/synth_sid.c"
+SOURCES="$SOURCES ../../synth/ahx_synth_core.c"
+SOURCES="$SOURCES ../../synth/ahx_instrument.c"
+SOURCES="$SOURCES ../../synth/ahx_preset.c"
+
+# CPU emulation for SID
+SOURCES="$SOURCES ../../common/cpu_6502.c"
 
 # Compile
 echo "Compiling..."
@@ -88,5 +97,6 @@ echo ""
 echo "This module supports:"
 echo "  - ProTracker MOD files (automatic detection)"
 echo "  - OctaMED MMD2/MMD3 files with 16-bit samples (automatic detection)"
-echo "  - AHX files (automatic detection)"
+echo "  - AHX/HVL files (automatic detection)"
+echo "  - Commodore 64 SID files (automatic detection)"
 echo "Done!"

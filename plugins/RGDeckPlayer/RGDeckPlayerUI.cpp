@@ -17,7 +17,6 @@ public:
             fParameters[i] = 0.0f;
         }
 
-        fParameters[kParameterPlay] = 1.0f;  // DEFAULT TO PLAYING
         fParameters[kParameterBPM] = 1.0f;  // 100% tempo
         fParameters[kParameterLoopEnd] = 127.0f;
         fParameters[kParameterCh1Volume] = 1.0f;
@@ -51,8 +50,6 @@ protected:
             fImGuiWidget->repaint();
         }
     }
-
-    void uiIdle() override { fImGuiWidget->repaint(); }
 
     void uiReshape(uint width, uint height) override {
         UI::uiReshape(width, height);

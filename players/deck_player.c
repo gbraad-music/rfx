@@ -4,9 +4,10 @@
  */
 
 #include "deck_player.h"
-#include "../players/mod_player.h"
-#include "../players/mmd_player.h"
-#include "../players/ahx_player.h"
+#include "mod_player.h"
+#include "mmd_player.h"
+#include "ahx_player.h"
+#include "pattern_sequencer.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -409,5 +410,20 @@ static void ahx_position_callback(uint8_t subsong, uint16_t position, uint16_t r
     DeckPlayer* player = (DeckPlayer*)user_data;
     if (player && player->position_callback) {
         player->position_callback(subsong, position, row, player->position_callback_userdata);
+    }
+}
+
+PatternSequencer* deck_player_get_sequencer(DeckPlayer* player) {
+    if (!player) return NULL;
+
+    switch (player->type) {
+        case DECK_PLAYER_MOD:
+            return mod_player_get_sequencer(player->mod_player);
+        case DECK_PLAYER_MED:
+            return med_player_get_sequencer(player->med_player);
+        case DECK_PLAYER_AHX:
+            return ahx_player_get_sequencer(player->ahx_player);
+        default:
+            return NULL;
     }
 }

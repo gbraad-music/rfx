@@ -67,7 +67,7 @@ struct RegrooveController {
 static void rg_on_tick(void* user_data, uint8_t tick);
 static void rg_on_row(void* user_data, uint16_t pattern_index, uint16_t pattern_number, uint16_t row);
 static void rg_on_pattern_change(void* user_data, uint16_t old_pattern, uint16_t new_pattern);
-static void rg_on_song_end(void* user_data);
+static bool rg_on_song_end(void* user_data);
 
 // ============================================================================
 // Core Functions
@@ -294,13 +294,15 @@ static void rg_on_pattern_change(void* user_data, uint16_t old_pattern, uint16_t
     }
 }
 
-static void rg_on_song_end(void* user_data) {
+static bool rg_on_song_end(void* user_data) {
     RegrooveController* ctrl = (RegrooveController*)user_data;
 
     // Chain to original callback if it exists
     if (ctrl->original_callbacks.on_song_end) {
-        ctrl->original_callbacks.on_song_end(ctrl->original_user_data);
+        return ctrl->original_callbacks.on_song_end(ctrl->original_user_data);
     }
+
+    return true;  // Default: continue looping
 }
 
 // ============================================================================

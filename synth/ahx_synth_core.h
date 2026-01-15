@@ -12,8 +12,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "tracker_voice.h"
-#include "tracker_modulator.h"
+#include "../players/tracker_voice.h"
+#include "../players/tracker_modulator.h"
 
 #ifdef __cplusplus
 extern "C" {

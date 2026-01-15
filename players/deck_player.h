@@ -92,6 +92,14 @@ void deck_player_process_channels(DeckPlayer* player,
 // Render audio samples (stereo mix only)
 void deck_player_process(DeckPlayer* player, float* left, float* right, size_t num_samples, int sample_rate);
 
+/**
+ * Get underlying PatternSequencer (for advanced control with RegrooveController)
+ * WARNING: Do not destroy the returned sequencer - it's owned by the individual player
+ * @param player Deck player instance
+ * @return Pattern sequencer instance or NULL if no file loaded
+ */
+struct PatternSequencer* deck_player_get_sequencer(DeckPlayer* player);
+
 #ifdef __cplusplus
 }
 #endif

@@ -107,6 +107,14 @@ void ahx_player_set_oversampling(AhxPlayer* player, bool enabled);
 // Disable looping (for rendering to file)
 void ahx_player_set_disable_looping(AhxPlayer* player, bool disable);
 
+/**
+ * Get underlying PatternSequencer (for advanced control with RegrooveController)
+ * WARNING: Do not destroy the returned sequencer - it's owned by the player
+ * @param player Player instance
+ * @return Pattern sequencer instance or NULL
+ */
+struct PatternSequencer* ahx_player_get_sequencer(AhxPlayer* player);
+
 #ifdef __cplusplus
 }
 #endif

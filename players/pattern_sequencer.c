@@ -243,6 +243,12 @@ void pattern_sequencer_get_position(const PatternSequencer* seq,
     }
 }
 
+// Get song length
+uint16_t pattern_sequencer_get_song_length(const PatternSequencer* seq) {
+    if (!seq) return 0;
+    return seq->order_length;
+}
+
 // Set position
 void pattern_sequencer_set_position(PatternSequencer* seq,
                                     uint16_t pattern_index,

@@ -2,6 +2,7 @@
 RACK_DIR ?= $(HOME)/Applications/VCVRack/Rack-SDK
 
 # FLAGS will be passed to both the C and C++ compiler
+FLAGS += -I../../players
 FLAGS += -I../../synth
 FLAGS += -DMMD_SYNTH_SUPPORT
 CFLAGS +=
@@ -12,26 +13,32 @@ CXXFLAGS +=
 LDFLAGS +=
 
 # Tell make where to find source files
+VPATH += ../../players
 VPATH += ../../synth
 
 # Add .cpp files to the build
 SOURCES += $(wildcard src/*.cpp)
 
-# Add tracker player C files
-SOURCES += ../../synth/mod_player.c
-SOURCES += ../../synth/mmd_player.c
-SOURCES += ../../synth/ahx_player.c
+# Add tracker player C files (moved to players/)
+SOURCES += ../../players/mod_player.c
+SOURCES += ../../players/mmd_player.c
+SOURCES += ../../players/ahx_player.c
+SOURCES += ../../players/pattern_sequencer.c
 
-# Add shared tracker components
-SOURCES += ../../synth/tracker_mixer.c
-SOURCES += ../../synth/tracker_voice.c
-SOURCES += ../../synth/tracker_modulator.c
-SOURCES += ../../synth/tracker_sequence.c
+# Add shared tracker components (moved to players/)
+SOURCES += ../../players/tracker_mixer.c
+SOURCES += ../../players/tracker_voice.c
+SOURCES += ../../players/tracker_modulator.c
+SOURCES += ../../players/tracker_sequence.c
 
-# Add OctaMED synth support components
+# Add synth support components (remain in synth/)
 SOURCES += ../../synth/synth_oscillator.c
 SOURCES += ../../synth/synth_envelope.c
 SOURCES += ../../synth/synth_lfo.c
+SOURCES += ../../synth/synth_sample_player.c
+SOURCES += ../../synth/ahx_synth_core.c
+SOURCES += ../../synth/ahx_instrument.c
+SOURCES += ../../synth/ahx_preset.c
 
 # Add dependencies
 DISTRIBUTABLES += res

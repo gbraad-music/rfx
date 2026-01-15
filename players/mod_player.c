@@ -402,6 +402,9 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
 static void mod_on_tick(void* user_data, uint8_t tick) {
     ModPlayer* player = (ModPlayer*)user_data;
 
+    // Update tick counter (needed for volume slide and other per-tick effects)
+    player->tick = tick;
+
     // Process per-tick effects for all channels
     for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
         process_effects(player, c);
@@ -1124,4 +1127,8 @@ void mod_player_process_channels(ModPlayer* player,
 void mod_player_process(ModPlayer* player, float* left, float* right, uint32_t frames, uint32_t sample_rate) {
     // Call the full version with no per-channel outputs
     mod_player_process_channels(player, left, right, NULL, frames, sample_rate);
+}
+
+PatternSequencer* mod_player_get_sequencer(ModPlayer* player) {
+    return player ? player->sequencer : NULL;
 }

@@ -1,12 +1,13 @@
 /*
  * Unified Deck Player Implementation
- * Manages MOD/MED/AHX players with automatic format detection
+ * Manages MOD/MED/AHX/SID players with automatic format detection
  */
 
 #include "deck_player.h"
 #include "mod_player.h"
 #include "mmd_player.h"
 #include "ahx_player.h"
+#include "sid_player.h"
 #include "pattern_sequencer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -19,12 +20,14 @@ struct DeckPlayer {
     ModPlayer* mod_player;
     MedPlayer* med_player;
     AhxPlayer* ahx_player;
+    SidPlayer* sid_player;
 
     // Position callback state
     DeckPlayerPositionCallback position_callback;
     void* position_callback_userdata;
 
-    // Channel mute states (shared across all player types)
+    // Channel/voice mute states (shared across all player types)
+    // MOD/AHX: 4 channels, SID: 3 voices
     bool channel_muted[4];
 };
 
@@ -32,17 +35,19 @@ struct DeckPlayer {
 static void mod_position_callback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data);
 static void med_position_callback(uint8_t order, uint8_t pattern, uint16_t row, void* user_data);
 static void ahx_position_callback(uint8_t subsong, uint16_t position, uint16_t row, void* user_data);
+static void sid_position_callback(uint8_t subsong, uint32_t time_ms, void* user_data);
 
 DeckPlayer* deck_player_create(void) {
     DeckPlayer* player = calloc(1, sizeof(DeckPlayer));
     if (!player) return NULL;
 
-    // Create all three player instances
+    // Create all player instances
     player->mod_player = mod_player_create();
     player->med_player = med_player_create();
     player->ahx_player = ahx_player_create();
+    player->sid_player = sid_player_create();
 
-    if (!player->mod_player || !player->med_player || !player->ahx_player) {
+    if (!player->mod_player || !player->med_player || !player->ahx_player || !player->sid_player) {
         deck_player_destroy(player);
         return NULL;
     }
@@ -58,6 +63,7 @@ void deck_player_destroy(DeckPlayer* player) {
     if (player->mod_player) mod_player_destroy(player->mod_player);
     if (player->med_player) med_player_destroy(player->med_player);
     if (player->ahx_player) ahx_player_destroy(player->ahx_player);
+    if (player->sid_player) sid_player_destroy(player->sid_player);
 
     free(player);
 }
@@ -96,16 +102,32 @@ bool deck_player_load(DeckPlayer* player, const uint8_t* data, size_t size) {
             ahx_player_set_position_callback(player->ahx_player, ahx_position_callback, player);
         }
     }
+    // Try SID
+    else if (sid_player_detect(data, size)) {
+        success = sid_player_load(player->sid_player, data, size);
+        if (success) {
+            player->type = DECK_PLAYER_SID;
+            sid_player_set_position_callback(player->sid_player, sid_position_callback, player);
+        }
+    }
 
-    // Reset channel mutes on all players
+    // Reset channel/voice mutes on all players
     if (success) {
-        for (int i = 0; i < 4; i++) {
-            if (player->type == DECK_PLAYER_MOD) {
-                mod_player_set_channel_mute(player->mod_player, i, false);
-            } else if (player->type == DECK_PLAYER_MED) {
-                med_player_set_channel_mute(player->med_player, i, false);
-            } else if (player->type == DECK_PLAYER_AHX) {
-                ahx_player_set_channel_mute(player->ahx_player, i, false);
+        if (player->type == DECK_PLAYER_SID) {
+            // SID has 3 voices
+            for (int i = 0; i < 3; i++) {
+                sid_player_set_voice_mute(player->sid_player, i, false);
+            }
+        } else {
+            // MOD/MED/AHX have 4 channels
+            for (int i = 0; i < 4; i++) {
+                if (player->type == DECK_PLAYER_MOD) {
+                    mod_player_set_channel_mute(player->mod_player, i, false);
+                } else if (player->type == DECK_PLAYER_MED) {
+                    med_player_set_channel_mute(player->med_player, i, false);
+                } else if (player->type == DECK_PLAYER_AHX) {
+                    ahx_player_set_channel_mute(player->ahx_player, i, false);
+                }
             }
         }
     }
@@ -125,6 +147,7 @@ const char* deck_player_get_type_name(const DeckPlayer* player) {
         case DECK_PLAYER_MOD: return "ProTracker MOD";
         case DECK_PLAYER_MED: return "OctaMED";
         case DECK_PLAYER_AHX: return "AHX/HVL";
+        case DECK_PLAYER_SID: return "Commodore 64 SID";
         default: return "None";
     }
 }
@@ -139,6 +162,8 @@ const char* deck_player_get_title(const DeckPlayer* player) {
             return NULL;  // MED player doesn't expose title
         case DECK_PLAYER_AHX:
             return ahx_player_get_title(player->ahx_player);
+        case DECK_PLAYER_SID:
+            return sid_player_get_title(player->sid_player);
         default:
             return NULL;
     }
@@ -156,6 +181,9 @@ void deck_player_start(DeckPlayer* player) {
             break;
         case DECK_PLAYER_AHX:
             ahx_player_start(player->ahx_player);
+            break;
+        case DECK_PLAYER_SID:
+            sid_player_start(player->sid_player);
             break;
         default:
             break;
@@ -175,6 +203,9 @@ void deck_player_stop(DeckPlayer* player) {
         case DECK_PLAYER_AHX:
             ahx_player_stop(player->ahx_player);
             break;
+        case DECK_PLAYER_SID:
+            sid_player_stop(player->sid_player);
+            break;
         default:
             break;
     }
@@ -190,6 +221,8 @@ bool deck_player_is_playing(const DeckPlayer* player) {
             return med_player_is_playing(player->med_player);
         case DECK_PLAYER_AHX:
             return ahx_player_is_playing(player->ahx_player);
+        case DECK_PLAYER_SID:
+            return sid_player_is_playing(player->sid_player);
         default:
             return false;
     }
@@ -258,8 +291,7 @@ uint8_t deck_player_get_song_length(const DeckPlayer* player) {
         case DECK_PLAYER_MED:
             return med_player_get_song_length(player->med_player);
         case DECK_PLAYER_AHX:
-            // AHX doesn't expose song length API
-            return 0;
+            return ahx_player_get_song_length(player->ahx_player);
         default:
             return 0;
     }
@@ -325,7 +357,7 @@ void deck_player_set_loop_range(DeckPlayer* player, uint16_t start_order, uint16
             med_player_set_loop_range(player->med_player, start_order, end_order);
             break;
         case DECK_PLAYER_AHX:
-            // AHX doesn't support loop range
+            ahx_player_set_loop_range(player->ahx_player, start_order, end_order);
             break;
         default:
             break;
@@ -351,7 +383,11 @@ void deck_player_set_disable_looping(DeckPlayer* player, bool disable) {
 }
 
 void deck_player_set_channel_mute(DeckPlayer* player, uint8_t channel, bool muted) {
-    if (!player || channel >= 4) return;
+    if (!player) return;
+
+    // SID has 3 voices, others have 4 channels
+    uint8_t max_channels = (player->type == DECK_PLAYER_SID) ? 3 : 4;
+    if (channel >= max_channels) return;
 
     player->channel_muted[channel] = muted;
 
@@ -364,6 +400,9 @@ void deck_player_set_channel_mute(DeckPlayer* player, uint8_t channel, bool mute
             break;
         case DECK_PLAYER_AHX:
             ahx_player_set_channel_mute(player->ahx_player, channel, muted);
+            break;
+        case DECK_PLAYER_SID:
+            sid_player_set_voice_mute(player->sid_player, channel, muted);
             break;
         default:
             break;
@@ -400,6 +439,18 @@ void deck_player_process_channels(DeckPlayer* player,
             ahx_player_process_channels(player->ahx_player, left, right,
                                        channel_outputs, num_samples, sample_rate);
             break;
+        case DECK_PLAYER_SID:
+            // SID player has voice outputs [3], but deck API expects [4]
+            // Create temp array and map the 3 voices if needed
+            if (channel_outputs) {
+                float* sid_voices[3] = {channel_outputs[0], channel_outputs[1], channel_outputs[2]};
+                sid_player_process_voices(player->sid_player, left, right,
+                                         sid_voices, num_samples, sample_rate);
+            } else {
+                sid_player_process(player->sid_player, left, right,
+                                  num_samples, sample_rate);
+            }
+            break;
         default:
             break;
     }
@@ -427,7 +478,19 @@ static void med_position_callback(uint8_t order, uint8_t pattern, uint16_t row, 
 static void ahx_position_callback(uint8_t subsong, uint16_t position, uint16_t row, void* user_data) {
     DeckPlayer* player = (DeckPlayer*)user_data;
     if (player && player->position_callback) {
-        player->position_callback(subsong, position, row, player->position_callback_userdata);
+        // For AHX: position = sequence position (should be ORDER), subsong not used
+        // Remap: order=position, pattern=0 (AHX doesn't have separate patterns)
+        player->position_callback(position, 0, row, player->position_callback_userdata);
+    }
+}
+
+static void sid_position_callback(uint8_t subsong, uint32_t time_ms, void* user_data) {
+    DeckPlayer* player = (DeckPlayer*)user_data;
+    if (player && player->position_callback) {
+        // SID uses time_ms instead of row - convert to compatible format
+        // Use time_ms/1000 as "row" for compatibility
+        uint16_t seconds = time_ms / 1000;
+        player->position_callback(subsong, 0, seconds, player->position_callback_userdata);
     }
 }
 

@@ -118,7 +118,7 @@ class AudioEffectsProcessor {
     }
 
     async initModMedPlayer() {
-        console.log('📡 Loading Deck Player WASM (MOD/MED/AHX)...');
+        console.log('📡 Loading Deck Player WASM (MOD/MED/AHX/SID)...');
 
         try {
             const createDeckPlayerModule = await import('./players/deck-player.js').then(m => m.default);
@@ -131,7 +131,7 @@ class AudioEffectsProcessor {
 
             this.modMedPlayer = this.modMedModule._deck_player_create_wasm(this.audioContext.sampleRate);
 
-            console.log('✅ Deck Player ready (MOD/MED/AHX)!');
+            console.log('✅ Deck Player ready (MOD/MED/AHX/SID)!');
             return true;
         } catch (error) {
             console.warn('⚠️ Deck Player not available:', error.message);
@@ -291,6 +291,7 @@ class AudioEffectsProcessor {
 
     async detectTrackerFormat(file) {
         // Read first 1084 bytes to detect format by magic bytes
+        // Supports: MOD, MED, AHX, SID
         const buffer = await file.slice(0, 1084).arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
@@ -318,6 +319,15 @@ class AudioEffectsProcessor {
             const sig = String.fromCharCode(bytes[0], bytes[1], bytes[2]);
             if (sig === 'THX') {
                 console.log('✅ Detected: AHX/HVL');
+                return true;
+            }
+        }
+
+        // SID: Check offset 0 for 'PSID' or 'RSID'
+        if (bytes.length >= 4) {
+            const sig = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+            if (sig === 'PSID' || sig === 'RSID') {
+                console.log('✅ Detected: Commodore 64 SID');
                 return true;
             }
         }
@@ -434,13 +444,13 @@ class AudioEffectsProcessor {
     }
 
     async loadModMedFile(file) {
-        console.log(`🎵 Loading MOD/MED file: ${file.name}`);
+        console.log(`🎵 Loading tracker file: ${file.name}`);
 
         // Initialize WASM player if not already done
         if (!this.modMedModule) {
             const success = await this.initModMedPlayer();
             if (!success) {
-                console.error('❌ Failed to initialize MOD/MED player');
+                console.error('❌ Failed to initialize Deck Player');
                 return;
             }
         }
@@ -482,7 +492,7 @@ class AudioEffectsProcessor {
         this.modMedModule._free(filenamePtr);
 
         if (!success) {
-            console.error('❌ Failed to load MOD/MED file');
+            console.error('❌ Failed to load tracker file');
             return;
         }
 
@@ -503,10 +513,11 @@ class AudioEffectsProcessor {
         const songLength = this.modMedModule._deck_player_get_song_length_wasm(this.modMedPlayer);
 
         console.log(`✅ Loaded ${typeName}: ${file.name}`);
-        console.log(`   Channels: ${numChannels}, Song length: ${songLength} patterns`);
+        console.log(`   Channels: ${numChannels}, Song length: ${songLength} positions`);
 
         // Update UI
         document.getElementById('modmedTypeName').textContent = `${typeName}: ${file.name}`;
+        document.getElementById('modmedSongLength').textContent = songLength > 0 ? String(songLength).padStart(2, '0') : '--';
         document.getElementById('audioSourceInfo').style.display = 'block';
         document.getElementById('micDeviceList').style.display = 'none';
         document.getElementById('currentFileName').style.display = 'none';
@@ -612,7 +623,7 @@ class AudioEffectsProcessor {
         // Enable play button
         updatePlaybackButtons();
 
-        console.log('✅ MOD/MED player ready');
+        console.log('✅ Deck Player ready');
     }
 
     cleanupModMedPlayer() {

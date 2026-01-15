@@ -24,7 +24,8 @@ typedef enum {
     DECK_PLAYER_NONE = 0,
     DECK_PLAYER_MOD,
     DECK_PLAYER_MED,
-    DECK_PLAYER_AHX
+    DECK_PLAYER_AHX,
+    DECK_PLAYER_SID
 } DeckPlayerType;
 
 // Position callback - unified signature

@@ -15,7 +15,7 @@ class RGDeckPlayerPlugin : public Plugin
 public:
     RGDeckPlayerPlugin()
         : Plugin(kParameterCount, 0, 1)  // params, programs, states
-        , fPlaying(1.0f)  // DEFAULT TO PLAYING for testing
+        , fPlaying(0.0f)
         , fLoopPattern(0.0f)
         , fPrevPattern(0.0f)
         , fNextPattern(0.0f)
@@ -85,8 +85,8 @@ protected:
         case kParameterPlay:
             param.name = "Play";
             param.symbol = "play";
-            param.hints |= kParameterIsBoolean;  // Remove trigger - it's a state!
-            param.ranges.def = 1.0f;  // DEFAULT TO ON
+            param.hints |= kParameterIsBoolean;
+            param.ranges.def = 0.0f;
             break;
 
         case kParameterLoopPattern:

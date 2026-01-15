@@ -272,6 +272,20 @@ void pattern_sequencer_process(PatternSequencer* seq,
 uint8_t pattern_sequencer_get_current_tick(const PatternSequencer* seq);
 double pattern_sequencer_get_samples_per_tick(const PatternSequencer* seq);
 
+/**
+ * Update timing calculation (call once per buffer when using process_sample)
+ * This avoids recalculating samples_per_tick on every sample
+ * @param sample_rate Current sample rate
+ */
+void pattern_sequencer_update_timing(PatternSequencer* seq, uint32_t sample_rate);
+
+/**
+ * Process timing for a single sample (optimized for per-sample loops)
+ * Must call pattern_sequencer_update_timing() once per buffer before using this
+ * This is more efficient than calling pattern_sequencer_process(seq, 1, rate) in a loop
+ */
+void pattern_sequencer_process_sample(PatternSequencer* seq);
+
 #ifdef __cplusplus
 }
 #endif

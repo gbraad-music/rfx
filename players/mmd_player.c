@@ -1807,17 +1807,41 @@ void med_player_process_channels(MedPlayer* player,
                                  float sample_rate) {
     if (!player || !left_out || !right_out) return;
 
-    // Process pattern sequencer timing (calls mmd_on_tick and mmd_on_row callbacks)
-    if (player->playing) {
-        pattern_sequencer_process(player->sequencer, frames, sample_rate);
-    }
-
     // Volume ramp rate: 10ms ramp time for smooth transitions
     float ramp_time = 0.010f;  // 10 milliseconds
     float ramp_rate = player->max_volume / (ramp_time * sample_rate);
 
-    // Render audio for each frame
+    // Update timing once per buffer (efficient)
+    if (player->playing) {
+        pattern_sequencer_update_timing(player->sequencer, sample_rate);
+    }
+
+    // CRITICAL: Interleave timing and rendering sample-by-sample
+    // This ensures that per-tick effects (portamento, etc.) are applied
+    // at the exact sample where they should occur, not batched beforehand
     for (size_t i = 0; i < frames; i++) {
+        // Process timing for THIS SINGLE SAMPLE (optimized - no recalc per sample)
+        if (player->playing) {
+            pattern_sequencer_process_sample(player->sequencer);
+
+            // Sync playing state from sequencer (it may have stopped)
+            player->playing = pattern_sequencer_is_playing(player->sequencer);
+        }
+
+        // If playback stopped, clear remaining buffer
+        if (!player->playing) {
+            left_out[i] = 0.0f;
+            right_out[i] = 0.0f;
+            if (channel_outputs) {
+                for (uint8_t c = 0; c < num_channel_outputs; c++) {
+                    if (channel_outputs[c]) {
+                        channel_outputs[c][i] = 0.0f;
+                    }
+                }
+            }
+            continue;
+        }
+
         float left = 0.0f;
         float right = 0.0f;
 

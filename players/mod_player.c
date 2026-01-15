@@ -386,6 +386,9 @@ bool mod_player_load(ModPlayer* player, const uint8_t* data, uint32_t size) {
     pattern_sequencer_set_bpm(player->sequencer, player->bpm);
     pattern_sequencer_set_loop_range(player->sequencer, player->loop_start, player->loop_end);
 
+    // Apply disable_looping if it was set before load
+    pattern_sequencer_set_looping(player->sequencer, !player->disable_looping);
+
     // Set up sequencer callbacks
     PatternSequencerCallbacks callbacks = {
         .on_tick = mod_on_tick,
@@ -551,7 +554,10 @@ void mod_player_set_disable_looping(ModPlayer* player, bool disable) {
     if (!player) return;
     player->disable_looping = disable;
     // Update sequencer looping (inverse logic: disable -> !enabled)
-    pattern_sequencer_set_looping(player->sequencer, !disable);
+    // Only update if sequencer exists (it's created in mod_player_load)
+    if (player->sequencer) {
+        pattern_sequencer_set_looping(player->sequencer, !disable);
+    }
 }
 
 // Process note for a channel
@@ -1096,13 +1102,37 @@ void mod_player_process_channels(ModPlayer* player,
                                   uint32_t sample_rate) {
     if (!player || !left || !right) return;
 
-    // Process pattern sequencer timing (calls mod_on_tick and mod_on_row callbacks)
+    // Update timing once per buffer (efficient)
     if (player->playing) {
-        pattern_sequencer_process(player->sequencer, frames, sample_rate);
+        pattern_sequencer_update_timing(player->sequencer, sample_rate);
     }
 
-    // Render audio for each frame
+    // CRITICAL: Interleave timing and rendering sample-by-sample
+    // This ensures that per-tick effects (portamento, vibrato, etc.) are applied
+    // at the exact sample where they should occur, not batched beforehand
     for (uint32_t i = 0; i < frames; i++) {
+        // Process timing for THIS SINGLE SAMPLE (optimized - no recalc per sample)
+        if (player->playing) {
+            pattern_sequencer_process_sample(player->sequencer);
+
+            // Sync playing state from sequencer (it may have stopped)
+            player->playing = pattern_sequencer_is_playing(player->sequencer);
+        }
+
+        // If playback stopped, clear remaining buffer
+        if (!player->playing) {
+            left[i] = 0.0f;
+            right[i] = 0.0f;
+            if (channel_outputs) {
+                for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {
+                    if (channel_outputs[c]) {
+                        channel_outputs[c][i] = 0.0f;
+                    }
+                }
+            }
+            continue;
+        }
+
         // Render each channel and optionally write to individual outputs
         TrackerMixerChannel mix_channels[MOD_MAX_CHANNELS];
         for (uint8_t c = 0; c < MOD_MAX_CHANNELS; c++) {

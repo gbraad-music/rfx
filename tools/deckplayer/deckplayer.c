@@ -392,7 +392,8 @@ int main(int argc, char** argv) {
     // Choose mode based on arguments
     bool success = true;
     if (output_file) {
-        // WAV rendering mode
+        // WAV rendering mode - disable looping so song stops at end
+        deck_player_set_disable_looping(player, true);
         success = render_to_wav(player, output_file, time_limit);
     } else {
         // Interactive SDL mode

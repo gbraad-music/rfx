@@ -444,6 +444,14 @@ protected:
         }
     }
 
+    String getState(const char* key) const override
+    {
+        if (std::strcmp(key, "file") == 0) {
+            return String(fFilename);
+        }
+        return String();
+    }
+
     void run(const float** inputs, float** outputs, uint32_t frames,
              const MidiEvent* midiEvents, uint32_t midiEventCount) override
     {

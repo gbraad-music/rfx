@@ -99,6 +99,40 @@ void synth_sid_all_notes_off(SynthSID* sid);
 void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_rate);
 
 // ============================================================================
+// Hardware Register Interface (for sid_player integration and testing)
+// ============================================================================
+
+/**
+ * Write to SID hardware register
+ *
+ * This provides direct register-level access for sid_player integration,
+ * allowing testing with real .sid files and comparison against reference implementations.
+ *
+ * Register map (matching MOS 6581/8580):
+ *   $00-$06: Voice 1 (Freq Lo/Hi, PW Lo/Hi, Control, Attack/Decay, Sustain/Release)
+ *   $07-$0D: Voice 2 (same structure)
+ *   $0E-$14: Voice 3 (same structure)
+ *   $15-$16: Filter Cutoff Lo/Hi (11-bit)
+ *   $17:     Resonance (4-bit) + Voice Filter Routing (3-bit)
+ *   $18:     Filter Mode (3-bit) + Volume (4-bit)
+ *   $19-$1A: Paddle X/Y (read-only, not implemented)
+ *   $1B-$1C: OSC3/ENV3 (read-only, not implemented)
+ *
+ * @param sid SID synthesizer instance
+ * @param reg Register offset (0x00-0x18 = $D400-$D418)
+ * @param value Register value (0-255)
+ */
+void synth_sid_write_register(SynthSID* sid, uint8_t reg, uint8_t value);
+
+/**
+ * Read from SID hardware register (for debugging/monitoring)
+ * @param sid SID synthesizer instance
+ * @param reg Register offset (0x00-0x18)
+ * @return Current register value
+ */
+uint8_t synth_sid_read_register(SynthSID* sid, uint8_t reg);
+
+// ============================================================================
 // Voice Parameters (0.0-1.0 normalized)
 // ============================================================================
 

@@ -15,6 +15,9 @@ public:
         // Create SID synthesizer
         fSID = synth_sid_create(getSampleRate());
 
+        // Initialize feedback prevention flag
+        fUpdatingFromCC = false;
+
         // Initialize parameter values to defaults
         // Voice 1
         fVoice1Waveform = SID_WAVE_PULSE;
@@ -331,134 +334,165 @@ protected:
         case kParameterVoice1Waveform:
             fVoice1Waveform = value;
             synth_sid_set_waveform(fSID, 0, (uint8_t)value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1PulseWidth:
             fVoice1PulseWidth = value;
             synth_sid_set_pulse_width(fSID, 0, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1Attack:
             fVoice1Attack = value;
             synth_sid_set_attack(fSID, 0, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1Decay:
             fVoice1Decay = value;
             synth_sid_set_decay(fSID, 0, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1Sustain:
             fVoice1Sustain = value;
             synth_sid_set_sustain(fSID, 0, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1Release:
             fVoice1Release = value;
             synth_sid_set_release(fSID, 0, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1RingMod:
             fVoice1RingMod = value;
             synth_sid_set_ring_mod(fSID, 0, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice1Sync:
             fVoice1Sync = value;
             synth_sid_set_sync(fSID, 0, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
 
         // Voice 2
         case kParameterVoice2Waveform:
             fVoice2Waveform = value;
             synth_sid_set_waveform(fSID, 1, (uint8_t)value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2PulseWidth:
             fVoice2PulseWidth = value;
             synth_sid_set_pulse_width(fSID, 1, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2Attack:
             fVoice2Attack = value;
             synth_sid_set_attack(fSID, 1, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2Decay:
             fVoice2Decay = value;
             synth_sid_set_decay(fSID, 1, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2Sustain:
             fVoice2Sustain = value;
             synth_sid_set_sustain(fSID, 1, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2Release:
             fVoice2Release = value;
             synth_sid_set_release(fSID, 1, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2RingMod:
             fVoice2RingMod = value;
             synth_sid_set_ring_mod(fSID, 1, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice2Sync:
             fVoice2Sync = value;
             synth_sid_set_sync(fSID, 1, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
 
         // Voice 3
         case kParameterVoice3Waveform:
             fVoice3Waveform = value;
             synth_sid_set_waveform(fSID, 2, (uint8_t)value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3PulseWidth:
             fVoice3PulseWidth = value;
             synth_sid_set_pulse_width(fSID, 2, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3Attack:
             fVoice3Attack = value;
             synth_sid_set_attack(fSID, 2, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3Decay:
             fVoice3Decay = value;
             synth_sid_set_decay(fSID, 2, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3Sustain:
             fVoice3Sustain = value;
             synth_sid_set_sustain(fSID, 2, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3Release:
             fVoice3Release = value;
             synth_sid_set_release(fSID, 2, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3RingMod:
             fVoice3RingMod = value;
             synth_sid_set_ring_mod(fSID, 2, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterVoice3Sync:
             fVoice3Sync = value;
             synth_sid_set_sync(fSID, 2, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
 
         // Filter
         case kParameterFilterMode:
             fFilterMode = value;
             synth_sid_set_filter_mode(fSID, (SIDFilterMode)(int)value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterFilterCutoff:
             fFilterCutoff = value;
             synth_sid_set_filter_cutoff(fSID, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterFilterResonance:
             fFilterResonance = value;
             synth_sid_set_filter_resonance(fSID, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterFilterVoice1:
             fFilterVoice1 = value;
             synth_sid_set_filter_voice(fSID, 0, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterFilterVoice2:
             fFilterVoice2 = value;
             synth_sid_set_filter_voice(fSID, 1, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         case kParameterFilterVoice3:
             fFilterVoice3 = value;
             synth_sid_set_filter_voice(fSID, 2, value > 0.5f);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
 
         // Global
         case kParameterVolume:
             fVolume = value;
             synth_sid_set_volume(fSID, value);
+            if (!fUpdatingFromCC) sendParameterAsCC(index, value);
             break;
         }
     }
@@ -508,6 +542,9 @@ protected:
 
                 case 0xB0: // Control Change
                     if (event.size >= 3) {
+                        // Update parameter from CC (this will sync UI)
+                        updateParameterFromCC(data[1], data[2]);
+                        // Also send to synth (in case CC doesn't map to a parameter)
                         synth_sid_handle_cc(fSID, data[1], data[2]);
                     }
                     break;
@@ -547,6 +584,272 @@ protected:
     }
 
 private:
+    /**
+     * Map parameter index to MIDI CC number
+     * Returns 0xFF if parameter has no CC mapping
+     */
+    uint8_t parameterToCC(uint32_t param) const
+    {
+        switch (param) {
+        // Voice 1
+        case kParameterVoice1Waveform:   return SID_CC_VOICE1_WAVEFORM;
+        case kParameterVoice1PulseWidth: return SID_CC_VOICE1_PULSEWIDTH;
+        case kParameterVoice1Attack:     return SID_CC_VOICE1_ATTACK;
+        case kParameterVoice1Decay:      return SID_CC_VOICE1_DECAY;
+        case kParameterVoice1Sustain:    return SID_CC_VOICE1_SUSTAIN;
+        case kParameterVoice1Release:    return SID_CC_VOICE1_RELEASE;
+        case kParameterVoice1RingMod:    return SID_CC_VOICE1_RING_MOD;
+        case kParameterVoice1Sync:       return SID_CC_VOICE1_SYNC;
+
+        // Voice 2
+        case kParameterVoice2Waveform:   return SID_CC_VOICE2_WAVEFORM;
+        case kParameterVoice2PulseWidth: return SID_CC_VOICE2_PULSEWIDTH;
+        case kParameterVoice2Attack:     return SID_CC_VOICE2_ATTACK;
+        case kParameterVoice2Decay:      return SID_CC_VOICE2_DECAY;
+        case kParameterVoice2Sustain:    return SID_CC_VOICE2_SUSTAIN;
+        case kParameterVoice2Release:    return SID_CC_VOICE2_RELEASE;
+        case kParameterVoice2RingMod:    return SID_CC_VOICE2_RING_MOD;
+        case kParameterVoice2Sync:       return SID_CC_VOICE2_SYNC;
+
+        // Voice 3
+        case kParameterVoice3Waveform:   return SID_CC_VOICE3_WAVEFORM;
+        case kParameterVoice3PulseWidth: return SID_CC_VOICE3_PULSEWIDTH;
+        case kParameterVoice3Attack:     return SID_CC_VOICE3_ATTACK;
+        case kParameterVoice3Decay:      return SID_CC_VOICE3_DECAY;
+        case kParameterVoice3Sustain:    return SID_CC_VOICE3_SUSTAIN;
+        case kParameterVoice3Release:    return SID_CC_VOICE3_RELEASE;
+        case kParameterVoice3RingMod:    return SID_CC_VOICE3_RING_MOD;
+        case kParameterVoice3Sync:       return SID_CC_VOICE3_SYNC;
+
+        // Filter
+        case kParameterFilterMode:       return SID_CC_FILTER_MODE;
+        case kParameterFilterCutoff:     return SID_CC_FILTER_CUTOFF;
+        case kParameterFilterResonance:  return SID_CC_FILTER_RESONANCE;
+        case kParameterFilterVoice1:     return SID_CC_FILTER_VOICE1;
+        case kParameterFilterVoice2:     return SID_CC_FILTER_VOICE2;
+        case kParameterFilterVoice3:     return SID_CC_FILTER_VOICE3;
+
+        // Global
+        case kParameterVolume:           return SID_CC_VOLUME;
+
+        default: return 0xFF;  // No mapping
+        }
+    }
+
+    /**
+     * Convert parameter value (0.0-1.0 or discrete) to MIDI CC value (0-127)
+     */
+    uint8_t parameterValueToCC(uint32_t param, float value) const
+    {
+        switch (param) {
+        // Waveform: 0-15 → 0-15 (discrete values)
+        case kParameterVoice1Waveform:
+        case kParameterVoice2Waveform:
+        case kParameterVoice3Waveform:
+            return (uint8_t)value;
+
+        // Filter mode: 0-3 → 0-3 (discrete values)
+        case kParameterFilterMode:
+            return (uint8_t)value;
+
+        // Boolean parameters: 0/1 → 0/127
+        case kParameterVoice1RingMod:
+        case kParameterVoice1Sync:
+        case kParameterVoice2RingMod:
+        case kParameterVoice2Sync:
+        case kParameterVoice3RingMod:
+        case kParameterVoice3Sync:
+        case kParameterFilterVoice1:
+        case kParameterFilterVoice2:
+        case kParameterFilterVoice3:
+            return (value > 0.5f) ? 127 : 0;
+
+        // Continuous parameters: 0.0-1.0 → 0-127
+        default:
+            return (uint8_t)(value * 127.0f);
+        }
+    }
+
+    /**
+     * Send parameter change as MIDI CC
+     */
+    void sendParameterAsCC(uint32_t param, float value)
+    {
+        uint8_t cc = parameterToCC(param);
+        if (cc == 0xFF)
+            return;  // No CC mapping
+
+        uint8_t ccValue = parameterValueToCC(param, value);
+
+        // Send CC on MIDI channel 1 (0x00)
+        MidiEvent midiEvent;
+        midiEvent.frame = 0;
+        midiEvent.size = 3;
+        midiEvent.data[0] = 0xB0;  // CC on channel 1
+        midiEvent.data[1] = cc;
+        midiEvent.data[2] = ccValue;
+
+        writeMidiEvent(midiEvent);
+    }
+
+    /**
+     * Update parameter from incoming MIDI CC
+     * Returns true if parameter was updated
+     */
+    bool updateParameterFromCC(uint8_t cc, uint8_t value)
+    {
+        uint32_t param = 0xFFFFFFFF;
+        float paramValue = 0.0f;
+
+        // Map CC to parameter
+        switch (cc) {
+        // Voice 1
+        case SID_CC_VOICE1_WAVEFORM:
+            param = kParameterVoice1Waveform;
+            paramValue = (float)value;  // 0-15
+            break;
+        case SID_CC_VOICE1_PULSEWIDTH:
+            param = kParameterVoice1PulseWidth;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE1_ATTACK:
+            param = kParameterVoice1Attack;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE1_DECAY:
+            param = kParameterVoice1Decay;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE1_SUSTAIN:
+            param = kParameterVoice1Sustain;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE1_RELEASE:
+            param = kParameterVoice1Release;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE1_RING_MOD:
+            param = kParameterVoice1RingMod;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+        case SID_CC_VOICE1_SYNC:
+            param = kParameterVoice1Sync;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+
+        // Voice 2
+        case SID_CC_VOICE2_WAVEFORM:
+            param = kParameterVoice2Waveform;
+            paramValue = (float)value;
+            break;
+        case SID_CC_VOICE2_PULSEWIDTH:
+            param = kParameterVoice2PulseWidth;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE2_ATTACK:
+            param = kParameterVoice2Attack;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE2_DECAY:
+            param = kParameterVoice2Decay;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE2_SUSTAIN:
+            param = kParameterVoice2Sustain;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE2_RELEASE:
+            param = kParameterVoice2Release;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE2_RING_MOD:
+            param = kParameterVoice2RingMod;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+        case SID_CC_VOICE2_SYNC:
+            param = kParameterVoice2Sync;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+
+        // Voice 3
+        case SID_CC_VOICE3_WAVEFORM:
+            param = kParameterVoice3Waveform;
+            paramValue = (float)value;
+            break;
+        case SID_CC_VOICE3_PULSEWIDTH:
+            param = kParameterVoice3PulseWidth;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE3_ATTACK:
+            param = kParameterVoice3Attack;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE3_DECAY:
+            param = kParameterVoice3Decay;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE3_SUSTAIN:
+            param = kParameterVoice3Sustain;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE3_RELEASE:
+            param = kParameterVoice3Release;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_VOICE3_RING_MOD:
+            param = kParameterVoice3RingMod;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+        case SID_CC_VOICE3_SYNC:
+            param = kParameterVoice3Sync;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+
+        // Filter
+        case SID_CC_FILTER_MODE:
+            param = kParameterFilterMode;
+            paramValue = (float)value;  // 0-3
+            break;
+        case SID_CC_FILTER_CUTOFF:
+            param = kParameterFilterCutoff;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_FILTER_RESONANCE:
+            param = kParameterFilterResonance;
+            paramValue = value / 127.0f;
+            break;
+        case SID_CC_FILTER_VOICE1:
+            param = kParameterFilterVoice1;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+        case SID_CC_FILTER_VOICE2:
+            param = kParameterFilterVoice2;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+        case SID_CC_FILTER_VOICE3:
+            param = kParameterFilterVoice3;
+            paramValue = (value >= 64) ? 1.0f : 0.0f;
+            break;
+
+        // Global
+        case SID_CC_VOLUME:
+            param = kParameterVolume;
+            paramValue = value / 127.0f;
+            break;
+
+        default:
+            return false;  // CC not mapped to parameter
+        }
+
+        // Update parameter (this will trigger setParameterValue)
+        // Set flag to prevent feedback loop
+        fUpdatingFromCC = true;
+        setParameterValue(param, paramValue);
+        fUpdatingFromCC = false;
+
+        return true;
+    }
+
     void applyParametersToSID()
     {
         // Voice 1
@@ -592,6 +895,9 @@ private:
     }
 
     SynthSID* fSID;
+
+    // Flag to prevent CC feedback loop (parameter→CC→parameter)
+    bool fUpdatingFromCC;
 
     // Parameter storage - Voice 1
     float fVoice1Waveform, fVoice1PulseWidth;

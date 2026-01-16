@@ -15,20 +15,10 @@ public:
     {
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true);
 
+        // Initialize to zero - actual values will be synced from plugin via parameterChanged()
         for (uint32_t i = 0; i < kParameterCount; i++) {
             fParameters[i] = 0.0f;
         }
-
-        fParameters[kParameterBPM] = 1.0f;  // 100% tempo
-        fParameters[kParameterLoopEnd] = 127.0f;
-        fParameters[kParameterCh1Volume] = 1.0f;
-        fParameters[kParameterCh2Volume] = 1.0f;
-        fParameters[kParameterCh3Volume] = 1.0f;
-        fParameters[kParameterCh4Volume] = 1.0f;
-        fParameters[kParameterCh1Pan] = -0.5f;
-        fParameters[kParameterCh2Pan] = 0.5f;
-        fParameters[kParameterCh3Pan] = 0.5f;
-        fParameters[kParameterCh4Pan] = -0.5f;
 
         fImGuiWidget = new RGDeckPlayerImGuiWidget(this);
         fImGuiWidget->setSize(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT);

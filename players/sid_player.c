@@ -137,6 +137,11 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
         uint8_t reg = addr - SID_BASE;
         player->sid_regs[reg] = value;
 
+        /* Route to synth via hardware register interface */
+        if (player->synth) {
+            synth_sid_write_register(player->synth, reg, value);
+        }
+
         /* Debug output for SID register writes */
         if (player->debug_enabled) {
             const char* reg_names[] = {
@@ -183,183 +188,7 @@ static void mem_write(SidPlayer* player, uint16_t addr, uint8_t value) {
             }
         }
 
-        /* Voice 1 (registers 0-6) */
-        if (reg <= 6) {
-            uint8_t voice = 0;
-            switch (reg) {
-                case 0: /* Frequency low */
-                case 1: /* Frequency high */
-                    /* Calculate pitch bend if base frequency is set */
-                    {
-                        uint16_t freq = (player->sid_regs[1] << 8) | player->sid_regs[0];
-                        if (player->base_frequency[voice] > 0 && freq > 0) {
-                            /* Calculate pitch bend in semitones */
-                            float ratio = (float)freq / (float)player->base_frequency[voice];
-                            float semitones = 12.0f * log2f(ratio);
-                            /* Normalize to ±1.0 for ±12 semitone range */
-                            float bend = semitones / 12.0f;
-                            synth_sid_set_pitch_bend(player->synth, voice, bend);
-                        }
-                    }
-                    break;
-
-                case 2: /* Pulse width low */
-                case 3: /* Pulse width high */ {
-                    uint16_t pw = (player->sid_regs[3] << 8) | player->sid_regs[2];
-                    float width = pw / 4095.0f; /* 12-bit value */
-                    synth_sid_set_pulse_width(player->synth, voice, width);
-                    break;
-                }
-
-                case 4: /* Waveform control */
-                    handle_sid_voice_control(player, voice, value);
-                    break;
-
-                case 5: /* Attack/Decay */ {
-                    float attack = ((value >> 4) & 0x0F) / 15.0f;
-                    float decay = (value & 0x0F) / 15.0f;
-                    synth_sid_set_attack(player->synth, voice, attack);
-                    synth_sid_set_decay(player->synth, voice, decay);
-                    break;
-                }
-
-                case 6: /* Sustain/Release */ {
-                    float sustain = ((value >> 4) & 0x0F) / 15.0f;
-                    float release = (value & 0x0F) / 15.0f;
-                    synth_sid_set_sustain(player->synth, voice, sustain);
-                    synth_sid_set_release(player->synth, voice, release);
-                    break;
-                }
-            }
-        }
-        /* Voice 2 (registers 7-13) */
-        else if (reg >= 7 && reg <= 13) {
-            uint8_t voice = 1;
-            uint8_t vreg = reg - 7;
-            switch (vreg) {
-                case 0: /* Frequency low */
-                case 1: /* Frequency high */
-                    /* Calculate pitch bend if base frequency is set */
-                    {
-                        uint16_t freq = (player->sid_regs[8] << 8) | player->sid_regs[7];
-                        if (player->base_frequency[voice] > 0 && freq > 0) {
-                            float ratio = (float)freq / (float)player->base_frequency[voice];
-                            float semitones = 12.0f * log2f(ratio);
-                            float bend = semitones / 12.0f;
-                            synth_sid_set_pitch_bend(player->synth, voice, bend);
-                        }
-                    }
-                    break;
-
-                case 2:
-                case 3: {
-                    uint16_t pw = (player->sid_regs[10] << 8) | player->sid_regs[9];
-                    float width = pw / 4095.0f;
-                    synth_sid_set_pulse_width(player->synth, voice, width);
-                    break;
-                }
-
-                case 4:
-                    handle_sid_voice_control(player, voice, value);
-                    break;
-
-                case 5: {
-                    float attack = ((value >> 4) & 0x0F) / 15.0f;
-                    float decay = (value & 0x0F) / 15.0f;
-                    synth_sid_set_attack(player->synth, voice, attack);
-                    synth_sid_set_decay(player->synth, voice, decay);
-                    break;
-                }
-
-                case 6: {
-                    float sustain = ((value >> 4) & 0x0F) / 15.0f;
-                    float release = (value & 0x0F) / 15.0f;
-                    synth_sid_set_sustain(player->synth, voice, sustain);
-                    synth_sid_set_release(player->synth, voice, release);
-                    break;
-                }
-            }
-        }
-        /* Voice 3 (registers 14-20) */
-        else if (reg >= 14 && reg <= 20) {
-            uint8_t voice = 2;
-            uint8_t vreg = reg - 14;
-            switch (vreg) {
-                case 0: /* Frequency low */
-                case 1: /* Frequency high */
-                    /* Calculate pitch bend if base frequency is set */
-                    {
-                        uint16_t freq = (player->sid_regs[15] << 8) | player->sid_regs[14];
-                        if (player->base_frequency[voice] > 0 && freq > 0) {
-                            float ratio = (float)freq / (float)player->base_frequency[voice];
-                            float semitones = 12.0f * log2f(ratio);
-                            float bend = semitones / 12.0f;
-                            synth_sid_set_pitch_bend(player->synth, voice, bend);
-                        }
-                    }
-                    break;
-
-                case 2:
-                case 3: {
-                    uint16_t pw = (player->sid_regs[17] << 8) | player->sid_regs[16];
-                    float width = pw / 4095.0f;
-                    synth_sid_set_pulse_width(player->synth, voice, width);
-                    break;
-                }
-
-                case 4:
-                    handle_sid_voice_control(player, voice, value);
-                    break;
-
-                case 5: {
-                    float attack = ((value >> 4) & 0x0F) / 15.0f;
-                    float decay = (value & 0x0F) / 15.0f;
-                    synth_sid_set_attack(player->synth, voice, attack);
-                    synth_sid_set_decay(player->synth, voice, decay);
-                    break;
-                }
-
-                case 6: {
-                    float sustain = ((value >> 4) & 0x0F) / 15.0f;
-                    float release = (value & 0x0F) / 15.0f;
-                    synth_sid_set_sustain(player->synth, voice, sustain);
-                    synth_sid_set_release(player->synth, voice, release);
-                    break;
-                }
-            }
-        }
-        /* Filter cutoff (registers 21-22) */
-        else if (reg == 21 || reg == 22) {
-            uint16_t fc = ((player->sid_regs[22] & 0x07) << 8) | player->sid_regs[21];
-            float cutoff = fc / 2047.0f;  /* 11-bit value */
-            synth_sid_set_filter_cutoff(player->synth, cutoff);
-        }
-        /* Filter control (register 23) */
-        else if (reg == 23) {
-            synth_sid_set_filter_voice(player->synth, 0, (value & 0x01) != 0);
-            synth_sid_set_filter_voice(player->synth, 1, (value & 0x02) != 0);
-            synth_sid_set_filter_voice(player->synth, 2, (value & 0x04) != 0);
-            float resonance = ((value >> 4) & 0x0F) / 15.0f;
-            synth_sid_set_filter_resonance(player->synth, resonance);
-        }
-        /* Filter mode/volume (register 24) */
-        else if (reg == 24) {
-            /* Filter mode */
-            if (value & 0x10) {
-                synth_sid_set_filter_mode(player->synth, SID_FILTER_LP);
-            } else if (value & 0x20) {
-                synth_sid_set_filter_mode(player->synth, SID_FILTER_BP);
-            } else if (value & 0x40) {
-                synth_sid_set_filter_mode(player->synth, SID_FILTER_HP);
-            } else {
-                synth_sid_set_filter_mode(player->synth, SID_FILTER_OFF);
-            }
-
-            /* Volume */
-            float volume = (value & 0x0F) / 15.0f;
-            synth_sid_set_volume(player->synth, volume);
-        }
-
+        /* All register parsing is now handled by synth_sid_write_register() above */
         return;
     }
 

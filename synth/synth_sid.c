@@ -80,6 +80,7 @@ struct SynthSID {
     SIDFilter filter;
     float volume;
     int sample_rate;
+    uint8_t registers[32];  // Shadow copy of hardware registers ($D400-$D41F)
 };
 
 // ============================================================================
@@ -588,4 +589,143 @@ void synth_sid_set_test(SynthSID* sid, uint8_t voice, int enabled) {
 int synth_sid_get_test(SynthSID* sid, uint8_t voice) {
     if (!sid || voice >= SID_VOICES) return 0;
     return sid->voices[voice].test;
+}
+
+// ============================================================================
+// Hardware Register Interface
+// ============================================================================
+
+void synth_sid_write_register(SynthSID* sid, uint8_t reg, uint8_t value) {
+    if (!sid || reg > 0x18) return;  // Only registers 0x00-0x18 are valid
+
+    // Update shadow register
+    sid->registers[reg] = value;
+
+    // Voice registers (each voice uses 7 registers)
+    if (reg < 0x15) {
+        uint8_t voice = reg / 7;  // Voice 0, 1, or 2
+        uint8_t voice_reg = reg % 7;
+
+        switch (voice_reg) {
+            case 0: // Frequency Lo
+                // Frequency is 16-bit: combine with Hi byte
+                // Will be applied when Hi byte is written
+                break;
+
+            case 1: { // Frequency Hi
+                // Combine with Lo byte and calculate frequency
+                uint16_t freq_reg = (value << 8) | sid->registers[voice * 7 + 0];
+                // SID frequency = freq_reg * clock / 16777216
+                // For PAL: clock = 985248 Hz
+                // freq_hz = freq_reg * 985248 / 16777216 = freq_reg * 0.0587
+                float freq_hz = freq_reg * 0.0587f;
+
+                // Update voice frequency register (will be used in process)
+                sid->voices[voice].frequency = (uint32_t)((freq_hz * 16777216.0f) / sid->sample_rate);
+                break;
+            }
+
+            case 2: // Pulse Width Lo
+                // Will be combined when Hi byte is written
+                break;
+
+            case 3: { // Pulse Width Hi (bits 0-3 only, 12-bit value)
+                uint16_t pw_reg = ((value & 0x0F) << 8) | sid->registers[voice * 7 + 2];
+                // Pulse width: 0-4095 maps to 0.0-1.0
+                float pw = pw_reg / 4095.0f;
+                synth_sid_set_pulse_width(sid, voice, pw);
+                break;
+            }
+
+            case 4: { // Control Register
+                uint8_t waveform = 0;
+                if (value & 0x10) waveform |= SID_WAVE_TRIANGLE;
+                if (value & 0x20) waveform |= SID_WAVE_SAWTOOTH;
+                if (value & 0x40) waveform |= SID_WAVE_PULSE;
+                if (value & 0x80) waveform |= SID_WAVE_NOISE;
+
+                synth_sid_set_waveform(sid, voice, waveform);
+                synth_sid_set_test(sid, voice, (value & 0x08) ? 1 : 0);
+                synth_sid_set_ring_mod(sid, voice, (value & 0x04) ? 1 : 0);
+                synth_sid_set_sync(sid, voice, (value & 0x02) ? 1 : 0);
+
+                // GATE bit
+                int gate = (value & 0x01) ? 1 : 0;
+                if (gate && !sid->voices[voice].gate) {
+                    // Gate transitioned 0→1: trigger note
+                    // Use last frequency to determine MIDI note (approximate)
+                    uint16_t freq_reg = (sid->registers[voice * 7 + 1] << 8) |
+                                       sid->registers[voice * 7 + 0];
+                    float freq_hz = freq_reg * 0.0587f;
+                    uint8_t note = (uint8_t)(69 + 12 * log2f(freq_hz / 440.0f));
+                    synth_sid_note_on(sid, voice, note, 100);
+                } else if (!gate && sid->voices[voice].gate) {
+                    // Gate transitioned 1→0: release note
+                    synth_sid_note_off(sid, voice);
+                }
+                sid->voices[voice].gate = gate;
+                break;
+            }
+
+            case 5: { // Attack/Decay
+                float attack = ((value >> 4) & 0x0F) / 15.0f;
+                float decay = (value & 0x0F) / 15.0f;
+                synth_sid_set_attack(sid, voice, attack);
+                synth_sid_set_decay(sid, voice, decay);
+                break;
+            }
+
+            case 6: { // Sustain/Release
+                float sustain = ((value >> 4) & 0x0F) / 15.0f;
+                float release = (value & 0x0F) / 15.0f;
+                synth_sid_set_sustain(sid, voice, sustain);
+                synth_sid_set_release(sid, voice, release);
+                break;
+            }
+        }
+    }
+    // Filter registers
+    else if (reg == 0x15) { // Filter Cutoff Lo
+        // Will be combined when Hi byte is written
+    }
+    else if (reg == 0x16) { // Filter Cutoff Hi (bits 0-2 only, 11-bit value)
+        uint16_t fc_reg = ((value & 0x07) << 8) | sid->registers[0x15];
+        float cutoff = fc_reg / 2047.0f;  // 11-bit value
+        synth_sid_set_filter_cutoff(sid, cutoff);
+    }
+    else if (reg == 0x17) { // Resonance + Filter Routing
+        float resonance = ((value >> 4) & 0x0F) / 15.0f;
+        synth_sid_set_filter_resonance(sid, resonance);
+
+        // Filter voice routing (bits 0-2)
+        synth_sid_set_filter_voice(sid, 0, (value & 0x01) ? 1 : 0);
+        synth_sid_set_filter_voice(sid, 1, (value & 0x02) ? 1 : 0);
+        synth_sid_set_filter_voice(sid, 2, (value & 0x04) ? 1 : 0);
+    }
+    else if (reg == 0x18) { // Filter Mode + Volume
+        // Filter mode (bits 4-6)
+        SIDFilterMode mode = SID_FILTER_OFF;
+        if (value & 0x10) mode = SID_FILTER_LP;   // Low-pass
+        if (value & 0x20) mode = SID_FILTER_BP;   // Band-pass
+        if (value & 0x40) mode = SID_FILTER_HP;   // High-pass
+        synth_sid_set_filter_mode(sid, mode);
+
+        // Volume (bits 0-3)
+        float volume = (value & 0x0F) / 15.0f;
+        synth_sid_set_volume(sid, volume);
+    }
+    // Registers 0x19-0x1C are read-only (paddles, OSC3, ENV3) - ignored on write
+}
+
+uint8_t synth_sid_read_register(SynthSID* sid, uint8_t reg) {
+    if (!sid || reg > 0x1F) return 0;
+
+    // Most registers are write-only and return the written value
+    if (reg < 0x19) {
+        return sid->registers[reg];
+    }
+
+    // Read-only registers (0x19-0x1C) would return hardware state
+    // Not implemented in this synth (paddles, OSC3, ENV3)
+    return 0;
 }

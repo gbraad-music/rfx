@@ -94,7 +94,10 @@ WASM_EXPORTED_FUNCTIONS = \
     "_regroove_synth_get_engine_name",\
     "_synth_create_audio_buffer",\
     "_synth_destroy_audio_buffer",\
-    "_synth_get_buffer_size_bytes"\
+    "_synth_get_buffer_size_bytes",\
+    "_regroove_synth_get_preset_count",\
+    "_regroove_synth_get_preset_name",\
+    "_regroove_synth_load_preset"\
   ]'
 
 WASM_OUTPUT = rgsidsynth.js

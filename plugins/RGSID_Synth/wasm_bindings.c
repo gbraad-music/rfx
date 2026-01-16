@@ -13,6 +13,7 @@
 typedef struct {
     SynthSID* sid;
     float sample_rate;
+    float parameters[31];  // Cache of current parameter values (for UI sync)
 } SIDSynthInstance;
 
 // Wrapper functions that JavaScript expects (regroove_synth_* interface)
@@ -30,6 +31,9 @@ SIDSynthInstance* regroove_synth_create(int engine, float sample_rate) {
         free(instance);
         return NULL;
     }
+
+    // Initialize parameter cache to defaults
+    memset(instance->parameters, 0, sizeof(instance->parameters));
 
     return instance;
 }
@@ -112,13 +116,18 @@ int regroove_synth_get_parameter_count(SIDSynthInstance* synth) {
 
 EMSCRIPTEN_KEEPALIVE
 float regroove_synth_get_parameter(SIDSynthInstance* synth, int index) {
-    // TODO: Implement parameter getters if needed
-    return 0.0f;
+    if (!synth || index < 0 || index >= 31) return 0.0f;
+    return synth->parameters[index];
 }
 
 EMSCRIPTEN_KEEPALIVE
 void regroove_synth_set_parameter(SIDSynthInstance* synth, int index, float value) {
     if (!synth || !synth->sid) return;
+
+    // Cache parameter value for UI sync
+    if (index >= 0 && index < 31) {
+        synth->parameters[index] = value;
+    }
 
     // Parameter mapping (matches RGSID_SynthPlugin.cpp):
     // Voice 1: 0-7, Voice 2: 8-15, Voice 3: 16-23, Filter: 24-28
@@ -281,4 +290,225 @@ void synth_destroy_audio_buffer(void* buffer) {
 EMSCRIPTEN_KEEPALIVE
 int synth_get_buffer_size_bytes(int frames) {
     return frames * 2 * sizeof(float);  // Stereo interleaved
+}
+
+// ============================================================================
+// Preset System (Factory Presets for Web)
+// ============================================================================
+
+typedef struct {
+    const char* name;
+    uint8_t waveform;
+    float pulseWidth;
+    float attack, decay, sustain, release;
+    uint8_t filterMode;
+    float filterCutoff, filterResonance;
+    uint8_t filterVoice1;
+} WebPreset;
+
+static const WebPreset factoryPresets[] = {
+    // ===== INIT & BASICS (0-7) =====
+    { "Init", 4, 0.5f, 0.0f, 0.5f, 0.7f, 0.3f, 1, 0.5f, 0.0f, 0 },
+    { "Saw Lead", 2, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Pulse Lead", 4, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Triangle Lead", 1, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Noise Lead", 8, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Square 25%", 4, 0.25f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Square 12.5%", 4, 0.12f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Square 75%", 4, 0.75f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+
+    // ===== BASS SOUNDS (8-23) =====
+    { "Pulse Bass", 4, 0.25f, 0.0f, 0.4f, 0.3f, 0.1f, 1, 0.4f, 0.5f, 1 },
+    { "Saw Bass", 2, 0.5f, 0.0f, 0.4f, 0.3f, 0.1f, 1, 0.35f, 0.6f, 1 },
+    { "Triangle Bass", 1, 0.5f, 0.0f, 0.4f, 0.3f, 0.15f, 1, 0.3f, 0.4f, 1 },
+    { "Sync Bass", 2, 0.5f, 0.0f, 0.3f, 0.5f, 0.1f, 1, 0.3f, 0.7f, 1 },
+    { "Resonant Bass", 4, 0.5f, 0.0f, 0.5f, 0.2f, 0.05f, 1, 0.25f, 0.9f, 1 },
+    { "Acid Bass", 2, 0.5f, 0.0f, 0.5f, 0.3f, 0.1f, 1, 0.2f, 0.85f, 1 },
+    { "Deep Bass", 1, 0.5f, 0.0f, 0.6f, 0.0f, 0.1f, 1, 0.15f, 0.3f, 1 },
+    { "Sync Wobble", 2, 0.5f, 0.0f, 0.4f, 0.4f, 0.2f, 1, 0.3f, 0.8f, 1 },
+    { "Seq Bass 1", 4, 0.3f, 0.0f, 0.4f, 0.3f, 0.05f, 1, 0.35f, 0.7f, 1 },
+    { "Seq Bass 2", 2, 0.5f, 0.0f, 0.35f, 0.4f, 0.1f, 1, 0.3f, 0.75f, 1 },
+    { "Funky Bass", 4, 0.4f, 0.0f, 0.2f, 0.5f, 0.15f, 1, 0.4f, 0.6f, 1 },
+    { "Noise Bass", 8, 0.5f, 0.0f, 0.3f, 0.4f, 0.1f, 3, 0.4f, 0.5f, 1 },
+    { "Reso Pluck", 4, 0.5f, 0.0f, 0.6f, 0.0f, 0.2f, 1, 0.3f, 0.85f, 1 },
+    { "Fat Bass", 4, 0.6f, 0.0f, 0.5f, 0.2f, 0.1f, 1, 0.3f, 0.6f, 1 },
+    { "Sub Bass", 1, 0.5f, 0.0f, 0.7f, 0.0f, 0.1f, 1, 0.1f, 0.2f, 1 },
+    { "Zap Bass", 2, 0.5f, 0.0f, 0.2f, 0.5f, 0.1f, 1, 0.5f, 0.8f, 1 },
+
+    // ===== LEAD SOUNDS (24-39) =====
+    { "Brass Lead", 2, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.6f, 0.3f, 1 },
+    { "Sync Lead", 2, 0.5f, 0.0f, 0.2f, 0.8f, 0.1f, 1, 0.7f, 0.2f, 1 },
+    { "Pulse Lead", 4, 0.4f, 0.0f, 0.2f, 0.7f, 0.15f, 1, 0.65f, 0.4f, 1 },
+    { "Fuzzy Lead", 2, 0.5f, 0.0f, 0.1f, 0.8f, 0.1f, 1, 0.8f, 0.3f, 1 },
+    { "Soft Lead", 1, 0.5f, 0.0f, 0.4f, 0.6f, 0.3f, 1, 0.5f, 0.2f, 1 },
+    { "Ring Lead", 1, 0.5f, 0.0f, 0.3f, 0.7f, 0.2f, 0, 0.6f, 0.0f, 0 },
+    { "Hard Lead", 4, 0.3f, 0.0f, 0.1f, 0.8f, 0.1f, 1, 0.75f, 0.5f, 1 },
+    { "Screamer", 2, 0.5f, 0.0f, 0.0f, 0.9f, 0.05f, 1, 0.9f, 0.1f, 1 },
+    { "Thin Lead", 4, 0.15f, 0.0f, 0.2f, 0.7f, 0.15f, 1, 0.7f, 0.4f, 1 },
+    { "Wide Lead", 4, 0.7f, 0.0f, 0.2f, 0.7f, 0.15f, 1, 0.6f, 0.4f, 1 },
+    { "Stabby Lead", 2, 0.5f, 0.0f, 0.1f, 0.7f, 0.05f, 1, 0.65f, 0.5f, 1 },
+    { "Mono Lead", 2, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.55f, 0.4f, 1 },
+    { "Reso Lead", 4, 0.5f, 0.0f, 0.2f, 0.7f, 0.15f, 1, 0.4f, 0.85f, 1 },
+    { "Pure Lead", 1, 0.5f, 0.0f, 0.2f, 0.7f, 0.15f, 0, 0.5f, 0.0f, 0 },
+    { "Dirty Lead", 8, 0.5f, 0.0f, 0.2f, 0.7f, 0.15f, 3, 0.6f, 0.4f, 1 },
+    { "Epic Lead", 2, 0.5f, 0.0f, 0.4f, 0.7f, 0.3f, 1, 0.6f, 0.3f, 1 },
+
+    // ===== CLASSIC C64 SOUNDS (40-55) =====
+    { "SEQ Vintage C", 2, 0.5f, 0.0f, 0.4f, 0.5f, 0.1f, 1, 0.35f, 0.7f, 1 },
+    { "Last Ninja", 2, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.45f, 0.6f, 1 },
+    { "Commando", 4, 0.4f, 0.0f, 0.2f, 0.7f, 0.1f, 1, 0.5f, 0.7f, 1 },
+    { "Monty Run", 2, 0.5f, 0.0f, 0.35f, 0.5f, 0.15f, 1, 0.4f, 0.65f, 1 },
+    { "Driller", 4, 0.3f, 0.0f, 0.3f, 0.6f, 0.15f, 1, 0.45f, 0.7f, 1 },
+    { "Delta", 2, 0.5f, 0.0f, 0.4f, 0.5f, 0.2f, 1, 0.5f, 0.5f, 1 },
+    { "Galway Lead", 2, 0.5f, 0.0f, 0.2f, 0.7f, 0.15f, 1, 0.6f, 0.4f, 1 },
+    { "Hubbard Bass", 4, 0.3f, 0.0f, 0.4f, 0.3f, 0.1f, 1, 0.35f, 0.75f, 1 },
+    { "Tel Bass", 4, 0.25f, 0.0f, 0.5f, 0.2f, 0.05f, 1, 0.3f, 0.8f, 1 },
+    { "Game Over", 8, 0.5f, 0.0f, 0.2f, 0.6f, 0.1f, 1, 0.5f, 0.3f, 1 },
+    { "Arkanoid", 1, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 0, 0.5f, 0.0f, 0 },
+    { "Turrican", 2, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.55f, 0.5f, 1 },
+    { "International", 4, 0.4f, 0.0f, 0.25f, 0.6f, 0.15f, 1, 0.5f, 0.6f, 1 },
+    { "Ocean Loader", 2, 0.5f, 0.0f, 0.4f, 0.5f, 0.2f, 1, 0.45f, 0.55f, 1 },
+    { "Thrust", 4, 0.35f, 0.0f, 0.3f, 0.5f, 0.15f, 1, 0.5f, 0.65f, 1 },
+    { "Wizball", 1, 0.5f, 0.0f, 0.4f, 0.5f, 0.25f, 1, 0.4f, 0.4f, 1 },
+
+    // ===== PADS & STRINGS (56-63) =====
+    { "Soft Pad", 1, 0.5f, 0.5f, 0.8f, 0.8f, 0.5f, 1, 0.5f, 0.2f, 1 },
+    { "Saw Pad", 2, 0.5f, 0.5f, 0.8f, 0.8f, 0.5f, 1, 0.5f, 0.3f, 1 },
+    { "Pulse Pad", 4, 0.5f, 0.5f, 0.8f, 0.8f, 0.5f, 1, 0.5f, 0.3f, 1 },
+    { "Sync Pad", 2, 0.5f, 0.5f, 0.8f, 0.8f, 0.5f, 0, 0.5f, 0.0f, 0 },
+    { "Strings", 2, 0.5f, 0.6f, 0.9f, 0.9f, 0.6f, 1, 0.6f, 0.2f, 1 },
+    { "Brass Sect", 2, 0.5f, 0.3f, 0.6f, 0.7f, 0.4f, 1, 0.55f, 0.3f, 1 },
+    { "Slow Pad", 1, 0.5f, 0.8f, 0.9f, 0.9f, 0.7f, 1, 0.5f, 0.2f, 1 },
+    { "Atmosphere", 8, 0.5f, 0.6f, 0.9f, 0.9f, 0.6f, 2, 0.5f, 0.3f, 1 },
+
+    // ===== PLUCKS & BELLS (64-71) =====
+    { "Pluck", 1, 0.5f, 0.0f, 0.5f, 0.0f, 0.3f, 1, 0.5f, 0.2f, 1 },
+    { "Harp", 1, 0.5f, 0.0f, 0.6f, 0.0f, 0.4f, 0, 0.5f, 0.0f, 0 },
+    { "Marimba", 1, 0.5f, 0.0f, 0.4f, 0.0f, 0.2f, 1, 0.4f, 0.3f, 1 },
+    { "Ring Bell", 1, 0.5f, 0.0f, 0.6f, 0.0f, 0.5f, 0, 0.5f, 0.0f, 0 },
+    { "Sync Bell", 2, 0.5f, 0.0f, 0.6f, 0.0f, 0.5f, 0, 0.6f, 0.0f, 0 },
+    { "Clav", 4, 0.3f, 0.0f, 0.3f, 0.0f, 0.15f, 1, 0.6f, 0.4f, 1 },
+    { "Koto", 1, 0.5f, 0.0f, 0.5f, 0.0f, 0.35f, 1, 0.5f, 0.3f, 1 },
+    { "Kalimba", 1, 0.5f, 0.0f, 0.4f, 0.0f, 0.25f, 0, 0.5f, 0.0f, 0 },
+
+    // ===== FX & PERCUSSION (72-79) =====
+    { "Laser", 2, 0.5f, 0.0f, 0.3f, 0.0f, 0.1f, 1, 0.8f, 0.5f, 1 },
+    { "Zap", 8, 0.5f, 0.0f, 0.2f, 0.0f, 0.1f, 3, 0.7f, 0.4f, 1 },
+    { "Sweep Up", 2, 0.5f, 0.0f, 0.5f, 0.0f, 0.3f, 1, 0.3f, 0.7f, 1 },
+    { "Sweep Down", 2, 0.5f, 0.0f, 0.5f, 0.0f, 0.3f, 1, 0.7f, 0.7f, 1 },
+    { "Noise Hit", 8, 0.5f, 0.0f, 0.2f, 0.0f, 0.1f, 3, 0.5f, 0.3f, 1 },
+    { "Noise Snare", 8, 0.5f, 0.0f, 0.15f, 0.0f, 0.1f, 3, 0.6f, 0.3f, 1 },
+    { "Tom", 1, 0.5f, 0.0f, 0.3f, 0.0f, 0.15f, 1, 0.3f, 0.4f, 1 },
+    { "Kick", 1, 0.5f, 0.0f, 0.2f, 0.0f, 0.05f, 1, 0.2f, 0.3f, 1 },
+
+    // ===== SPECIAL (80-87) =====
+    { "Digi Bass", 8, 0.5f, 0.0f, 0.4f, 0.3f, 0.1f, 1, 0.3f, 0.5f, 1 },
+    { "Voice", 8, 0.5f, 0.3f, 0.6f, 0.7f, 0.4f, 2, 0.5f, 0.3f, 1 },
+    { "Choir", 1, 0.5f, 0.5f, 0.8f, 0.8f, 0.6f, 2, 0.6f, 0.2f, 1 },
+    { "Organ", 4, 0.5f, 0.1f, 0.5f, 0.7f, 0.3f, 1, 0.5f, 0.3f, 1 },
+    { "Accordion", 4, 0.6f, 0.2f, 0.6f, 0.7f, 0.4f, 1, 0.5f, 0.3f, 1 },
+    { "Harmonica", 2, 0.5f, 0.1f, 0.5f, 0.7f, 0.3f, 1, 0.5f, 0.3f, 1 },
+    { "Flute", 1, 0.5f, 0.3f, 0.6f, 0.7f, 0.4f, 1, 0.6f, 0.2f, 1 },
+    { "Sitar", 1, 0.5f, 0.0f, 0.5f, 0.0f, 0.4f, 0, 0.5f, 0.0f, 0 },
+
+    // ===== MORE BASSES (88-95) =====
+    { "Tech Bass", 4, 0.35f, 0.0f, 0.3f, 0.4f, 0.1f, 1, 0.3f, 0.75f, 1 },
+    { "Wobble Bass", 2, 0.5f, 0.0f, 0.5f, 0.3f, 0.2f, 1, 0.25f, 0.85f, 1 },
+    { "Trance Bass", 2, 0.5f, 0.0f, 0.4f, 0.4f, 0.15f, 1, 0.3f, 0.8f, 1 },
+    { "Electro Bass", 4, 0.3f, 0.0f, 0.3f, 0.5f, 0.1f, 1, 0.35f, 0.7f, 1 },
+    { "Minimal Bass", 1, 0.5f, 0.0f, 0.5f, 0.2f, 0.1f, 1, 0.25f, 0.5f, 1 },
+    { "Hard Bass", 2, 0.5f, 0.0f, 0.2f, 0.6f, 0.05f, 1, 0.4f, 0.8f, 1 },
+    { "Soft Bass", 1, 0.5f, 0.0f, 0.5f, 0.4f, 0.2f, 1, 0.3f, 0.3f, 1 },
+    { "Vintage Bass", 4, 0.4f, 0.0f, 0.4f, 0.4f, 0.15f, 1, 0.35f, 0.6f, 1 },
+
+    // ===== MORE LEADS (96-103) =====
+    { "Space Lead", 2, 0.5f, 0.0f, 0.3f, 0.7f, 0.2f, 0, 0.6f, 0.0f, 0 },
+    { "Retro Lead", 4, 0.5f, 0.0f, 0.2f, 0.7f, 0.15f, 1, 0.55f, 0.5f, 1 },
+    { "Chip Lead", 4, 0.25f, 0.0f, 0.1f, 0.8f, 0.05f, 1, 0.6f, 0.4f, 1 },
+    { "8-bit Lead", 4, 0.5f, 0.0f, 0.1f, 0.8f, 0.05f, 0, 0.5f, 0.0f, 0 },
+    { "Arpeggio", 4, 0.5f, 0.0f, 0.2f, 0.0f, 0.1f, 1, 0.5f, 0.3f, 1 },
+    { "Stab", 2, 0.5f, 0.0f, 0.1f, 0.7f, 0.05f, 1, 0.6f, 0.5f, 1 },
+    { "PWM Lead", 4, 0.5f, 0.0f, 0.3f, 0.6f, 0.2f, 1, 0.5f, 0.4f, 1 },
+    { "Dirty Sync", 2, 0.5f, 0.0f, 0.1f, 0.8f, 0.05f, 0, 0.7f, 0.0f, 0 },
+
+    // ===== EXPERIMENTAL (104-111) =====
+    { "Random 1", 6, 0.5f, 0.2f, 0.5f, 0.5f, 0.3f, 2, 0.5f, 0.4f, 1 },
+    { "Random 2", 7, 0.6f, 0.3f, 0.6f, 0.4f, 0.2f, 1, 0.6f, 0.5f, 1 },
+    { "Random 3", 5, 0.4f, 0.1f, 0.4f, 0.6f, 0.25f, 3, 0.5f, 0.3f, 1 },
+    { "Glitch 1", 8, 0.5f, 0.0f, 0.1f, 0.0f, 0.05f, 3, 0.7f, 0.5f, 1 },
+    { "Glitch 2", 8, 0.5f, 0.0f, 0.15f, 0.0f, 0.1f, 2, 0.6f, 0.6f, 1 },
+    { "Lo-Fi", 8, 0.5f, 0.2f, 0.5f, 0.5f, 0.3f, 1, 0.5f, 0.4f, 1 },
+    { "Crushed", 8, 0.5f, 0.0f, 0.2f, 0.5f, 0.1f, 3, 0.6f, 0.5f, 1 },
+    { "Broken", 6, 0.3f, 0.0f, 0.3f, 0.3f, 0.15f, 2, 0.5f, 0.6f, 1 },
+
+    // ===== DRONE & AMBIENT (112-119) =====
+    { "Drone 1", 2, 0.5f, 0.8f, 0.9f, 0.9f, 0.8f, 1, 0.4f, 0.2f, 1 },
+    { "Drone 2", 1, 0.5f, 0.8f, 0.9f, 0.9f, 0.8f, 0, 0.5f, 0.0f, 0 },
+    { "Dark Pad", 2, 0.5f, 0.7f, 0.9f, 0.9f, 0.7f, 1, 0.3f, 0.3f, 1 },
+    { "Space Pad", 8, 0.5f, 0.6f, 0.9f, 0.9f, 0.6f, 2, 0.5f, 0.2f, 1 },
+    { "Wind", 8, 0.5f, 0.5f, 0.8f, 0.8f, 0.5f, 2, 0.6f, 0.3f, 1 },
+    { "Ocean", 8, 0.5f, 0.6f, 0.9f, 0.9f, 0.7f, 1, 0.4f, 0.4f, 1 },
+    { "Rain", 8, 0.5f, 0.3f, 0.7f, 0.7f, 0.4f, 3, 0.5f, 0.3f, 1 },
+    { "Thunder", 8, 0.5f, 0.0f, 0.3f, 0.0f, 0.2f, 1, 0.3f, 0.5f, 1 },
+
+    // ===== UTILITY & SPECIAL (120-127) =====
+    { "Test Tone", 1, 0.5f, 0.0f, 0.0f, 1.0f, 0.0f, 0, 0.5f, 0.0f, 0 },
+    { "Click", 1, 0.5f, 0.0f, 0.0f, 0.0f, 0.01f, 0, 0.5f, 0.0f, 0 },
+    { "Pop", 4, 0.5f, 0.0f, 0.0f, 0.0f, 0.02f, 1, 0.5f, 0.0f, 1 },
+    { "Beep", 4, 0.5f, 0.0f, 0.1f, 0.0f, 0.05f, 0, 0.5f, 0.0f, 0 },
+    { "Chirp", 1, 0.5f, 0.0f, 0.2f, 0.0f, 0.1f, 1, 0.7f, 0.3f, 1 },
+    { "Blip", 4, 0.25f, 0.0f, 0.1f, 0.0f, 0.05f, 1, 0.6f, 0.2f, 1 },
+    { "Silence", 0, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0.0f, 0.0f, 0 },
+    { "Full Volume", 2, 0.5f, 0.0f, 0.5f, 0.7f, 0.3f, 0, 1.0f, 0.0f, 0 }
+};
+
+#define NUM_FACTORY_PRESETS 128
+
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_get_preset_count() {
+    return NUM_FACTORY_PRESETS;
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char* regroove_synth_get_preset_name(int index) {
+    if (index < 0 || index >= NUM_FACTORY_PRESETS) return "";
+    return factoryPresets[index].name;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_load_preset(SIDSynthInstance* synth, int index) {
+    if (!synth || !synth->sid) return;
+    if (index < 0 || index >= NUM_FACTORY_PRESETS) return;
+
+    const WebPreset* preset = &factoryPresets[index];
+
+    // Apply to Voice 1 (web synth typically uses voice 1 for monophonic playback)
+    synth_sid_set_waveform(synth->sid, 0, preset->waveform);
+    synth_sid_set_pulse_width(synth->sid, 0, preset->pulseWidth);
+    synth_sid_set_attack(synth->sid, 0, preset->attack);
+    synth_sid_set_decay(synth->sid, 0, preset->decay);
+    synth_sid_set_sustain(synth->sid, 0, preset->sustain);
+    synth_sid_set_release(synth->sid, 0, preset->release);
+
+    // Special handling for sync/ring mod presets
+    if (index == 3) {  // Sync Lead
+        synth_sid_set_sync(synth->sid, 0, 1);
+    } else {
+        synth_sid_set_sync(synth->sid, 0, 0);
+    }
+
+    if (index == 4) {  // Ring Bell
+        synth_sid_set_ring_mod(synth->sid, 0, 1);
+    } else {
+        synth_sid_set_ring_mod(synth->sid, 0, 0);
+    }
+
+    // Apply filter settings
+    synth_sid_set_filter_mode(synth->sid, (SIDFilterMode)preset->filterMode);
+    synth_sid_set_filter_cutoff(synth->sid, preset->filterCutoff);
+    synth_sid_set_filter_resonance(synth->sid, preset->filterResonance);
+    synth_sid_set_filter_voice(synth->sid, 0, preset->filterVoice1);
+
+    // Set volume
+    synth_sid_set_volume(synth->sid, 0.7f);
 }

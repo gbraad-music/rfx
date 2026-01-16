@@ -53,6 +53,20 @@ class SynthUI extends HTMLElement {
             // Auto-initialize all parameters to their default values
             this.initializeParameterDefaults(params);
         }
+
+        // Setup preset loading (if synth supports presets)
+        if (this.synthInstance && typeof this.synthInstance.onPresetsReady === 'function') {
+            this.synthInstance.onPresetsReady((presetNames) => {
+                this.renderPresetSelector(presetNames);
+            });
+
+            // Listen for preset changes to update UI
+            this.synthInstance.on('presetLoaded', (data) => {
+                if (data.parameters && data.parameters.length > 0) {
+                    this.updateUIFromParameters(data.parameters);
+                }
+            });
+        }
     }
 
     /**
@@ -104,6 +118,44 @@ class SynthUI extends HTMLElement {
                     margin-bottom: 20px;
                     color: #888;
                     font-size: 0.85em;
+                }
+
+                .preset-selector {
+                    margin-bottom: 25px;
+                    padding: 15px;
+                    background: rgba(0, 0, 0, 0.3);
+                    border-radius: 6px;
+                    border: 1px solid rgba(0, 102, 255, 0.2);
+                }
+
+                .preset-label {
+                    color: #888;
+                    font-size: 0.7em;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                    margin-bottom: 8px;
+                }
+
+                .preset-select {
+                    width: 100%;
+                    padding: 10px;
+                    background: #1a1a1a;
+                    color: #d0d0d0;
+                    border: 1px solid #0066FF;
+                    border-radius: 4px;
+                    font-size: 0.95em;
+                    font-weight: bold;
+                    cursor: pointer;
+                }
+
+                .preset-select:hover {
+                    border-color: #0088FF;
+                    background: #222;
+                }
+
+                .preset-select option {
+                    background: #1a1a1a;
+                    color: #d0d0d0;
                 }
 
                 .param-group {
@@ -175,6 +227,7 @@ class SynthUI extends HTMLElement {
 
             <div class="synth-header">${this.synth.displayName} <span style="font-size: 0.5em; color: #00CC66;">✓ AUTO-GENERATED</span></div>
             ${this.synth.description ? `<div class="synth-description">${this.synth.description}</div>` : ''}
+            <div class="preset-container"></div>
             <div class="controls-container">
                 <div class="loading">Waiting for synth initialization...</div>
             </div>
@@ -195,6 +248,48 @@ class SynthUI extends HTMLElement {
         this.bindEvents();
 
         console.log('[SynthUI] Controls rendered and events bound');
+    }
+
+    renderPresetSelector(presetNames) {
+        console.log(`[SynthUI] Rendering preset selector with ${presetNames.length} presets`);
+
+        const presetContainer = this.shadowRoot.querySelector('.preset-container');
+        if (!presetContainer) {
+            console.warn('[SynthUI] Preset container not found');
+            return;
+        }
+
+        const options = presetNames.map((name, index) =>
+            `<option value="${index}">${index}: ${name}</option>`
+        ).join('');
+
+        presetContainer.innerHTML = `
+            <div class="preset-selector">
+                <div class="preset-label">🎨 Presets</div>
+                <select class="preset-select" id="presetSelect">
+                    ${options}
+                </select>
+            </div>
+        `;
+
+        // Bind preset change event
+        const presetSelect = this.shadowRoot.getElementById('presetSelect');
+        if (presetSelect) {
+            presetSelect.addEventListener('change', (e) => {
+                const index = parseInt(e.target.value);
+                console.log(`[SynthUI] Loading preset ${index}: ${presetNames[index]}`);
+                if (this.synthInstance && typeof this.synthInstance.loadPreset === 'function') {
+                    this.synthInstance.loadPreset(index);
+                }
+            });
+
+            // Load first preset by default
+            if (presetNames.length > 0) {
+                this.synthInstance.loadPreset(0);
+            }
+        }
+
+        console.log('[SynthUI] Preset selector ready');
     }
 
     groupParameters(params) {
@@ -334,6 +429,49 @@ class SynthUI extends HTMLElement {
         if (this.synthInstance && typeof this.synthInstance.setParameter === 'function') {
             this.synthInstance.setParameter(index, value);
         }
+    }
+
+    /**
+     * Update UI controls from parameter values (called when preset loads)
+     */
+    updateUIFromParameters(parameters) {
+        console.log('[SynthUI] Updating UI from', parameters.length, 'parameters');
+
+        for (let i = 0; i < parameters.length; i++) {
+            const value = parameters[i];
+            const param = this.getParamByIndex(i);
+            if (!param) continue;
+
+            // Update UI control based on type
+            if (param.type === 'enum') {
+                const select = this.shadowRoot.querySelector(`select[data-param-index="${i}"]`);
+                if (select) {
+                    select.value = value;
+                }
+            } else if (param.type === 'boolean') {
+                const checkbox = this.shadowRoot.querySelector(`input[type="checkbox"][data-param-index="${i}"]`);
+                if (checkbox) {
+                    checkbox.checked = value > 0.5;
+                }
+            } else if (param.type === 'float' || param.type === 'int') {
+                // Scale value back to UI range (0-100)
+                const uiValue = param.max === 100 && param.scale === 'normalized' ? value * 100 : value;
+
+                // Update slider
+                const slider = this.shadowRoot.querySelector(`svg-slider[data-param-index="${i}"]`);
+                if (slider) {
+                    slider.value = uiValue;
+                }
+
+                // Update value display
+                const valueDisplay = this.shadowRoot.querySelector(`[data-value-for="${i}"]`);
+                if (valueDisplay) {
+                    valueDisplay.textContent = this.formatValue(uiValue, param);
+                }
+            }
+        }
+
+        console.log('[SynthUI] UI synchronized with preset');
     }
 
     getParamByIndex(index) {

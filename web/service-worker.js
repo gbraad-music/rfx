@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v124';
+const CACHE_NAME = 'rfx-effects-v130';
 const ASSETS = [
     './',
     './index.html',
@@ -20,6 +20,9 @@ const ASSETS = [
     // Unified Deck Player (MOD/MED/AHX/SID with automatic detection)
     './players/deck-player.js',
     './players/deck-player.wasm',
+    // Synth UI system (auto-generation)
+    './synth-registry.js',
+    './synth-ui.js',
     // Synth test page dependencies
     './external/midi-rtc/midi-codec.js',
     './external/midi-rtc/midi-utils.js',
@@ -30,16 +33,27 @@ const ASSETS = [
     './external/frequency-analyzer.js',
     './external/midi-audio-synth.js',
     './external/rgresonate1-synth.js',
+    './external/rgahxsynth-synth.js',
+    './external/rgsid-synth.js',
+    './external/rg1piano-synth.js',
     './external/rg909-drum.js',
     './external/rgsfz-synth.js',
     './synths/synth-worklet-processor.js',
     './synths/drum-worklet-processor.js',
     './synths/rgresonate1-synth.js',
     './synths/rgresonate1-synth.wasm',
+    './synths/rgahxsynth.js',
+    './synths/rgahxsynth.wasm',
+    './synths/rgsidsynth.js',
+    './synths/rgsidsynth.wasm',
+    './synths/rg1piano.js',
+    './synths/rg1piano.wasm',
     './synths/rg909-drum.js',
     './synths/rg909-drum.wasm',
     './synths/rgsfz-player.js',
-    './synths/rgsfz-player.wasm'
+    './synths/rgsfz-player.wasm',
+    // Preset data files
+    './data/sid_presets.h'
 ];
 
 // Install event - cache assets

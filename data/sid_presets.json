@@ -1,0 +1,30 @@
+{
+  "presets": [
+    {
+      "name": "User Lead 1",
+      "waveform": 2,
+      "pulseWidth": 0.5,
+      "attack": 0.0,
+      "decay": 0.3,
+      "sustain": 0.6,
+      "release": 0.2,
+      "filterMode": 1,
+      "filterCutoff": 0.6,
+      "filterResonance": 0.3,
+      "filterVoice1": 1
+    },
+    {
+      "name": "User Bass 1",
+      "waveform": 4,
+      "pulseWidth": 0.25,
+      "attack": 0.0,
+      "decay": 0.4,
+      "sustain": 0.3,
+      "release": 0.1,
+      "filterMode": 1,
+      "filterCutoff": 0.4,
+      "filterResonance": 0.5,
+      "filterVoice1": 1
+    }
+  ]
+}

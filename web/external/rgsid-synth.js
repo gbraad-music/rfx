@@ -17,6 +17,13 @@ class RGSIDSynth {
         // WASM state
         this.wasmReady = false;
         this.pendingNotes = [];
+
+        // Preset state
+        this.presetCount = 0;
+        this.presetNames = [];
+        this.presetCallbacks = new Map();
+        this.factoryPresetCount = 0;  // Built-in WASM presets
+        this.userPresets = [];  // Loaded from ./data/
     }
 
     /**
@@ -120,7 +127,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=181');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=184');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -128,13 +135,16 @@ class RGSIDSynth {
 
             // Handle worklet messages
             this.workletNode.port.onmessage = (event) => {
-                const { type, data } = event.data;
+                const { type, data, count, index, name, parameters } = event.data;
 
                 if (type === 'needWasm') {
                     this.loadWasm();
                 } else if (type === 'ready') {
                     console.log('[RGSIDSynth] ✅ WASM SID Synth ready');
                     this.wasmReady = true;
+
+                    // Request preset count
+                    this.requestPresetCount();
 
                     // Process any pending notes
                     for (const note of this.pendingNotes) {
@@ -147,6 +157,12 @@ class RGSIDSynth {
                     this.pendingNotes = [];
                 } else if (type === 'error') {
                     console.error('[RGSIDSynth] WASM error:', data);
+                } else if (type === 'presetCount') {
+                    this.handlePresetCount(count);
+                } else if (type === 'presetName') {
+                    this.handlePresetName(index, name);
+                } else if (type === 'presetLoaded') {
+                    this.handlePresetLoaded(index, parameters);
                 }
             };
 
@@ -302,6 +318,188 @@ class RGSIDSynth {
         this.speakerGain.gain.linearRampToValueAtTime(enabled ? 1.0 : 0.0, currentTime + 0.05);
 
         console.log(`[RGSIDSynth] ✅ ${enabled ? 'AUDIBLE' : 'MUTED'}`);
+    }
+
+    // ============================================================================
+    // Preset API (Dynamic Loading from WASM)
+    // ============================================================================
+
+    requestPresetCount() {
+        if (!this.wasmReady || !this.workletNode) return;
+        this.workletNode.port.postMessage({ type: 'getPresetCount' });
+    }
+
+    handlePresetCount(count) {
+        this.factoryPresetCount = count;
+        console.log(`[RGSIDSynth] 🎨 ${count} factory presets from WASM`);
+
+        // Request all factory preset names
+        this.presetNames = new Array(count);
+        for (let i = 0; i < count; i++) {
+            this.workletNode.port.postMessage({ type: 'getPresetName', data: { index: i } });
+        }
+
+        // Load user presets from external file
+        this.loadUserPresets();
+    }
+
+    async loadUserPresets() {
+        try {
+            const response = await fetch('data/sid_presets.h');
+            if (!response.ok) {
+                console.log('[RGSIDSynth] No user presets found (data/sid_presets.h)');
+                return;
+            }
+
+            const text = await response.text();
+
+            // Parse PRESET(name, waveform, pw, attack, decay, sustain, release, filterMode, cutoff, resonance, filterV1)
+            const presetRegex = /PRESET\s*\(\s*"([^"]+)"\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/g;
+
+            let match;
+            this.userPresets = [];
+            while ((match = presetRegex.exec(text)) !== null) {
+                this.userPresets.push({
+                    name: match[1],
+                    waveform: parseFloat(match[2]),
+                    pulseWidth: parseFloat(match[3]),
+                    attack: parseFloat(match[4]),
+                    decay: parseFloat(match[5]),
+                    sustain: parseFloat(match[6]),
+                    release: parseFloat(match[7]),
+                    filterMode: parseFloat(match[8]),
+                    filterCutoff: parseFloat(match[9]),
+                    filterResonance: parseFloat(match[10]),
+                    filterVoice1: parseFloat(match[11])
+                });
+            }
+
+            if (this.userPresets.length === 0) {
+                console.log('[RGSIDSynth] No PRESET() entries found in file');
+                return;
+            }
+
+            console.log(`[RGSIDSynth] ✅ Loaded ${this.userPresets.length} user presets from .h file`);
+
+            // Append user preset names
+            for (const preset of this.userPresets) {
+                this.presetNames.push(preset.name);
+            }
+
+            // Update total count
+            this.presetCount = this.factoryPresetCount + this.userPresets.length;
+            console.log(`[RGSIDSynth] 🎨 Total: ${this.presetCount} presets (${this.factoryPresetCount} factory + ${this.userPresets.length} user)`);
+
+            // Notify UI
+            this.emit('presetName', { index: -1, name: '' });  // Trigger UI refresh
+            const callback = this.presetCallbacks.get('names');
+            if (callback) {
+                callback(this.presetNames);
+            }
+        } catch (error) {
+            console.log('[RGSIDSynth] Could not load user presets:', error.message);
+        }
+    }
+
+    handlePresetName(index, name) {
+        this.presetNames[index] = name;
+        console.log(`[RGSIDSynth] Preset ${index}: "${name}"`);
+
+        // Notify listeners
+        this.emit('presetName', { index, name });
+
+        // If callback registered, call it
+        const callback = this.presetCallbacks.get('names');
+        if (callback) {
+            callback(this.presetNames);
+        }
+    }
+
+    handlePresetLoaded(index, parameters) {
+        console.log(`[RGSIDSynth] ✅ Loaded preset ${index}: ${this.presetNames[index]}`);
+        if (parameters && parameters.length > 0) {
+            console.log(`[RGSIDSynth] Syncing ${parameters.length} parameters to UI`);
+        }
+        this.emit('presetLoaded', { index, name: this.presetNames[index], parameters });
+    }
+
+    /**
+     * Get number of available presets
+     */
+    getPresetCount() {
+        return this.presetCount;
+    }
+
+    /**
+     * Get all preset names (returns copy of array)
+     */
+    getPresetNames() {
+        return [...this.presetNames];
+    }
+
+    /**
+     * Get name of specific preset
+     */
+    getPresetName(index) {
+        return this.presetNames[index] || '';
+    }
+
+    /**
+     * Load a preset by index (factory or user)
+     */
+    loadPreset(index) {
+        if (!this.wasmReady || !this.workletNode) {
+            console.warn('[RGSIDSynth] Cannot load preset - not ready');
+            return;
+        }
+        if (index < 0 || index >= this.presetCount) {
+            console.warn(`[RGSIDSynth] Invalid preset index: ${index}`);
+            return;
+        }
+
+        console.log(`[RGSIDSynth] Loading preset ${index}: ${this.presetNames[index]}`);
+
+        // Factory preset - load from WASM
+        if (index < this.factoryPresetCount) {
+            this.workletNode.port.postMessage({ type: 'loadPreset', data: { index } });
+        }
+        // User preset - apply parameters directly
+        else {
+            const userIndex = index - this.factoryPresetCount;
+            const preset = this.userPresets[userIndex];
+            if (!preset) {
+                console.warn('[RGSIDSynth] User preset not found:', userIndex);
+                return;
+            }
+
+            console.log('[RGSIDSynth] Applying user preset from JSON');
+
+            // Apply parameters (Voice 1 only for simplified format)
+            this.setParameter(0, preset.waveform || 4);  // Waveform
+            this.setParameter(1, preset.pulseWidth || 0.5);  // PW
+            this.setParameter(2, preset.attack || 0.0);  // Attack
+            this.setParameter(3, preset.decay || 0.5);  // Decay
+            this.setParameter(4, preset.sustain || 0.7);  // Sustain
+            this.setParameter(5, preset.release || 0.3);  // Release
+            this.setParameter(24, preset.filterMode || 1);  // Filter Mode
+            this.setParameter(25, preset.filterCutoff || 0.5);  // Filter Cutoff
+            this.setParameter(26, preset.filterResonance || 0.0);  // Filter Resonance
+            this.setParameter(27, preset.filterVoice1 || 0);  // Filter V1 routing
+
+            // Emit event for UI sync
+            this.emit('presetLoaded', { index, name: preset.name });
+        }
+    }
+
+    /**
+     * Register callback for when preset names are loaded
+     */
+    onPresetsReady(callback) {
+        this.presetCallbacks.set('names', callback);
+        // If already loaded, call immediately
+        if (this.presetNames.length > 0) {
+            callback(this.presetNames);
+        }
     }
 
     destroy() {

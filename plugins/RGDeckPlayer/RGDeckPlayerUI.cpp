@@ -10,6 +10,8 @@ class RGDeckPlayerUI : public UI
 {
 public:
     RGDeckPlayerUI() : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT)
+        , fLastOrder(0)
+        , fLastRow(0)
     {
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true);
 
@@ -51,6 +53,19 @@ protected:
         }
     }
 
+    void uiIdle() override
+    {
+        // Check if output parameters (Order/Row) changed - repaint only if needed
+        uint8_t currentOrder = (uint8_t)fParameters[kParameterCurrentOrder];
+        uint16_t currentRow = (uint16_t)fParameters[kParameterCurrentRow];
+
+        if (currentOrder != fLastOrder || currentRow != fLastRow) {
+            fLastOrder = currentOrder;
+            fLastRow = currentRow;
+            fImGuiWidget->repaint();
+        }
+    }
+
     void uiReshape(uint width, uint height) override {
         UI::uiReshape(width, height);
         fImGuiWidget->setSize(width, height);
@@ -60,6 +75,8 @@ private:
     friend class RGDeckPlayerImGuiWidget;
     float fParameters[kParameterCount];
     String fFilePath;
+    uint8_t fLastOrder;
+    uint16_t fLastRow;
 
     class RGDeckPlayerImGuiWidget : public ImGuiSubWidget
     {
@@ -164,10 +181,11 @@ private:
                 // Channel buttons - use FULL panel width (no tempo slider space)
                 const uint32_t muteP[] = {kParameterCh1Mute, kParameterCh2Mute, kParameterCh3Mute, kParameterCh4Mute};
                 const float chSize = 38.0f;
+                const float chInset = 12.0f;  // Inset from edge
                 const float chTotal = 4 * chSize;
-                const float chGap = (panelW - chTotal) / 3.0f;  // Use FULL panel width
+                const float chGap = (panelW - chTotal - 2 * chInset) / 3.0f;  // Space between buttons
 
-                ImGui::SetCursorPosX(pad);
+                ImGui::SetCursorPosX(pad + chInset);
                 for (int i = 0; i < 4; i++) {
                     if (i > 0) ImGui::SameLine(0, chGap);
 
@@ -198,8 +216,8 @@ private:
 
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6);
 
-                // LOOP and PLAY - SQUARE 70x70 (align with content width, leave space for tempo slider)
-                float padsX = pad + (contentW - 2*padSize - pad) * 0.5f;
+                // LOOP and PLAY - SQUARE pads with consistent spacing
+                float padsX = pad + 8.0f;  // Consistent left margin
                 float loopPlayY = ImGui::GetCursorScreenPos().y;  // Save Y position for tempo slider
                 ImGui::SetCursorPosX(padsX);
 
@@ -222,7 +240,7 @@ private:
                 ImGui::PopStyleColor(4);
                 ImGui::PopStyleVar();
 
-                ImGui::SameLine(0, pad);
+                ImGui::SameLine(0, 8.0f);
 
                 // PLAY: Grey when no file, Red when stopped with file, Green when playing
                 bool playOn = fUI->fParameters[kParameterPlay] > 0.5f;
@@ -251,7 +269,7 @@ private:
                 ImGui::PopStyleColor(4);
                 ImGui::PopStyleVar();
 
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + pad);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f);  // Tighter vertical spacing
 
                 // PTN- PTN+ - SQUARE 70x70 (use invisible button + text overlay)
                 ImGui::SetCursorPosX(padsX);
@@ -271,7 +289,7 @@ private:
                 draw->AddText(ImVec2(ptn1Pos.x + (padSize - ptn1TextW) * 0.5f, ptn1Pos.y + padSize * 0.4f),
                     IM_COL32(200, 200, 200, 255), ptn1Text);
 
-                ImGui::SameLine(0, pad);
+                ImGui::SameLine(0, 8.0f);
 
                 // PTN+ button
                 ImVec2 ptn2Pos = ImGui::GetCursorScreenPos();
@@ -287,7 +305,7 @@ private:
                 ImGui::PopStyleColor(3);
                 ImGui::PopStyleVar();
 
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + pad);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 6.0f);  // Tighter vertical spacing
 
                 // MUTE PFL - SQUARE pads
                 ImGui::SetCursorPosX(padsX);
@@ -318,7 +336,7 @@ private:
                 ImGui::PopStyleColor(3);
                 ImGui::PopStyleVar();
 
-                ImGui::SameLine(0, pad);
+                ImGui::SameLine(0, 8.0f);
 
                 // PFL button (placeholder)
                 ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
@@ -342,8 +360,8 @@ private:
                 // Tempo slider - RIGHT side, starts at LOOP/PLAY level
                 float tempoMult = fUI->fParameters[kParameterBPM];  // 0.9 - 1.1
                 float tempoNorm = (tempoMult - 0.9f) / (1.1f - 0.9f);
-                const float sliderX = pad + contentW + 2.0f;  // Slightly more inward
-                const float sliderH = 3 * padSize + 2 * pad;  // Height to cover 3 rows of pads + 2 gaps
+                const float sliderX = pad + contentW - 8.0f;  // Move more towards left
+                const float sliderH = 3 * padSize + 2 * 6.0f;  // Height to cover 3 rows of pads + 2 gaps
 
                 // Slider with rounded corners
                 ImGui::SetCursorScreenPos(ImVec2(sliderX, loopPlayY));

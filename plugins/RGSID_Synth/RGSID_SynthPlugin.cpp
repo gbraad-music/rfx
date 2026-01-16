@@ -1,22 +1,178 @@
 #include "DistrhoPlugin.hpp"
 #include "../../synth/synth_sid.h"
 #include "../../synth/synth_sid_cc.h"
+#include "SIDSysEx.h"
 #include <cstring>
 #include <cmath>
 
 START_NAMESPACE_DISTRHO
 
+// ============================================================================
+// Preset System (MIDIbox SID V2 Compatible)
+// ============================================================================
+
+#define SID_NUM_BANKS 8
+#define SID_PATCHES_PER_BANK 128
+#define SID_NUM_PROGRAMS (SID_NUM_BANKS * SID_PATCHES_PER_BANK)  // 1024 total
+
+struct SIDPreset {
+    char name[32];
+
+    // Voice 1 parameters
+    float voice1Waveform;
+    float voice1PulseWidth;
+    float voice1Attack;
+    float voice1Decay;
+    float voice1Sustain;
+    float voice1Release;
+    float voice1RingMod;
+    float voice1Sync;
+
+    // Voice 2 parameters
+    float voice2Waveform;
+    float voice2PulseWidth;
+    float voice2Attack;
+    float voice2Decay;
+    float voice2Sustain;
+    float voice2Release;
+    float voice2RingMod;
+    float voice2Sync;
+
+    // Voice 3 parameters
+    float voice3Waveform;
+    float voice3PulseWidth;
+    float voice3Attack;
+    float voice3Decay;
+    float voice3Sustain;
+    float voice3Release;
+    float voice3RingMod;
+    float voice3Sync;
+
+    // Filter parameters
+    float filterMode;
+    float filterCutoff;
+    float filterResonance;
+    float filterVoice1;
+    float filterVoice2;
+    float filterVoice3;
+
+    // Global parameters
+    float volume;
+};
+
+// ============================================================================
+// Conversion Functions (Float ↔ SysEx)
+// ============================================================================
+
+static void preset_to_sysex(const SIDPreset& preset, SysExPreset& sysex)
+{
+    std::strncpy(sysex.name, preset.name, 32);
+
+    // Voice 1
+    sysex.voice1Waveform = (uint8_t)preset.voice1Waveform;
+    sysex.voice1PulseWidth = (uint8_t)(preset.voice1PulseWidth * 127.0f);
+    sysex.voice1Attack = (uint8_t)(preset.voice1Attack * 127.0f);
+    sysex.voice1Decay = (uint8_t)(preset.voice1Decay * 127.0f);
+    sysex.voice1Sustain = (uint8_t)(preset.voice1Sustain * 127.0f);
+    sysex.voice1Release = (uint8_t)(preset.voice1Release * 127.0f);
+    sysex.voice1RingMod = (preset.voice1RingMod > 0.5f) ? 127 : 0;
+    sysex.voice1Sync = (preset.voice1Sync > 0.5f) ? 127 : 0;
+
+    // Voice 2
+    sysex.voice2Waveform = (uint8_t)preset.voice2Waveform;
+    sysex.voice2PulseWidth = (uint8_t)(preset.voice2PulseWidth * 127.0f);
+    sysex.voice2Attack = (uint8_t)(preset.voice2Attack * 127.0f);
+    sysex.voice2Decay = (uint8_t)(preset.voice2Decay * 127.0f);
+    sysex.voice2Sustain = (uint8_t)(preset.voice2Sustain * 127.0f);
+    sysex.voice2Release = (uint8_t)(preset.voice2Release * 127.0f);
+    sysex.voice2RingMod = (preset.voice2RingMod > 0.5f) ? 127 : 0;
+    sysex.voice2Sync = (preset.voice2Sync > 0.5f) ? 127 : 0;
+
+    // Voice 3
+    sysex.voice3Waveform = (uint8_t)preset.voice3Waveform;
+    sysex.voice3PulseWidth = (uint8_t)(preset.voice3PulseWidth * 127.0f);
+    sysex.voice3Attack = (uint8_t)(preset.voice3Attack * 127.0f);
+    sysex.voice3Decay = (uint8_t)(preset.voice3Decay * 127.0f);
+    sysex.voice3Sustain = (uint8_t)(preset.voice3Sustain * 127.0f);
+    sysex.voice3Release = (uint8_t)(preset.voice3Release * 127.0f);
+    sysex.voice3RingMod = (preset.voice3RingMod > 0.5f) ? 127 : 0;
+    sysex.voice3Sync = (preset.voice3Sync > 0.5f) ? 127 : 0;
+
+    // Filter
+    sysex.filterMode = (uint8_t)preset.filterMode;
+    sysex.filterCutoff = (uint8_t)(preset.filterCutoff * 127.0f);
+    sysex.filterResonance = (uint8_t)(preset.filterResonance * 127.0f);
+    sysex.filterVoice1 = (preset.filterVoice1 > 0.5f) ? 127 : 0;
+    sysex.filterVoice2 = (preset.filterVoice2 > 0.5f) ? 127 : 0;
+    sysex.filterVoice3 = (preset.filterVoice3 > 0.5f) ? 127 : 0;
+
+    // Global
+    sysex.volume = (uint8_t)(preset.volume * 127.0f);
+}
+
+static void sysex_to_preset(const SysExPreset& sysex, SIDPreset& preset)
+{
+    std::strncpy(preset.name, sysex.name, 32);
+
+    // Voice 1
+    preset.voice1Waveform = (float)sysex.voice1Waveform;
+    preset.voice1PulseWidth = sysex.voice1PulseWidth / 127.0f;
+    preset.voice1Attack = sysex.voice1Attack / 127.0f;
+    preset.voice1Decay = sysex.voice1Decay / 127.0f;
+    preset.voice1Sustain = sysex.voice1Sustain / 127.0f;
+    preset.voice1Release = sysex.voice1Release / 127.0f;
+    preset.voice1RingMod = (sysex.voice1RingMod >= 64) ? 1.0f : 0.0f;
+    preset.voice1Sync = (sysex.voice1Sync >= 64) ? 1.0f : 0.0f;
+
+    // Voice 2
+    preset.voice2Waveform = (float)sysex.voice2Waveform;
+    preset.voice2PulseWidth = sysex.voice2PulseWidth / 127.0f;
+    preset.voice2Attack = sysex.voice2Attack / 127.0f;
+    preset.voice2Decay = sysex.voice2Decay / 127.0f;
+    preset.voice2Sustain = sysex.voice2Sustain / 127.0f;
+    preset.voice2Release = sysex.voice2Release / 127.0f;
+    preset.voice2RingMod = (sysex.voice2RingMod >= 64) ? 1.0f : 0.0f;
+    preset.voice2Sync = (sysex.voice2Sync >= 64) ? 1.0f : 0.0f;
+
+    // Voice 3
+    preset.voice3Waveform = (float)sysex.voice3Waveform;
+    preset.voice3PulseWidth = sysex.voice3PulseWidth / 127.0f;
+    preset.voice3Attack = sysex.voice3Attack / 127.0f;
+    preset.voice3Decay = sysex.voice3Decay / 127.0f;
+    preset.voice3Sustain = sysex.voice3Sustain / 127.0f;
+    preset.voice3Release = sysex.voice3Release / 127.0f;
+    preset.voice3RingMod = (sysex.voice3RingMod >= 64) ? 1.0f : 0.0f;
+    preset.voice3Sync = (sysex.voice3Sync >= 64) ? 1.0f : 0.0f;
+
+    // Filter
+    preset.filterMode = (float)sysex.filterMode;
+    preset.filterCutoff = sysex.filterCutoff / 127.0f;
+    preset.filterResonance = sysex.filterResonance / 127.0f;
+    preset.filterVoice1 = (sysex.filterVoice1 >= 64) ? 1.0f : 0.0f;
+    preset.filterVoice2 = (sysex.filterVoice2 >= 64) ? 1.0f : 0.0f;
+    preset.filterVoice3 = (sysex.filterVoice3 >= 64) ? 1.0f : 0.0f;
+
+    // Global
+    preset.volume = sysex.volume / 127.0f;
+}
+
 class RGSID_SynthPlugin : public Plugin
 {
 public:
     RGSID_SynthPlugin()
-        : Plugin(kParameterCount, 0, 0)
+        : Plugin(kParameterCount, SID_NUM_PROGRAMS, 0)  // programs, states
     {
         // Create SID synthesizer
         fSID = synth_sid_create(getSampleRate());
 
         // Initialize feedback prevention flag
         fUpdatingFromCC = false;
+
+        // Initialize program state
+        fCurrentBank = 0;
+        fCurrentProgram = 0;
+        fPendingBankSelect = 0;
+        fBankSelectPending = false;
 
         // Initialize parameter values to defaults
         // Voice 1
@@ -510,10 +666,21 @@ protected:
         for (uint32_t i = 0; i < midiEventCount; i++) {
             const MidiEvent& event = midiEvents[i];
 
-            if (event.size > 3)
+            if (event.size == 0)
                 continue;
 
             const uint8_t* data = event.data;
+
+            // Handle SysEx messages separately
+            if (data[0] == 0xF0 && event.size > 10) {
+                handleSysExMessage(data, event.size);
+                continue;
+            }
+
+            // Skip other long messages that aren't SysEx
+            if (event.size > 3)
+                continue;
+
             const uint8_t status = data[0] & 0xF0;
             const uint8_t channel = data[0] & 0x0F;
 
@@ -542,10 +709,31 @@ protected:
 
                 case 0xB0: // Control Change
                     if (event.size >= 3) {
+                        // Handle Bank Select (CC#0) - MIDIbox SID compatible
+                        if (data[1] == SID_CC_BANK_SELECT) {
+                            fPendingBankSelect = data[2] & 0x07;  // 0-7 banks
+                            fBankSelectPending = true;
+                        }
                         // Update parameter from CC (this will sync UI)
                         updateParameterFromCC(data[1], data[2]);
                         // Also send to synth (in case CC doesn't map to a parameter)
                         synth_sid_handle_cc(fSID, data[1], data[2]);
+                    }
+                    break;
+
+                case 0xC0: // Program Change
+                    if (event.size >= 2) {
+                        uint8_t program = data[1] & 0x7F;  // 0-127
+                        uint8_t bank = fBankSelectPending ? fPendingBankSelect : fCurrentBank;
+
+                        // Calculate absolute program index
+                        uint32_t programIndex = (bank * SID_PATCHES_PER_BANK) + program;
+
+                        if (programIndex < SID_NUM_PROGRAMS) {
+                            loadProgram(programIndex);
+                        }
+
+                        fBankSelectPending = false;
                     }
                     break;
 
@@ -583,7 +771,308 @@ protected:
         }
     }
 
+    // ========================================================================
+    // Program/Preset Functions
+    // ========================================================================
+
+    void initProgramName(uint32_t index, String& programName) override
+    {
+        if (index >= SID_NUM_PROGRAMS)
+            return;
+
+        uint8_t bank = index / SID_PATCHES_PER_BANK;
+        uint8_t patch = index % SID_PATCHES_PER_BANK;
+
+        // Generate program name: "Bank X Patch YYY"
+        char name[32];
+        std::snprintf(name, sizeof(name), "Bank %d Patch %03d", bank, patch);
+        programName = name;
+
+        // TODO: Load factory preset names when implemented
+    }
+
+    void loadProgram(uint32_t index) override
+    {
+        if (index >= SID_NUM_PROGRAMS)
+            return;
+
+        uint8_t bank = index / SID_PATCHES_PER_BANK;
+        uint8_t patch = index % SID_PATCHES_PER_BANK;
+
+        fCurrentBank = bank;
+        fCurrentProgram = patch;
+
+        // Load preset data
+        SIDPreset preset = getFactoryPreset(index);
+
+        // Apply preset to parameters (this will update synth and send CC)
+        setParameterValue(kParameterVoice1Waveform, preset.voice1Waveform);
+        setParameterValue(kParameterVoice1PulseWidth, preset.voice1PulseWidth);
+        setParameterValue(kParameterVoice1Attack, preset.voice1Attack);
+        setParameterValue(kParameterVoice1Decay, preset.voice1Decay);
+        setParameterValue(kParameterVoice1Sustain, preset.voice1Sustain);
+        setParameterValue(kParameterVoice1Release, preset.voice1Release);
+        setParameterValue(kParameterVoice1RingMod, preset.voice1RingMod);
+        setParameterValue(kParameterVoice1Sync, preset.voice1Sync);
+
+        setParameterValue(kParameterVoice2Waveform, preset.voice2Waveform);
+        setParameterValue(kParameterVoice2PulseWidth, preset.voice2PulseWidth);
+        setParameterValue(kParameterVoice2Attack, preset.voice2Attack);
+        setParameterValue(kParameterVoice2Decay, preset.voice2Decay);
+        setParameterValue(kParameterVoice2Sustain, preset.voice2Sustain);
+        setParameterValue(kParameterVoice2Release, preset.voice2Release);
+        setParameterValue(kParameterVoice2RingMod, preset.voice2RingMod);
+        setParameterValue(kParameterVoice2Sync, preset.voice2Sync);
+
+        setParameterValue(kParameterVoice3Waveform, preset.voice3Waveform);
+        setParameterValue(kParameterVoice3PulseWidth, preset.voice3PulseWidth);
+        setParameterValue(kParameterVoice3Attack, preset.voice3Attack);
+        setParameterValue(kParameterVoice3Decay, preset.voice3Decay);
+        setParameterValue(kParameterVoice3Sustain, preset.voice3Sustain);
+        setParameterValue(kParameterVoice3Release, preset.voice3Release);
+        setParameterValue(kParameterVoice3RingMod, preset.voice3RingMod);
+        setParameterValue(kParameterVoice3Sync, preset.voice3Sync);
+
+        setParameterValue(kParameterFilterMode, preset.filterMode);
+        setParameterValue(kParameterFilterCutoff, preset.filterCutoff);
+        setParameterValue(kParameterFilterResonance, preset.filterResonance);
+        setParameterValue(kParameterFilterVoice1, preset.filterVoice1);
+        setParameterValue(kParameterFilterVoice2, preset.filterVoice2);
+        setParameterValue(kParameterFilterVoice3, preset.filterVoice3);
+
+        setParameterValue(kParameterVolume, preset.volume);
+    }
+
 private:
+    /**
+     * Handle incoming SysEx MIDI messages
+     */
+    void handleSysExMessage(const uint8_t* data, size_t size)
+    {
+        // Validate SysEx message
+        if (!sysex_is_valid_message(data, size))
+            return;
+
+        uint8_t command = sysex_get_command(data, size);
+
+        switch (command) {
+            case SYSEX_CMD_LOAD_PATCH: {
+                // Load single patch from SysEx
+                SysExPreset sysexPreset;
+                uint8_t bank, patch;
+
+                if (sysex_decode_patch(data, size, &sysexPreset, &bank, &patch)) {
+                    // Convert to plugin preset
+                    SIDPreset preset;
+                    sysex_to_preset(sysexPreset, preset);
+
+                    // Calculate program index and load
+                    uint32_t programIndex = (bank * SID_PATCHES_PER_BANK) + patch;
+                    if (programIndex < SID_NUM_PROGRAMS) {
+                        // Store in temporary location and load
+                        // (In full implementation, would update preset database)
+                        loadProgram(programIndex);
+                    }
+                }
+                break;
+            }
+
+            case SYSEX_CMD_REQUEST_PATCH: {
+                // Send current patch as SysEx dump
+                if (size >= SYSEX_HEADER_SIZE + 3) {  // Header + bank + patch + checksum + end
+                    uint8_t requestedBank = data[SYSEX_HEADER_SIZE];
+                    uint8_t requestedPatch = data[SYSEX_HEADER_SIZE + 1];
+
+                    // Get current preset
+                    uint32_t programIndex = (requestedBank * SID_PATCHES_PER_BANK) + requestedPatch;
+                    SIDPreset preset = getFactoryPreset(programIndex);
+
+                    // Convert to SysEx
+                    SysExPreset sysexPreset;
+                    preset_to_sysex(preset, sysexPreset);
+
+                    // Encode to SysEx dump
+                    uint8_t buffer[256];
+                    size_t dumpSize = sysex_encode_patch_dump(&sysexPreset,
+                                                               requestedBank,
+                                                               requestedPatch,
+                                                               buffer,
+                                                               sizeof(buffer));
+
+                    if (dumpSize > 0) {
+                        // Send as MIDI SysEx (would need writeMidiEvent support for long messages)
+                        // For now, this is a placeholder - DPF may need enhancement
+                        // to support sending SysEx messages longer than 3 bytes
+                    }
+                }
+                break;
+            }
+
+            case SYSEX_CMD_LOAD_BANK: {
+                // Load entire bank from SysEx
+                SysExPreset sysexPresets[128];
+                uint8_t bank;
+
+                if (sysex_decode_bank(data, size, sysexPresets, &bank)) {
+                    // In full implementation, would update all 128 presets in bank
+                    // For now, just acknowledge receipt
+                    // (Requires persistent storage implementation)
+                }
+                break;
+            }
+
+            default:
+                // Unknown command, ignore
+                break;
+        }
+    }
+
+    /**
+     * Get factory preset by index (0-1023)
+     * Returns default preset for uninitialized slots
+     */
+    SIDPreset getFactoryPreset(uint32_t index)
+    {
+        SIDPreset preset;
+        std::memset(&preset, 0, sizeof(preset));
+
+        uint8_t bank = index / SID_PATCHES_PER_BANK;
+        uint8_t patch = index % SID_PATCHES_PER_BANK;
+
+        // Default preset name
+        std::snprintf(preset.name, sizeof(preset.name), "Bank %d Patch %03d", bank, patch);
+
+        // Default values (classic SID organ sound)
+        preset.voice1Waveform = SID_WAVE_PULSE;
+        preset.voice1PulseWidth = 0.5f;
+        preset.voice1Attack = 0.0f;
+        preset.voice1Decay = 0.5f;
+        preset.voice1Sustain = 0.7f;
+        preset.voice1Release = 0.3f;
+        preset.voice1RingMod = 0.0f;
+        preset.voice1Sync = 0.0f;
+
+        preset.voice2Waveform = SID_WAVE_PULSE;
+        preset.voice2PulseWidth = 0.5f;
+        preset.voice2Attack = 0.0f;
+        preset.voice2Decay = 0.5f;
+        preset.voice2Sustain = 0.7f;
+        preset.voice2Release = 0.3f;
+        preset.voice2RingMod = 0.0f;
+        preset.voice2Sync = 0.0f;
+
+        preset.voice3Waveform = SID_WAVE_PULSE;
+        preset.voice3PulseWidth = 0.5f;
+        preset.voice3Attack = 0.0f;
+        preset.voice3Decay = 0.5f;
+        preset.voice3Sustain = 0.7f;
+        preset.voice3Release = 0.3f;
+        preset.voice3RingMod = 0.0f;
+        preset.voice3Sync = 0.0f;
+
+        preset.filterMode = SID_FILTER_LP;
+        preset.filterCutoff = 0.5f;
+        preset.filterResonance = 0.0f;
+        preset.filterVoice1 = 0.0f;
+        preset.filterVoice2 = 0.0f;
+        preset.filterVoice3 = 0.0f;
+
+        preset.volume = 0.7f;
+
+        // Factory presets for specific slots
+        // Bank 0: Classic sounds
+        if (bank == 0) {
+            switch (patch) {
+            case 0:  // Init patch
+                std::snprintf(preset.name, sizeof(preset.name), "Init");
+                break;
+
+            case 1:  // Brass lead
+                std::snprintf(preset.name, sizeof(preset.name), "Brass Lead");
+                preset.voice1Waveform = SID_WAVE_SAWTOOTH;
+                preset.voice1Attack = 0.0f;
+                preset.voice1Decay = 0.3f;
+                preset.voice1Sustain = 0.6f;
+                preset.voice1Release = 0.2f;
+                preset.filterMode = SID_FILTER_LP;
+                preset.filterCutoff = 0.6f;
+                preset.filterResonance = 0.3f;
+                preset.filterVoice1 = 1.0f;
+                break;
+
+            case 2:  // Pulse bass
+                std::snprintf(preset.name, sizeof(preset.name), "Pulse Bass");
+                preset.voice1Waveform = SID_WAVE_PULSE;
+                preset.voice1PulseWidth = 0.25f;
+                preset.voice1Attack = 0.0f;
+                preset.voice1Decay = 0.4f;
+                preset.voice1Sustain = 0.3f;
+                preset.voice1Release = 0.1f;
+                preset.filterMode = SID_FILTER_LP;
+                preset.filterCutoff = 0.4f;
+                preset.filterResonance = 0.5f;
+                preset.filterVoice1 = 1.0f;
+                break;
+
+            case 3:  // Sync lead
+                std::snprintf(preset.name, sizeof(preset.name), "Sync Lead");
+                preset.voice1Waveform = SID_WAVE_SAWTOOTH;
+                preset.voice1Attack = 0.0f;
+                preset.voice1Decay = 0.2f;
+                preset.voice1Sustain = 0.8f;
+                preset.voice1Release = 0.1f;
+                preset.voice1Sync = 1.0f;
+                preset.filterMode = SID_FILTER_LP;
+                preset.filterCutoff = 0.7f;
+                preset.filterResonance = 0.2f;
+                preset.filterVoice1 = 1.0f;
+                break;
+
+            case 4:  // Ring mod bell
+                std::snprintf(preset.name, sizeof(preset.name), "Ring Bell");
+                preset.voice1Waveform = SID_WAVE_TRIANGLE;
+                preset.voice1Attack = 0.0f;
+                preset.voice1Decay = 0.6f;
+                preset.voice1Sustain = 0.0f;
+                preset.voice1Release = 0.5f;
+                preset.voice1RingMod = 1.0f;
+                break;
+
+            case 5:  // Noise snare
+                std::snprintf(preset.name, sizeof(preset.name), "Noise Snare");
+                preset.voice1Waveform = SID_WAVE_NOISE;
+                preset.voice1Attack = 0.0f;
+                preset.voice1Decay = 0.15f;
+                preset.voice1Sustain = 0.0f;
+                preset.voice1Release = 0.1f;
+                preset.filterMode = SID_FILTER_HP;
+                preset.filterCutoff = 0.6f;
+                preset.filterResonance = 0.3f;
+                preset.filterVoice1 = 1.0f;
+                break;
+
+            case 6:  // SEQ Vintage C - Classic sequenced bass/lead
+                std::snprintf(preset.name, sizeof(preset.name), "SEQ Vintage C");
+                // Voice 1: Sawtooth with tight envelope for punchy sequenced sound
+                preset.voice1Waveform = SID_WAVE_SAWTOOTH;
+                preset.voice1Attack = 0.0f;
+                preset.voice1Decay = 0.25f;
+                preset.voice1Sustain = 0.0f;  // No sustain for staccato notes
+                preset.voice1Release = 0.05f;
+                // Filter: LP with moderate resonance for vintage character
+                preset.filterMode = SID_FILTER_LP;
+                preset.filterCutoff = 0.45f;
+                preset.filterResonance = 0.6f;
+                preset.filterVoice1 = 1.0f;
+                break;
+            }
+        }
+
+        // TODO: Add more factory presets for other banks
+
+        return preset;
+    }
+
     /**
      * Map parameter index to MIDI CC number
      * Returns 0xFF if parameter has no CC mapping
@@ -898,6 +1387,12 @@ private:
 
     // Flag to prevent CC feedback loop (parameter→CC→parameter)
     bool fUpdatingFromCC;
+
+    // Program/preset state
+    uint8_t fCurrentBank;           // 0-7
+    uint8_t fCurrentProgram;        // 0-127 (within bank)
+    uint8_t fPendingBankSelect;     // For CC#0 MSB
+    bool fBankSelectPending;
 
     // Parameter storage - Voice 1
     float fVoice1Waveform, fVoice1PulseWidth;

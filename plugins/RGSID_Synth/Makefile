@@ -13,6 +13,7 @@ TARGETS = lv2_sep vst3
 
 FILES_DSP = \
 	RGSID_SynthPlugin.cpp \
+	SIDSysEx.cpp \
 	../../synth/synth_sid.c \
 	../../synth/synth_sid_cc.c
 

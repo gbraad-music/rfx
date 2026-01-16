@@ -31,8 +31,8 @@ public:
         // Create Deck player (supports MOD/MED/AHX/SID)
         fDeckPlayer = deck_player_create();
 
-        // Initialize channel parameters
-        for (int i = 0; i < 4; i++) {
+        // Initialize channel parameters (16 channels)
+        for (int i = 0; i < 16; i++) {
             fChannelMute[i] = 0.0f;
             fChannelVolume[i] = 1.0f;
             fChannelPan[i] = 0.0f;
@@ -42,7 +42,7 @@ public:
             std::memset(fChannelBuffers[i], 0, 2048 * sizeof(float));
         }
 
-        // Set default Amiga panning
+        // Set default Amiga panning for first 4 channels
         fChannelPan[0] = -0.5f;
         fChannelPan[1] = 0.5f;
         fChannelPan[2] = 0.5f;
@@ -60,7 +60,7 @@ public:
             deck_player_destroy(fDeckPlayer);
         }
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 16; i++) {
             delete[] fChannelBuffers[i];
         }
     }
@@ -73,6 +73,39 @@ protected:
     const char* getLicense() const override { return "GPL-3.0"; }
     uint32_t getVersion() const override { return d_version(1, 0, 0); }
     int64_t getUniqueId() const override { return d_cconst('R', 'G', 'D', 'K'); }
+
+    void initAudioPort(bool input, uint32_t index, AudioPort& port) override
+    {
+        // We have no inputs, only outputs
+        if (input) return;
+
+        // Group outputs into 16 stereo pairs
+        const uint32_t channelNum = (index / 2) + 1;
+        const bool isLeft = (index % 2) == 0;
+
+        port.groupId = index / 2;
+
+        char nameBuf[32];
+        char symbolBuf[16];
+
+        std::sprintf(nameBuf, "Channel %d %s", channelNum, isLeft ? "Left" : "Right");
+        std::sprintf(symbolBuf, "ch%d_%c", channelNum, isLeft ? 'l' : 'r');
+
+        port.name = nameBuf;
+        port.symbol = symbolBuf;
+    }
+
+    void initPortGroup(uint32_t groupId, PortGroup& portGroup) override
+    {
+        char nameBuf[32];
+        char symbolBuf[16];
+
+        std::sprintf(nameBuf, "Channel %d", groupId + 1);
+        std::sprintf(symbolBuf, "ch%d", groupId + 1);
+
+        portGroup.name = nameBuf;
+        portGroup.symbol = symbolBuf;
+    }
 
     void initParameter(uint32_t index, Parameter& param) override
     {
@@ -420,7 +453,7 @@ protected:
 
         if (!fDeckPlayer) {
             // Clear all outputs
-            for (uint32_t i = 0; i < 10; i++) {
+            for (uint32_t i = 0; i < 32; i++) {
                 std::memset(outputs[i], 0, frames * sizeof(float));
             }
             return;
@@ -429,6 +462,7 @@ protected:
         // Get number of channels
         uint8_t numChannels = deck_player_get_num_channels(fDeckPlayer);
         if (numChannels == 0) numChannels = 4;  // Default to 4
+        if (numChannels > 16) numChannels = 16;  // Cap at 16
 
         // Allocate temporary buffers for mixing
         float* mixLeft = new float[frames];
@@ -436,9 +470,9 @@ protected:
         std::memset(mixLeft, 0, frames * sizeof(float));
         std::memset(mixRight, 0, frames * sizeof(float));
 
-        // Prepare channel output pointers
-        float* channelOutputs[4] = {nullptr, nullptr, nullptr, nullptr};
-        for (int i = 0; i < numChannels && i < 4; i++) {
+        // Prepare channel output pointers (up to 16 channels)
+        float* channelOutputs[16] = {nullptr};
+        for (int i = 0; i < numChannels && i < 16; i++) {
             if (frames <= 2048) {
                 channelOutputs[i] = fChannelBuffers[i];
                 std::memset(channelOutputs[i], 0, frames * sizeof(float));
@@ -456,13 +490,9 @@ protected:
 
         if (multiChannelMode) {
             // MULTI-CHANNEL MODE:
-            // Output 0-1: Channel 1 (L/R)
-            // Output 2-3: Channel 2 (L/R)
-            // Output 4-5: Channel 3 (L/R)
-            // Output 6-7: Channel 4 (L/R)
-            // Output 8-9: Mix (L/R)
+            // Output all 16 channels to their respective stereo pairs
 
-            for (uint32_t ch = 0; ch < numChannels && ch < 4; ch++) {
+            for (uint32_t ch = 0; ch < numChannels && ch < 16; ch++) {
                 if (channelOutputs[ch]) {
                     float volume = fChannelVolume[ch];
                     float pan = fChannelPan[ch];  // -1.0 (left) to 1.0 (right)
@@ -481,32 +511,28 @@ protected:
             }
 
             // Clear unused channel outputs
-            for (uint32_t ch = numChannels; ch < 4; ch++) {
+            for (uint32_t ch = numChannels; ch < 16; ch++) {
                 std::memset(outputs[ch * 2], 0, frames * sizeof(float));
                 std::memset(outputs[ch * 2 + 1], 0, frames * sizeof(float));
             }
 
-            // Mix output (outputs 8-9)
-            std::memcpy(outputs[8], mixLeft, frames * sizeof(float));
-            std::memcpy(outputs[9], mixRight, frames * sizeof(float));
-
         } else {
             // STEREO MODE (DEFAULT):
-            // Output 0-1: Stereo mix (L/R)
-            // Outputs 2-9: Silent
+            // Output 0-1: Channel 1 - Stereo mix (L/R)
+            // Outputs 2-31: Silent
 
             std::memcpy(outputs[0], mixLeft, frames * sizeof(float));
             std::memcpy(outputs[1], mixRight, frames * sizeof(float));
 
             // Clear all other outputs
-            for (uint32_t i = 2; i < 10; i++) {
+            for (uint32_t i = 2; i < 32; i++) {
                 std::memset(outputs[i], 0, frames * sizeof(float));
             }
         }
 
         // Apply master mute (for priming - mutes final output without changing channel states)
         if (fMasterMute > 0.5f) {
-            for (uint32_t i = 0; i < 10; i++) {
+            for (uint32_t i = 0; i < 32; i++) {
                 std::memset(outputs[i], 0, frames * sizeof(float));
             }
         }
@@ -527,10 +553,10 @@ private:
     float fOutputMode;  // 0 = Stereo Mix, 1 = Multi-channel
     float fMasterMute;  // Master output mute (priming)
     uint16_t fNativeBPM;  // Original BPM from loaded file
-    float fChannelMute[4];
-    float fChannelVolume[4];
-    float fChannelPan[4];
-    float* fChannelBuffers[4];
+    float fChannelMute[16];
+    float fChannelVolume[16];
+    float fChannelPan[16];
+    float* fChannelBuffers[16];
 
     uint8_t fCurrentOrder;
     uint16_t fCurrentRow;
@@ -593,7 +619,7 @@ private:
         fCurrentRow = 0;
 
         // Unmute all channels (reset from previous file)
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 16; i++) {
             fChannelMute[i] = 0.0f;
             deck_player_set_channel_mute(fDeckPlayer, i, false);
         }
@@ -611,7 +637,7 @@ private:
     {
         if (!fDeckPlayer) return;
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 16; i++) {
             deck_player_set_channel_mute(fDeckPlayer, i, fChannelMute[i] > 0.5f);
         }
     }

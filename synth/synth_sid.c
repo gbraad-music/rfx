@@ -357,6 +357,7 @@ void synth_sid_note_on(SynthSID* sid, uint8_t voice, uint8_t note, uint8_t veloc
     v->frequency = frequency_to_sid_register(note_to_frequency(note), sid->sample_rate);
     v->gate = 1;
     v->env_state = ENV_ATTACK;
+    v->env_level = 0.0f;  // Reset envelope to start attack from zero
 }
 
 void synth_sid_note_off(SynthSID* sid, uint8_t voice) {

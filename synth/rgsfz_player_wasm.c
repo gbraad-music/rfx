@@ -37,7 +37,7 @@ RGSFZPlayer* rgsfz_player_create_wasm(uint32_t sample_rate) {
     if (!player) return NULL;
 
     player->sample_rate = sample_rate;
-    player->volume = 0.8f;
+    player->volume = 2.0f;  // Boost to match synth engines
     player->pan = 0.0f;
     player->decay = 0.5f;
 
@@ -314,22 +314,25 @@ void rgsfz_player_process_f32(RGSFZPlayer* player, float* buffer, uint32_t frame
             }
 
             // Apply region panning + master pan
+            // SFZ pan range: -100 to +100, normalized to -1.0 to +1.0
             float total_pan = player->pan + (v->region ? v->region->pan / 100.0f : 0.0f);
             if (total_pan < -1.0f) total_pan = -1.0f;
             if (total_pan > 1.0f) total_pan = 1.0f;
 
-            // Constant power panning
-            float pan_angle = (total_pan + 1.0f) * 0.25f * 3.14159265f;
-            float pan_left = cosf(pan_angle);
-            float pan_right = sinf(pan_angle);
+            // Linear panning (SFZ standard): center = full on both channels
+            // pan = -1: L=1, R=0
+            // pan =  0: L=1, R=1
+            // pan = +1: L=0, R=1
+            float pan_left = (total_pan <= 0.0f) ? 1.0f : (1.0f - total_pan);
+            float pan_right = (total_pan >= 0.0f) ? 1.0f : (1.0f + total_pan);
 
             mixL += sample * pan_left;
             mixR += sample * pan_right;
         }
 
-        // Apply master volume (reduce per-voice to avoid clipping)
-        mixL *= player->volume * 0.3f;
-        mixR *= player->volume * 0.3f;
+        // Apply master volume
+        mixL *= player->volume;
+        mixR *= player->volume;
 
         // Write to interleaved stereo buffer
         buffer[frame * 2] = mixL;

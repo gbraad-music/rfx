@@ -140,6 +140,8 @@ static void parse_sfz_line(char* line, SFZRegion* current) {
             current->end = atoi(value);
         } else if (strcmp(key, "pan") == 0) {
             current->pan = atof(value);
+        } else if (strcmp(key, "volume") == 0) {
+            current->volume = atof(value);  // Parse volume in dB
         } else if (strcmp(key, "loop_mode") == 0) {
             current->loop_mode = (strcmp(value, "loop_continuous") == 0);
         }
@@ -170,6 +172,7 @@ SFZData* sfz_parse_from_memory(const char* content, size_t length) {
     group_defaults.offset = 0;
     group_defaults.end = 0;
     group_defaults.pan = 0.0f;
+    group_defaults.volume = 0.0f;  // Default 0dB (unity gain)
     group_defaults.loop_mode = false;
     group_defaults.sample_path[0] = '\0';
 

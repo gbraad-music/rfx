@@ -11,7 +11,7 @@ class RGSFZSynth {
         this.audioBufferPtr = null;
         this.scriptNode = null;
         this.masterGain = audioContext.createGain();
-        this.masterGain.gain.value = 0.8;
+        this.masterGain.gain.value = 1.0;
         this.isInitialized = false;
 
         // SFZ data

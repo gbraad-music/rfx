@@ -34,6 +34,7 @@ typedef struct {
     uint32_t offset;                 // Sample start offset in samples (default 0)
     uint32_t end;                    // Sample end position in samples (default 0 = full sample)
     float pan;                       // Panning -100 to +100 (default 0)
+    float volume;                    // Volume in dB (default 0), range -144 to +6
     bool loop_mode;                  // True for looping (default true)
 
     // Loaded sample data (filled by loader, not parser)

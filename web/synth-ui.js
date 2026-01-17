@@ -265,7 +265,13 @@ class SynthUI extends HTMLElement {
 
         presetContainer.innerHTML = `
             <div class="preset-selector">
-                <div class="preset-label">🎨 Presets</div>
+                <div class="preset-label">Target Voice</div>
+                <select class="preset-select" id="voiceSelect" style="width: 110px;">
+                    <option value="0">Voice 1</option>
+                    <option value="1">Voice 2</option>
+                    <option value="2">Voice 3</option>
+                </select>
+                <div class="preset-label" style="margin-left: 10px;">Preset</div>
                 <select class="preset-select" id="presetSelect">
                     ${options}
                 </select>
@@ -274,18 +280,30 @@ class SynthUI extends HTMLElement {
 
         // Bind preset change event
         const presetSelect = this.shadowRoot.getElementById('presetSelect');
+        const voiceSelect = this.shadowRoot.getElementById('voiceSelect');
+
+        // Debug: log voice selector changes
+        if (voiceSelect) {
+            voiceSelect.addEventListener('change', (e) => {
+                console.log(`[SynthUI] Voice selector changed to: ${e.target.value}`);
+            });
+        }
+
         if (presetSelect) {
+            // Only load preset when preset selector changes, using currently selected voice
             presetSelect.addEventListener('change', (e) => {
                 const index = parseInt(e.target.value);
-                console.log(`[SynthUI] Loading preset ${index}: ${presetNames[index]}`);
+                const voice = voiceSelect ? parseInt(voiceSelect.value) : 0;
+                console.log(`[SynthUI] Preset changed. Voice selector value: "${voiceSelect.value}", parsed: ${voice}`);
+                console.log(`[SynthUI] Loading preset ${index}: ${presetNames[index]} to voice ${voice}`);
                 if (this.synthInstance && typeof this.synthInstance.loadPreset === 'function') {
-                    this.synthInstance.loadPreset(index);
+                    this.synthInstance.loadPreset(index, voice);
                 }
             });
 
-            // Load first preset by default
+            // Load first preset by default to Voice 1
             if (presetNames.length > 0) {
-                this.synthInstance.loadPreset(0);
+                this.synthInstance.loadPreset(0, 0);
             }
         }
 
@@ -435,43 +453,64 @@ class SynthUI extends HTMLElement {
      * Update UI controls from parameter values (called when preset loads)
      */
     updateUIFromParameters(parameters) {
-        console.log('[SynthUI] Updating UI from', parameters.length, 'parameters');
+        console.log('[SynthUI] Updating UI from', parameters.length, 'parameters:', parameters);
 
         for (let i = 0; i < parameters.length; i++) {
             const value = parameters[i];
             const param = this.getParamByIndex(i);
-            if (!param) continue;
+            if (!param) {
+                console.warn(`[SynthUI] No param definition for index ${i}`);
+                continue;
+            }
+
+            console.log(`[SynthUI] Param ${i} (${param.name}): value=${value}, type=${param.type}`);
 
             // Update UI control based on type
             if (param.type === 'enum') {
                 const select = this.shadowRoot.querySelector(`select[data-param-index="${i}"]`);
                 if (select) {
+                    console.log(`[SynthUI] Setting select ${i} to ${value}`);
                     select.value = value;
+                } else {
+                    console.warn(`[SynthUI] Select not found for param ${i}`);
                 }
             } else if (param.type === 'boolean') {
                 const checkbox = this.shadowRoot.querySelector(`input[type="checkbox"][data-param-index="${i}"]`);
                 if (checkbox) {
-                    checkbox.checked = value > 0.5;
+                    const checked = value > 0.5;
+                    console.log(`[SynthUI] Setting checkbox ${i} to ${checked}`);
+                    checkbox.checked = checked;
+                } else {
+                    console.warn(`[SynthUI] Checkbox not found for param ${i}`);
                 }
             } else if (param.type === 'float' || param.type === 'int') {
                 // Scale value back to UI range (0-100)
                 const uiValue = param.max === 100 && param.scale === 'normalized' ? value * 100 : value;
 
+                console.log(`[SynthUI] Param ${i}: value=${value}, uiValue=${uiValue}, max=${param.max}, scale=${param.scale}`);
+
                 // Update slider
                 const slider = this.shadowRoot.querySelector(`svg-slider[data-param-index="${i}"]`);
                 if (slider) {
+                    console.log(`[SynthUI] Setting slider ${i} to ${uiValue}`);
                     slider.value = uiValue;
+                    // Force attribute update for visibility
+                    slider.setAttribute('value', uiValue);
+                } else {
+                    console.warn(`[SynthUI] Slider not found for param ${i}`);
                 }
 
                 // Update value display
                 const valueDisplay = this.shadowRoot.querySelector(`[data-value-for="${i}"]`);
                 if (valueDisplay) {
-                    valueDisplay.textContent = this.formatValue(uiValue, param);
+                    const formatted = this.formatValue(uiValue, param);
+                    console.log(`[SynthUI] Setting value display ${i} to "${formatted}"`);
+                    valueDisplay.textContent = formatted;
                 }
             }
         }
 
-        console.log('[SynthUI] UI synchronized with preset');
+        console.log('[SynthUI] ✅ UI synchronized with preset');
     }
 
     getParamByIndex(index) {

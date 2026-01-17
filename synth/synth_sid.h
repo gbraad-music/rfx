@@ -184,6 +184,21 @@ void synth_sid_set_filter_voice(SynthSID* sid, uint8_t voice, int enabled);
 int synth_sid_get_filter_voice(SynthSID* sid, uint8_t voice);
 
 // ============================================================================
+// LFO Parameters
+// ============================================================================
+
+void synth_sid_set_lfo_frequency(SynthSID* sid, int lfo_num, float freq_hz);
+void synth_sid_set_lfo_waveform(SynthSID* sid, int lfo_num, int waveform);
+void synth_sid_set_lfo1_to_pitch(SynthSID* sid, float depth);
+float synth_sid_get_lfo1_to_pitch(SynthSID* sid);
+void synth_sid_set_lfo2_to_filter(SynthSID* sid, float depth);
+float synth_sid_get_lfo2_to_filter(SynthSID* sid);
+void synth_sid_set_lfo2_to_pw(SynthSID* sid, float depth);
+float synth_sid_get_lfo2_to_pw(SynthSID* sid);
+void synth_sid_set_mod_wheel(SynthSID* sid, float amount);
+float synth_sid_get_mod_wheel(SynthSID* sid);
+
+// ============================================================================
 // Global Parameters
 // ============================================================================
 

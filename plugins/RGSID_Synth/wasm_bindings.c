@@ -13,7 +13,7 @@
 typedef struct {
     SynthSID* sid;
     float sample_rate;
-    float parameters[31];  // Cache of current parameter values (for UI sync)
+    float parameters[39];  // Cache of current parameter values (for UI sync)
 } SIDSynthInstance;
 
 // Wrapper functions that JavaScript expects (regroove_synth_* interface)
@@ -61,7 +61,7 @@ void regroove_synth_note_on(SIDSynthInstance* synth, uint8_t note, uint8_t veloc
         return;
     }
 
-    // Route to voice 0 by default (web UI can control voice routing)
+    // Default to Voice 1 for simple note_on API
     synth_sid_note_on(synth->sid, 0, note, velocity);
 }
 
@@ -69,9 +69,51 @@ EMSCRIPTEN_KEEPALIVE
 void regroove_synth_note_off(SIDSynthInstance* synth, uint8_t note) {
     if (!synth || !synth->sid) return;
 
-    // Release all voices (simple approach for web)
-    for (int i = 0; i < 3; i++) {
-        synth_sid_note_off(synth->sid, i);
+    // Default to Voice 1 for simple note_off API
+    synth_sid_note_off(synth->sid, 0);
+}
+
+// Proper MIDI message handler with channel routing (MIDIbox SID V2 compatible)
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_handle_midi(SIDSynthInstance* synth, uint8_t status, uint8_t data1, uint8_t data2) {
+    if (!synth || !synth->sid) return;
+
+    const uint8_t message = status & 0xF0;
+    const uint8_t channel = status & 0x0F;
+
+    // Route MIDI channels to voices (MIDIbox SID V2 style)
+    // Channel 0 (MIDI 1) → Voice 0
+    // Channel 1 (MIDI 2) → Voice 1
+    // Channel 2 (MIDI 3) → Voice 2
+    // Channels 9-15 → Voice 0 (omni fallback)
+    uint8_t voice = 0;
+    if (channel < 3) {
+        voice = channel;
+    }
+
+    switch (message) {
+        case 0x90: // Note On
+            if (data2 > 0) {
+                synth_sid_note_on(synth->sid, voice, data1, data2);
+            } else {
+                synth_sid_note_off(synth->sid, voice);
+            }
+            break;
+
+        case 0x80: // Note Off
+            synth_sid_note_off(synth->sid, voice);
+            break;
+
+        case 0xB0: // Control Change
+            synth_sid_handle_cc(synth->sid, data1, data2);
+            break;
+
+        case 0xE0: // Pitch Bend
+            {
+                uint16_t bend = (data2 << 7) | data1;
+                synth_sid_handle_pitch_bend_midi(synth->sid, voice, bend);
+            }
+            break;
     }
 }
 
@@ -108,15 +150,15 @@ void regroove_synth_process_f32(SIDSynthInstance* synth, float* buffer, int fram
 }
 
 // Parameter interface - maps to SID synth parameters
-// Total parameters: 31 (8 per voice x 3 + 7 filter/global)
+// Total parameters: 39 (8 per voice x 3 + 7 filter/global + 8 LFO)
 EMSCRIPTEN_KEEPALIVE
 int regroove_synth_get_parameter_count(SIDSynthInstance* synth) {
-    return 31;
+    return 39;
 }
 
 EMSCRIPTEN_KEEPALIVE
 float regroove_synth_get_parameter(SIDSynthInstance* synth, int index) {
-    if (!synth || index < 0 || index >= 31) return 0.0f;
+    if (!synth || index < 0 || index >= 39) return 0.0f;
     return synth->parameters[index];
 }
 
@@ -125,7 +167,7 @@ void regroove_synth_set_parameter(SIDSynthInstance* synth, int index, float valu
     if (!synth || !synth->sid) return;
 
     // Cache parameter value for UI sync
-    if (index >= 0 && index < 31) {
+    if (index >= 0 && index < 39) {
         synth->parameters[index] = value;
     }
 
@@ -187,6 +229,30 @@ void regroove_synth_set_parameter(SIDSynthInstance* synth, int index, float valu
             case 30:  // Volume
                 synth_sid_set_volume(synth->sid, value);
                 break;
+            case 31:  // LFO1 Rate
+                synth_sid_set_lfo_frequency(synth->sid, 0, 0.1f * powf(100.0f, value));
+                break;
+            case 32:  // LFO1 Waveform
+                synth_sid_set_lfo_waveform(synth->sid, 0, (int)value);
+                break;
+            case 33:  // LFO1 → Pitch
+                synth_sid_set_lfo1_to_pitch(synth->sid, value);
+                break;
+            case 34:  // LFO2 Rate
+                synth_sid_set_lfo_frequency(synth->sid, 1, 0.05f * powf(100.0f, value));
+                break;
+            case 35:  // LFO2 Waveform
+                synth_sid_set_lfo_waveform(synth->sid, 1, (int)value);
+                break;
+            case 36:  // LFO2 → Filter
+                synth_sid_set_lfo2_to_filter(synth->sid, value);
+                break;
+            case 37:  // LFO2 → PW
+                synth_sid_set_lfo2_to_pw(synth->sid, value);
+                break;
+            case 38:  // Mod Wheel
+                synth_sid_set_mod_wheel(synth->sid, value);
+                break;
         }
     }
 }
@@ -205,10 +271,14 @@ const char* regroove_synth_get_parameter_name(int index) {
         "V3 Sustain", "V3 Release", "V3 Ring Mod", "V3 Sync",
         // Filter/Global (24-30)
         "Filter Mode", "Filter Cutoff", "Filter Resonance",
-        "Filter V1", "Filter V2", "Filter V3", "Volume"
+        "Filter V1", "Filter V2", "Filter V3", "Volume",
+        // LFO (31-38)
+        "LFO1 Rate", "LFO1 Waveform", "LFO1 → Pitch",
+        "LFO2 Rate", "LFO2 Waveform", "LFO2 → Filter", "LFO2 → PW",
+        "Mod Wheel"
     };
 
-    if (index < 0 || index >= 31) return "";
+    if (index < 0 || index >= 39) return "";
     return names[index];
 }
 
@@ -476,39 +546,47 @@ const char* regroove_synth_get_preset_name(int index) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-void regroove_synth_load_preset(SIDSynthInstance* synth, int index) {
+void regroove_synth_load_preset(SIDSynthInstance* synth, int index, int voice) {
     if (!synth || !synth->sid) return;
     if (index < 0 || index >= NUM_FACTORY_PRESETS) return;
+    if (voice < 0 || voice > 2) voice = 0;  // Default to Voice 1
 
     const WebPreset* preset = &factoryPresets[index];
 
-    // Apply to Voice 1 (web synth typically uses voice 1 for monophonic playback)
-    synth_sid_set_waveform(synth->sid, 0, preset->waveform);
-    synth_sid_set_pulse_width(synth->sid, 0, preset->pulseWidth);
-    synth_sid_set_attack(synth->sid, 0, preset->attack);
-    synth_sid_set_decay(synth->sid, 0, preset->decay);
-    synth_sid_set_sustain(synth->sid, 0, preset->sustain);
-    synth_sid_set_release(synth->sid, 0, preset->release);
+    // Calculate parameter base for selected voice
+    // Voice 0: params 0-7, Voice 1: params 8-15, Voice 2: params 16-23
+    int base = voice * 8;
 
-    // Special handling for sync/ring mod presets
-    if (index == 3) {  // Sync Lead
-        synth_sid_set_sync(synth->sid, 0, 1);
-    } else {
-        synth_sid_set_sync(synth->sid, 0, 0);
+    // Apply to selected voice
+    regroove_synth_set_parameter(synth, base + 0, (float)preset->waveform);
+    regroove_synth_set_parameter(synth, base + 1, preset->pulseWidth);
+    regroove_synth_set_parameter(synth, base + 2, preset->attack);
+    regroove_synth_set_parameter(synth, base + 3, preset->decay);
+    regroove_synth_set_parameter(synth, base + 4, preset->sustain);
+    regroove_synth_set_parameter(synth, base + 5, preset->release);
+    regroove_synth_set_parameter(synth, base + 6, 0.0f);  // Ring mod off
+    regroove_synth_set_parameter(synth, base + 7, 0.0f);  // Sync off
+
+    // Special presets with sync/ring
+    if (index == 11 || index == 24 || index == 25) {  // Sync presets
+        regroove_synth_set_parameter(synth, base + 7, 1.0f);  // Sync on
+    }
+    if (index == 29 || index == 68) {  // Ring presets
+        regroove_synth_set_parameter(synth, base + 6, 1.0f);  // Ring mod on
     }
 
-    if (index == 4) {  // Ring Bell
-        synth_sid_set_ring_mod(synth->sid, 0, 1);
-    } else {
-        synth_sid_set_ring_mod(synth->sid, 0, 0);
+    // Filter (params 24-29) - GLOBAL, only update when loading to Voice 1
+    if (voice == 0) {
+        regroove_synth_set_parameter(synth, 24, (float)preset->filterMode);
+        regroove_synth_set_parameter(synth, 25, preset->filterCutoff);
+        regroove_synth_set_parameter(synth, 26, preset->filterResonance);
     }
 
-    // Apply filter settings
-    synth_sid_set_filter_mode(synth->sid, (SIDFilterMode)preset->filterMode);
-    synth_sid_set_filter_cutoff(synth->sid, preset->filterCutoff);
-    synth_sid_set_filter_resonance(synth->sid, preset->filterResonance);
-    synth_sid_set_filter_voice(synth->sid, 0, preset->filterVoice1);
+    // Filter routing: param 27=V1, 28=V2, 29=V3
+    regroove_synth_set_parameter(synth, 27 + voice, preset->filterVoice1 ? 1.0f : 0.0f);
 
-    // Set volume
-    synth_sid_set_volume(synth->sid, 0.7f);
+    // Volume (param 30) - GLOBAL, only update when loading to Voice 1
+    if (voice == 0) {
+        regroove_synth_set_parameter(synth, 30, 0.7f);
+    }
 }

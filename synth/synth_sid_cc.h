@@ -117,6 +117,17 @@ extern "C" {
 #define SID_CC_PORTAMENTO_TIME      5    // Portamento time (using CC 5 alt function)
 
 /*
+ * LFO Controls
+ */
+#define SID_CC_LFO1_RATE            70   // LFO1 frequency (0-127)
+#define SID_CC_LFO1_WAVEFORM        71   // LFO1 waveform (0-5)
+#define SID_CC_LFO1_TO_PITCH        72   // LFO1 → Pitch depth
+#define SID_CC_LFO2_RATE            73   // LFO2 frequency (0-127)
+#define SID_CC_LFO2_WAVEFORM        74   // LFO2 waveform (0-5)
+#define SID_CC_LFO2_TO_FILTER       75   // LFO2 → Filter depth
+#define SID_CC_LFO2_TO_PW           76   // LFO2 → PW depth
+
+/*
  * All Sound Off / All Notes Off
  */
 #define SID_CC_ALL_SOUND_OFF        120  // Silence all voices immediately

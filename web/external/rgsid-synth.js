@@ -96,7 +96,33 @@ class RGSIDSynth {
             { index: 29, name: "V3 → Flt", type: "boolean", default: false, group: "Filter" },
 
             // Global (30)
-            { index: 30, name: "Volume", type: "float", min: 0, max: 100, default: 70, group: "Global", scale: "normalized", width: 50, height: 150 }
+            { index: 30, name: "Volume", type: "float", min: 0, max: 100, default: 70, group: "Global", scale: "normalized", width: 50, height: 150 },
+
+            // LFO 1 (31-33)
+            { index: 31, name: "LFO1 Rate", type: "float", min: 0, max: 100, default: 50, unit: "Hz", group: "LFO 1", scale: "log", width: 45 },
+            { index: 32, name: "LFO1 Wave", type: "enum", group: "LFO 1", default: 0,
+              options: [
+                {value: 0, label: "Sine"}, {value: 1, label: "Triangle"},
+                {value: 2, label: "Square"}, {value: 3, label: "Saw Up"},
+                {value: 4, label: "Saw Down"}, {value: 5, label: "Random"}
+              ]
+            },
+            { index: 33, name: "→ Pitch", type: "float", min: 0, max: 100, default: 0, group: "LFO 1", scale: "normalized", width: 40 },
+
+            // LFO 2 (34-37)
+            { index: 34, name: "LFO2 Rate", type: "float", min: 0, max: 100, default: 25, unit: "Hz", group: "LFO 2", scale: "log", width: 45 },
+            { index: 35, name: "LFO2 Wave", type: "enum", group: "LFO 2", default: 1,
+              options: [
+                {value: 0, label: "Sine"}, {value: 1, label: "Triangle"},
+                {value: 2, label: "Square"}, {value: 3, label: "Saw Up"},
+                {value: 4, label: "Saw Down"}, {value: 5, label: "Random"}
+              ]
+            },
+            { index: 36, name: "→ Filter", type: "float", min: 0, max: 100, default: 0, group: "LFO 2", scale: "normalized", width: 40 },
+            { index: 37, name: "→ PW", type: "float", min: 0, max: 100, default: 0, group: "LFO 2", scale: "normalized", width: 40 },
+
+            // Modulation Wheel (38)
+            { index: 38, name: "Mod Wheel", type: "float", min: 0, max: 100, default: 0, group: "Global", scale: "normalized", width: 40, height: 120 }
         ];
     }
 
@@ -127,7 +153,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=184');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=186');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -447,7 +473,7 @@ class RGSIDSynth {
     /**
      * Load a preset by index (factory or user)
      */
-    loadPreset(index) {
+    loadPreset(index, voice = 0) {
         if (!this.wasmReady || !this.workletNode) {
             console.warn('[RGSIDSynth] Cannot load preset - not ready');
             return;
@@ -457,11 +483,11 @@ class RGSIDSynth {
             return;
         }
 
-        console.log(`[RGSIDSynth] Loading preset ${index}: ${this.presetNames[index]}`);
+        console.log(`[RGSIDSynth] Loading preset ${index}: ${this.presetNames[index]} to voice ${voice}`);
 
         // Factory preset - load from WASM
         if (index < this.factoryPresetCount) {
-            this.workletNode.port.postMessage({ type: 'loadPreset', data: { index } });
+            this.workletNode.port.postMessage({ type: 'loadPreset', data: { index, voice } });
         }
         // User preset - apply parameters directly
         else {
@@ -474,20 +500,28 @@ class RGSIDSynth {
 
             console.log('[RGSIDSynth] Applying user preset from JSON');
 
-            // Apply parameters (Voice 1 only for simplified format)
-            this.setParameter(0, preset.waveform || 4);  // Waveform
-            this.setParameter(1, preset.pulseWidth || 0.5);  // PW
-            this.setParameter(2, preset.attack || 0.0);  // Attack
-            this.setParameter(3, preset.decay || 0.5);  // Decay
-            this.setParameter(4, preset.sustain || 0.7);  // Sustain
-            this.setParameter(5, preset.release || 0.3);  // Release
-            this.setParameter(24, preset.filterMode || 1);  // Filter Mode
-            this.setParameter(25, preset.filterCutoff || 0.5);  // Filter Cutoff
-            this.setParameter(26, preset.filterResonance || 0.0);  // Filter Resonance
-            this.setParameter(27, preset.filterVoice1 || 0);  // Filter V1 routing
+            // Build parameters array (31 parameters total, initialize all)
+            const parameters = new Array(31).fill(0);
 
-            // Emit event for UI sync
-            this.emit('presetLoaded', { index, name: preset.name });
+            // Apply parameters (Voice 1 only for simplified format)
+            parameters[0] = preset.waveform || 4;  // Waveform
+            parameters[1] = preset.pulseWidth || 0.5;  // PW
+            parameters[2] = preset.attack || 0.0;  // Attack
+            parameters[3] = preset.decay || 0.5;  // Decay
+            parameters[4] = preset.sustain || 0.7;  // Sustain
+            parameters[5] = preset.release || 0.3;  // Release
+            parameters[24] = preset.filterMode || 1;  // Filter Mode
+            parameters[25] = preset.filterCutoff || 0.5;  // Filter Cutoff
+            parameters[26] = preset.filterResonance || 0.0;  // Filter Resonance
+            parameters[27] = preset.filterVoice1 || 0;  // Filter V1 routing
+
+            // Send to WASM
+            for (let i = 0; i < 31; i++) {
+                this.setParameter(i, parameters[i]);
+            }
+
+            // Emit event for UI sync with parameters
+            this.emit('presetLoaded', { index, name: preset.name, parameters });
         }
     }
 

@@ -188,6 +188,46 @@ void synth_sid_handle_cc(SynthSID* sid, uint8_t cc, uint8_t value) {
             break;
 
         // ====================================================================
+        // Modulation Wheel (MIDIbox SID V2 Compatible)
+        // ====================================================================
+
+        case SID_CC_MODULATION:
+            synth_sid_set_mod_wheel(sid, normalized);
+            break;
+
+        // ====================================================================
+        // LFO Controls
+        // ====================================================================
+
+        case SID_CC_LFO1_RATE:
+            synth_sid_set_lfo_frequency(sid, 0, 0.1f * powf(100.0f, normalized));
+            break;
+
+        case SID_CC_LFO1_WAVEFORM:
+            synth_sid_set_lfo_waveform(sid, 0, (int)(value / 21.25f));
+            break;
+
+        case SID_CC_LFO1_TO_PITCH:
+            synth_sid_set_lfo1_to_pitch(sid, normalized);
+            break;
+
+        case SID_CC_LFO2_RATE:
+            synth_sid_set_lfo_frequency(sid, 1, 0.05f * powf(100.0f, normalized));
+            break;
+
+        case SID_CC_LFO2_WAVEFORM:
+            synth_sid_set_lfo_waveform(sid, 1, (int)(value / 21.25f));
+            break;
+
+        case SID_CC_LFO2_TO_FILTER:
+            synth_sid_set_lfo2_to_filter(sid, normalized);
+            break;
+
+        case SID_CC_LFO2_TO_PW:
+            synth_sid_set_lfo2_to_pw(sid, normalized);
+            break;
+
+        // ====================================================================
         // System Controllers
         // ====================================================================
 

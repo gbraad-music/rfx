@@ -32,6 +32,7 @@ add_executable(sid_player_test
     sid_player_test.c
     ../../players/sid_player.c
     ../../synth/synth_sid.c
+    ../../synth/synth_lfo.c
     ../../common/cpu_6502.c
 )
 

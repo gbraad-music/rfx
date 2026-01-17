@@ -4,6 +4,7 @@
  */
 
 #include "synth_sid.h"
+#include "synth_lfo.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -81,6 +82,14 @@ struct SynthSID {
     float volume;
     int sample_rate;
     uint8_t registers[32];  // Shadow copy of hardware registers ($D400-$D41F)
+
+    // LFO subsystem
+    SynthLFO* lfo1;                  // Pitch modulation
+    SynthLFO* lfo2;                  // Filter + PWM modulation
+    float lfo1_to_pitch_depth;       // 0.0-1.0
+    float lfo2_to_filter_depth;      // 0.0-1.0
+    float lfo2_to_pw_depth;          // 0.0-1.0
+    float mod_wheel_amount;          // CC 1 modulation wheel
 };
 
 // ============================================================================
@@ -283,11 +292,34 @@ SynthSID* synth_sid_create(int sample_rate) {
     sid->filter.filter_cutoff = 0.5f;
     sid->filter.filter_resonance = 0.0f;
 
+    // Initialize LFOs
+    sid->lfo1 = synth_lfo_create();
+    sid->lfo2 = synth_lfo_create();
+
+    if (!sid->lfo1 || !sid->lfo2) {
+        synth_sid_destroy(sid);
+        return NULL;
+    }
+
+    // Configure LFO defaults
+    synth_lfo_set_frequency(sid->lfo1, 5.0f);         // 5 Hz vibrato
+    synth_lfo_set_waveform(sid->lfo1, SYNTH_LFO_SINE);
+    synth_lfo_set_frequency(sid->lfo2, 0.5f);         // 0.5 Hz filter sweep
+    synth_lfo_set_waveform(sid->lfo2, SYNTH_LFO_TRIANGLE);
+
+    // Initialize modulation depths to 0 (off by default)
+    sid->lfo1_to_pitch_depth = 0.0f;
+    sid->lfo2_to_filter_depth = 0.0f;
+    sid->lfo2_to_pw_depth = 0.0f;
+    sid->mod_wheel_amount = 0.0f;
+
     return sid;
 }
 
 void synth_sid_destroy(SynthSID* sid) {
     if (sid) {
+        if (sid->lfo1) synth_lfo_destroy(sid->lfo1);
+        if (sid->lfo2) synth_lfo_destroy(sid->lfo2);
         free(sid);
     }
 }
@@ -306,6 +338,9 @@ void synth_sid_reset(SynthSID* sid) {
     sid->filter.x2 = 0.0f;
     sid->filter.y1 = 0.0f;
     sid->filter.y2 = 0.0f;
+
+    if (sid->lfo1) synth_lfo_reset(sid->lfo1);
+    if (sid->lfo2) synth_lfo_reset(sid->lfo2);
 }
 
 // ============================================================================
@@ -349,6 +384,21 @@ void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_
     float delta_time = 1.0f / sample_rate;
 
     for (int frame = 0; frame < frames; frame++) {
+        // Process LFOs once per sample
+        float lfo1_value = sid->lfo1 ? synth_lfo_process(sid->lfo1, sample_rate) : 0.0f;
+        float lfo2_value = sid->lfo2 ? synth_lfo_process(sid->lfo2, sample_rate) : 0.0f;
+
+        // Calculate modulation amounts
+        float pitch_mod = sid->lfo1_to_pitch_depth * sid->mod_wheel_amount * lfo1_value;
+        float filter_mod = sid->lfo2_to_filter_depth * lfo2_value * 0.3f;
+        float pw_mod = sid->lfo2_to_pw_depth * lfo2_value * 0.3f;
+
+        // Apply filter modulation (global)
+        float modulated_cutoff = sid->filter.filter_cutoff + filter_mod;
+        modulated_cutoff = fminf(fmaxf(modulated_cutoff, 0.0f), 1.0f);
+        float original_cutoff = sid->filter.filter_cutoff;
+        sid->filter.filter_cutoff = modulated_cutoff;
+
         float filtered_mix = 0.0f;
         float unfiltered_mix = 0.0f;
 
@@ -370,11 +420,11 @@ void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_
                 continue; // Silent voice
             }
 
-            // Advance phase with pitch bend applied
+            // Advance phase with pitch bend + LFO pitch modulation applied
             // Pitch bend: -1.0 to +1.0 maps to ±12 semitones (1 octave)
-            // Multiplier = 2^pitch_bend
-            float bend_multiplier = powf(2.0f, voice->pitch_bend);
-            uint32_t bent_frequency = (uint32_t)(voice->frequency * bend_multiplier);
+            // LFO pitch: pitch_mod in semitones (scaled by depth and mod wheel)
+            float pitch_multiplier = powf(2.0f, voice->pitch_bend) * powf(2.0f, pitch_mod / 12.0f);
+            uint32_t bent_frequency = (uint32_t)(voice->frequency * pitch_multiplier);
             voice->phase += bent_frequency;
             voice->phase &= 0xFFFFFF; // 24-bit wraparound
 
@@ -407,7 +457,10 @@ void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_
                 sample += generate_sawtooth(phase_to_use);
             }
             if (voice->waveform & SID_WAVE_PULSE) {
-                sample += generate_pulse(phase_to_use, voice->pulse_width);
+                // Apply LFO pulse width modulation
+                float modulated_pw = voice->pulse_width + pw_mod;
+                modulated_pw = fminf(fmaxf(modulated_pw, 0.005f), 0.995f);
+                sample += generate_pulse(phase_to_use, modulated_pw);
             }
             if (voice->waveform & SID_WAVE_NOISE) {
                 sample += generate_noise(voice);
@@ -451,6 +504,9 @@ void synth_sid_process_f32(SynthSID* sid, float* buffer, int frames, int sample_
         // Stereo output (mono source)
         buffer[frame * 2] = mix;
         buffer[frame * 2 + 1] = mix;
+
+        // Restore original cutoff (modulation is per-sample)
+        sid->filter.filter_cutoff = original_cutoff;
     }
 }
 
@@ -728,4 +784,53 @@ uint8_t synth_sid_read_register(SynthSID* sid, uint8_t reg) {
     // Read-only registers (0x19-0x1C) would return hardware state
     // Not implemented in this synth (paddles, OSC3, ENV3)
     return 0;
+}
+
+// ============================================================================
+// LFO Parameters
+// ============================================================================
+
+void synth_sid_set_lfo_frequency(SynthSID* sid, int lfo_num, float freq_hz) {
+    if (!sid) return;
+    freq_hz = fminf(fmaxf(freq_hz, 0.01f), 20.0f);
+    if (lfo_num == 0 && sid->lfo1) synth_lfo_set_frequency(sid->lfo1, freq_hz);
+    else if (lfo_num == 1 && sid->lfo2) synth_lfo_set_frequency(sid->lfo2, freq_hz);
+}
+
+void synth_sid_set_lfo_waveform(SynthSID* sid, int lfo_num, int waveform) {
+    if (!sid) return;
+    if (lfo_num == 0 && sid->lfo1) synth_lfo_set_waveform(sid->lfo1, (SynthLFOWaveform)waveform);
+    else if (lfo_num == 1 && sid->lfo2) synth_lfo_set_waveform(sid->lfo2, (SynthLFOWaveform)waveform);
+}
+
+void synth_sid_set_lfo1_to_pitch(SynthSID* sid, float depth) {
+    if (sid) sid->lfo1_to_pitch_depth = fminf(fmaxf(depth, 0.0f), 1.0f);
+}
+
+float synth_sid_get_lfo1_to_pitch(SynthSID* sid) {
+    return sid ? sid->lfo1_to_pitch_depth : 0.0f;
+}
+
+void synth_sid_set_lfo2_to_filter(SynthSID* sid, float depth) {
+    if (sid) sid->lfo2_to_filter_depth = fminf(fmaxf(depth, 0.0f), 1.0f);
+}
+
+float synth_sid_get_lfo2_to_filter(SynthSID* sid) {
+    return sid ? sid->lfo2_to_filter_depth : 0.0f;
+}
+
+void synth_sid_set_lfo2_to_pw(SynthSID* sid, float depth) {
+    if (sid) sid->lfo2_to_pw_depth = fminf(fmaxf(depth, 0.0f), 1.0f);
+}
+
+float synth_sid_get_lfo2_to_pw(SynthSID* sid) {
+    return sid ? sid->lfo2_to_pw_depth : 0.0f;
+}
+
+void synth_sid_set_mod_wheel(SynthSID* sid, float amount) {
+    if (sid) sid->mod_wheel_amount = fminf(fmaxf(amount, 0.0f), 1.0f);
+}
+
+float synth_sid_get_mod_wheel(SynthSID* sid) {
+    return sid ? sid->mod_wheel_amount : 0.0f;
 }

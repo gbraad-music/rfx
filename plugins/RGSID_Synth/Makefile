@@ -64,6 +64,7 @@ WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
 # WebAssembly source files
 WASM_SOURCES = ../../synth/synth_sid.c \
                ../../synth/synth_sid_cc.c \
+               ../../synth/synth_lfo.c \
                wasm_bindings.c
 
 # Exported functions for JavaScript (regroove_synth_* interface)
@@ -75,6 +76,7 @@ WASM_EXPORTED_FUNCTIONS = \
     "_regroove_synth_reset",\
     "_regroove_synth_note_on",\
     "_regroove_synth_note_off",\
+    "_regroove_synth_handle_midi",\
     "_regroove_synth_control_change",\
     "_regroove_synth_pitch_bend",\
     "_regroove_synth_all_notes_off",\

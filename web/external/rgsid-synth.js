@@ -122,7 +122,15 @@ class RGSIDSynth {
             { index: 37, name: "→ PW", type: "float", min: 0, max: 100, default: 0, group: "LFO 2", scale: "normalized", width: 40 },
 
             // Modulation Wheel (38)
-            { index: 38, name: "Mod Wheel", type: "float", min: 0, max: 100, default: 0, group: "Global", scale: "normalized", width: 40, height: 120 }
+            { index: 38, name: "Mod Wheel", type: "float", min: 0, max: 100, default: 0, group: "Global", scale: "normalized", width: 40, height: 120 },
+
+            // Engine Mode (39)
+            { index: 39, name: "Engine", type: "enum", group: "Global", default: 0,
+              options: [
+                {value: 0, label: "Lead"},
+                {value: 1, label: "Multi"}
+              ]
+            }
         ];
     }
 
@@ -153,7 +161,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=187');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=192');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');

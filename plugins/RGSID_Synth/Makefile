@@ -15,7 +15,8 @@ FILES_DSP = \
 	RGSID_SynthPlugin.cpp \
 	SIDSysEx.cpp \
 	../../synth/synth_sid.c \
-	../../synth/synth_sid_cc.c
+	../../synth/synth_sid_cc.c \
+	../../synth/synth_lfo.c
 
 FILES_UI = \
 	RGSID_SynthUI.cpp \
@@ -65,6 +66,7 @@ WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
 WASM_SOURCES = ../../synth/synth_sid.c \
                ../../synth/synth_sid_cc.c \
                ../../synth/synth_lfo.c \
+               ../../synth/synth_sid_midibox.c \
                wasm_bindings.c
 
 # Exported functions for JavaScript (regroove_synth_* interface)

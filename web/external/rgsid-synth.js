@@ -161,7 +161,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=193');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=194');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');

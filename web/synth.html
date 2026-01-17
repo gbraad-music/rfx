@@ -942,7 +942,13 @@
                     drumSynth.triggerDrum(data.note, data.velocity);
                     console.log('[MIDI] Routed to drums (Channel 10)');
                 } else if (currentSynth) {
-                    currentSynth.handleNoteOn(data.note, data.velocity);
+                    // Use handleMidi if available (SID synth with channel routing)
+                    if (currentSynth.handleMidi) {
+                        const status = 0x90 | data.channel;  // Note On + channel
+                        currentSynth.handleMidi(status, data.note, data.velocity);
+                    } else {
+                        currentSynth.handleNoteOn(data.note, data.velocity);
+                    }
                 }
 
                 // Also handle drum notes by note number (36-49) if not on channel 10 and no SFZ
@@ -961,7 +967,13 @@
                 }
                 // Only send note off to synth (drums don't need note off)
                 else if (data.channel !== 9 && currentSynth) {
-                    currentSynth.handleNoteOff(data.note);
+                    // Use handleMidi if available (SID synth with channel routing)
+                    if (currentSynth.handleMidi) {
+                        const status = 0x80 | data.channel;  // Note Off + channel
+                        currentSynth.handleMidi(status, data.note, 0);
+                    } else {
+                        currentSynth.handleNoteOff(data.note);
+                    }
                 }
             });
         }

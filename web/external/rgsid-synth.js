@@ -153,7 +153,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=186');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=187');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -261,6 +261,20 @@ class RGSIDSynth {
         this.workletNode.port.postMessage({
             type: 'noteOff',
             data: { note }
+        });
+    }
+
+    handleMidi(status, data1, data2) {
+        if (!this.isActive) return;
+
+        if (!this.wasmReady) {
+            return;
+        }
+
+        // Send raw MIDI to worklet
+        this.workletNode.port.postMessage({
+            type: 'midi',
+            data: { status, data1, data2 }
         });
     }
 

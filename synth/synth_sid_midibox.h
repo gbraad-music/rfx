@@ -23,6 +23,17 @@ typedef enum {
 } MIDIboxEngineMode;
 
 // ============================================================================
+// MIDIbox SID V2 Detune Modes (for Lead Engine unison)
+// ============================================================================
+
+typedef enum {
+    MIDIBOX_DETUNE_NORMAL = 0,     // No detune (all voices centered)
+    MIDIBOX_DETUNE_SPREAD = 1,     // Voice spread: V1=0, V2=+detune, V3=-detune
+    MIDIBOX_DETUNE_SUPERSAW_DOWN = 2,  // All voices detuned down
+    MIDIBOX_DETUNE_SUPERSAW_UP = 3     // All voices detuned up
+} MIDIboxDetuneMode;
+
+// ============================================================================
 // MIDIbox Preset Structure (matches web/data/ format)
 // ============================================================================
 
@@ -45,8 +56,10 @@ typedef struct {
 typedef struct {
     SynthSID* sid;
     float sample_rate;
-    float parameters[40];         // Parameter cache for UI sync
+    float parameters[42];         // Parameter cache for UI sync (was 40, now 42 with detune)
     MIDIboxEngineMode engine_mode;
+    MIDIboxDetuneMode detune_mode;
+    float detune_amount;          // 0.0-1.0 (maps to 0-50 cents)
 } MIDIboxSIDInstance;
 
 // ============================================================================
@@ -63,6 +76,15 @@ void midibox_sid_reset(MIDIboxSIDInstance* mb);
 
 void midibox_sid_set_engine_mode(MIDIboxSIDInstance* mb, MIDIboxEngineMode mode);
 MIDIboxEngineMode midibox_sid_get_engine_mode(MIDIboxSIDInstance* mb);
+
+// ============================================================================
+// Detune Control (Lead Engine only)
+// ============================================================================
+
+void midibox_sid_set_detune_mode(MIDIboxSIDInstance* mb, MIDIboxDetuneMode mode);
+MIDIboxDetuneMode midibox_sid_get_detune_mode(MIDIboxSIDInstance* mb);
+void midibox_sid_set_detune_amount(MIDIboxSIDInstance* mb, float amount);
+float midibox_sid_get_detune_amount(MIDIboxSIDInstance* mb);
 
 // ============================================================================
 // MIDI Message Handling (MIDIbox SID V2 compatible routing)

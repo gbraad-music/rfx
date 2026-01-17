@@ -125,12 +125,23 @@ class RGSIDSynth {
             { index: 38, name: "Mod Wheel", type: "float", min: 0, max: 100, default: 0, group: "Global", scale: "normalized", width: 40, height: 120 },
 
             // Engine Mode (39)
-            { index: 39, name: "Engine", type: "enum", group: "Global", default: 0,
+            { index: 39, name: "Engine", type: "enum", group: "Global", default: 1,
               options: [
                 {value: 0, label: "Lead"},
                 {value: 1, label: "Multi"}
               ]
-            }
+            },
+
+            // Detune (40-41)
+            { index: 40, name: "Detune Mode", type: "enum", group: "Unison", default: 0,
+              options: [
+                {value: 0, label: "Normal"},
+                {value: 1, label: "Spread"},
+                {value: 2, label: "SuperSaw-"},
+                {value: 3, label: "SuperSaw+"}
+              ]
+            },
+            { index: 41, name: "Detune", type: "float", min: 0, max: 100, default: 30, unit: "cents", group: "Unison", scale: "normalized", width: 40, height: 120 }
         ];
     }
 
@@ -161,7 +172,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=194');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=199');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -393,9 +404,9 @@ class RGSIDSynth {
 
     async loadUserPresets() {
         try {
-            const response = await fetch('data/sid_presets.h');
+            const response = await fetch('data/sid_user_presets.txt');
             if (!response.ok) {
-                console.log('[RGSIDSynth] No user presets found (data/sid_presets.h)');
+                console.log('[RGSIDSynth] No user presets found (data/sid_user_presets.txt)');
                 return;
             }
 

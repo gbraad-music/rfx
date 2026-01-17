@@ -187,7 +187,9 @@ MIDIboxSIDInstance* midibox_sid_create(float sample_rate) {
     }
 
     memset(mb->parameters, 0, sizeof(mb->parameters));
-    mb->engine_mode = MIDIBOX_ENGINE_LEAD;
+    mb->engine_mode = MIDIBOX_ENGINE_MULTI;  // Default to independent voices on CH 1/2/3
+    mb->detune_mode = MIDIBOX_DETUNE_NORMAL;
+    mb->detune_amount = 0.3f;  // Default: 30% of 100 cents = 30 cents
 
     return mb;
 }
@@ -218,6 +220,30 @@ void midibox_sid_set_engine_mode(MIDIboxSIDInstance* mb, MIDIboxEngineMode mode)
 
 MIDIboxEngineMode midibox_sid_get_engine_mode(MIDIboxSIDInstance* mb) {
     return mb ? mb->engine_mode : MIDIBOX_ENGINE_LEAD;
+}
+
+// ============================================================================
+// Detune Control
+// ============================================================================
+
+void midibox_sid_set_detune_mode(MIDIboxSIDInstance* mb, MIDIboxDetuneMode mode) {
+    if (mb) {
+        mb->detune_mode = mode;
+    }
+}
+
+MIDIboxDetuneMode midibox_sid_get_detune_mode(MIDIboxSIDInstance* mb) {
+    return mb ? mb->detune_mode : MIDIBOX_DETUNE_NORMAL;
+}
+
+void midibox_sid_set_detune_amount(MIDIboxSIDInstance* mb, float amount) {
+    if (mb) {
+        mb->detune_amount = fminf(fmaxf(amount, 0.0f), 1.0f);
+    }
+}
+
+float midibox_sid_get_detune_amount(MIDIboxSIDInstance* mb) {
+    return mb ? mb->detune_amount : 0.0f;
 }
 
 // ============================================================================
@@ -266,12 +292,53 @@ void midibox_sid_note_on(MIDIboxSIDInstance* mb, uint8_t channel, uint8_t note, 
     if (!mb || !mb->sid) return;
 
     if (mb->engine_mode == MIDIBOX_ENGINE_LEAD) {
-        // Lead Engine: trigger ALL 3 voices (unison)
+        // Lead Engine: trigger ALL 3 voices (unison) with detune
+        // Map to 0-100 cents (was 0-50, now doubled for fatter sound)
+        float detune_cents = mb->detune_amount * 100.0f;
+
         for (int v = 0; v < 3; v++) {
+            float pitch_offset = 0.0f;  // In semitones
+
+            switch (mb->detune_mode) {
+                case MIDIBOX_DETUNE_NORMAL:
+                    pitch_offset = 0.0f;  // All voices centered
+                    break;
+
+                case MIDIBOX_DETUNE_SPREAD:
+                    // SuperSaw-style spread (JP-8000 inspired):
+                    // V1 = -detune (left)
+                    // V2 = +detune * 0.618 (right, golden ratio offset)
+                    // V3 = +detune (far right)
+                    if (v == 0) pitch_offset = -detune_cents / 100.0f;
+                    else if (v == 1) pitch_offset = (detune_cents * 0.618f) / 100.0f;
+                    else pitch_offset = detune_cents / 100.0f;
+                    break;
+
+                case MIDIBOX_DETUNE_SUPERSAW_DOWN:
+                    // All voices detuned down with slight variation
+                    // V1 = -detune, V2 = -detune*0.7, V3 = -detune*0.85
+                    if (v == 0) pitch_offset = -detune_cents / 100.0f;
+                    else if (v == 1) pitch_offset = -(detune_cents * 0.7f) / 100.0f;
+                    else pitch_offset = -(detune_cents * 0.85f) / 100.0f;
+                    break;
+
+                case MIDIBOX_DETUNE_SUPERSAW_UP:
+                    // All voices detuned up with slight variation
+                    // V1 = +detune, V2 = +detune*0.7, V3 = +detune*0.85
+                    if (v == 0) pitch_offset = detune_cents / 100.0f;
+                    else if (v == 1) pitch_offset = (detune_cents * 0.7f) / 100.0f;
+                    else pitch_offset = (detune_cents * 0.85f) / 100.0f;
+                    break;
+            }
+
+            // Apply detune by setting pitch bend for this voice
+            float detune_bend = pitch_offset / 12.0f;  // Convert semitones to pitch bend range
+            synth_sid_set_pitch_bend(mb->sid, v, detune_bend);
+
             synth_sid_note_on(mb->sid, v, note, velocity);
         }
     } else {
-        // Multi Engine: route MIDI channels to voices
+        // Multi Engine: route MIDI channels to voices (no detune)
         if (channel < 3) {
             synth_sid_note_on(mb->sid, channel, note, velocity);
         }
@@ -334,18 +401,18 @@ void midibox_sid_process_f32(MIDIboxSIDInstance* mb, float* buffer, int frames, 
 // ============================================================================
 
 int midibox_sid_get_parameter_count(void) {
-    return 40;
+    return 42;
 }
 
 float midibox_sid_get_parameter(MIDIboxSIDInstance* mb, int index) {
-    if (!mb || index < 0 || index >= 40) return 0.0f;
+    if (!mb || index < 0 || index >= 42) return 0.0f;
     return mb->parameters[index];
 }
 
 void midibox_sid_set_parameter(MIDIboxSIDInstance* mb, int index, float value) {
     if (!mb || !mb->sid) return;
 
-    if (index >= 0 && index < 40) {
+    if (index >= 0 && index < 42) {
         mb->parameters[index] = value;
     }
 
@@ -383,6 +450,8 @@ void midibox_sid_set_parameter(MIDIboxSIDInstance* mb, int index, float value) {
             case 37: synth_sid_set_lfo2_to_pw(mb->sid, value); break;
             case 38: synth_sid_set_mod_wheel(mb->sid, value); break;
             case 39: midibox_sid_set_engine_mode(mb, (MIDIboxEngineMode)((int)(value > 0.5f))); break;
+            case 40: midibox_sid_set_detune_mode(mb, (MIDIboxDetuneMode)((int)value)); break;
+            case 41: midibox_sid_set_detune_amount(mb, value); break;
         }
     }
 }
@@ -400,10 +469,12 @@ const char* midibox_sid_get_parameter_name(int index) {
         "LFO1 Rate", "LFO1 Waveform", "LFO1 → Pitch",
         "LFO2 Rate", "LFO2 Waveform", "LFO2 → Filter", "LFO2 → PW",
         "Mod Wheel",
-        "Engine Mode"
+        "Engine Mode",
+        "Detune Mode",
+        "Detune Amount"
     };
 
-    if (index < 0 || index >= 40) return "";
+    if (index < 0 || index >= 42) return "";
     return names[index];
 }
 
@@ -416,7 +487,9 @@ float midibox_sid_get_parameter_default(int index) {
     if (index % 8 == 1) return 0.5f;  // Pulse Width: 50%
     if (index % 8 == 4) return 0.7f;  // Sustain: 70%
     if (index == 30) return 0.7f;     // Volume: 70%
-    if (index == 39) return 0.0f;     // Engine Mode: Lead
+    if (index == 39) return 1.0f;     // Engine Mode: Multi (independent voices)
+    if (index == 40) return 0.0f;     // Detune Mode: Normal (presets control this)
+    if (index == 41) return 0.5f;     // Detune Amount: 50% = 50 cents
     return 0.0f;
 }
 
@@ -427,7 +500,8 @@ float midibox_sid_get_parameter_min(int index) {
 float midibox_sid_get_parameter_max(int index) {
     if (index % 8 == 0) return 15.0f;  // Waveform
     if (index == 24) return 3.0f;      // Filter mode
-    if (index == 39) return 1.0f;      // Engine Mode
+    if (index == 39) return 1.0f;      // Engine Mode (0=Lead, 1=Multi)
+    if (index == 40) return 3.0f;      // Detune Mode (0-3)
     return 1.0f;
 }
 
@@ -445,8 +519,9 @@ const char* midibox_sid_get_group_name(int group) {
 }
 
 int midibox_sid_parameter_is_integer(int index) {
-    if (index % 8 == 0 || index == 24) return 1;
-    if (index % 8 == 6 || index % 8 == 7) return 1;
+    if (index % 8 == 0 || index == 24) return 1;  // Waveform, filter mode
+    if (index % 8 == 6 || index % 8 == 7) return 1;  // Ring mod, sync
+    if (index == 40) return 1;  // Detune mode
     return 0;
 }
 
@@ -469,6 +544,29 @@ void midibox_sid_load_preset(MIDIboxSIDInstance* mb, int index, int voice) {
     if (voice < 0 || voice > 2) voice = 0;
 
     const MIDIboxPreset* preset = &factoryPresets[index];
+
+    // Auto-detect engine mode based on preset name/type
+    // Lead, Pad, Strings, Brass = Lead Engine (unison)
+    // Bass, Pluck, Bell, FX = Multi Engine (independent)
+    const char* name = preset->name;
+    int is_lead_preset = 0;
+
+    // Check if preset name contains lead/pad/string/brass indicators
+    if (strstr(name, "Lead") || strstr(name, "Pad") || strstr(name, "String") ||
+        strstr(name, "Brass") || strstr(name, "Choir") || strstr(name, "Organ") ||
+        strstr(name, "Accordion") || strstr(name, "Harmonica") || strstr(name, "Flute") ||
+        strstr(name, "Drone") || strstr(name, "Atmosphere") || strstr(name, "Space")) {
+        is_lead_preset = 1;
+    }
+
+    // Auto-switch engine mode when loading to voice 0
+    if (voice == 0) {
+        if (is_lead_preset) {
+            midibox_sid_set_parameter(mb, 39, 0.0f);  // Lead engine
+        } else {
+            midibox_sid_set_parameter(mb, 39, 1.0f);  // Multi engine
+        }
+    }
 
     // Lead Engine Mode: When loading to Voice 1, apply to ALL 3 voices (unison)
     if (voice == 0) {

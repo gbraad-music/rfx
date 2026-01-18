@@ -149,7 +149,17 @@ class RGSlicerSynth {
             { index: 7, name: "S0 Time", min: 0, max: 100, default: 50, group: "Slice 0" },
             { index: 8, name: "S0 Volume", min: 0, max: 100, default: 50, group: "Slice 0" },
             { index: 9, name: "S0 Pan", min: 0, max: 100, default: 50, group: "Slice 0" },
-            { index: 10, name: "BPM", min: 20, max: 300, default: 125, group: "Sequencer", unit: "BPM" }
+            { index: 10, name: "S0 Loop", type: "enum", group: "Slice 0", default: 0,
+              options: [
+                {value: 0, label: "Off"},
+                {value: 1, label: "On"}
+              ]},
+            { index: 11, name: "S0 One-Shot", type: "enum", group: "Slice 0", default: 0,
+              options: [
+                {value: 0, label: "Off"},
+                {value: 1, label: "On"}
+              ]},
+            { index: 12, name: "BPM", min: 20, max: 300, default: 125, group: "Sequencer", unit: "BPM" }
         ];
     }
 

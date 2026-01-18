@@ -476,6 +476,17 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
         if (slice_index < 0 || slice_index >= slicer->num_slices) return;
     }
 
+    // MONOPHONIC MODE for one-shot slices: Stop all voices playing this slice
+    // This prevents overlapping when retriggering one-shot slices (important for breakbeats!)
+    SliceData* slice = &slicer->slices[slice_index];
+    if (slice->one_shot) {
+        for (int i = 0; i < RGSLICER_MAX_VOICES; i++) {
+            if (slicer->voices[i].active && slicer->voices[i].slice_index == slice_index) {
+                slicer->voices[i].active = false;
+            }
+        }
+    }
+
     // Get free voice
     int voice_idx = find_free_voice(slicer);
     SliceVoice* v = &slicer->voices[voice_idx];
@@ -489,8 +500,7 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
     v->reverse = slicer->slices[slice_index].reverse;
     v->volume = velocity / 127.0f;
 
-    // Configure FX
-    SliceData* slice = &slicer->slices[slice_index];
+    // Configure FX (slice pointer already defined above)
     if (v->fx) {
         sample_fx_reset(v->fx);
         sample_fx_set_pitch(v->fx, slice->pitch_semitones + slicer->master_pitch);
@@ -550,6 +560,14 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
         // Trigger on interval boundaries
         while (slicer->random_seq_phase >= slicer->random_seq_interval) {
             slicer->random_seq_phase -= slicer->random_seq_interval;
+
+            // MONOPHONIC MODE: Stop all voices triggered by random sequencer
+            // This prevents overlapping slices (important for breakbeats!)
+            for (int i = 0; i < RGSLICER_MAX_VOICES; i++) {
+                if (slicer->voices[i].active && slicer->voices[i].note == 39) {
+                    slicer->voices[i].active = false;
+                }
+            }
 
             // Pick random slice
             uint8_t random_slice = (uint8_t)(rand() % slicer->num_slices);

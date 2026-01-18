@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include "../../synth/rgslicer.h"
 
-#define PARAM_COUNT 10
+#define PARAM_COUNT 13
 
 typedef struct {
     RGSlicer* slicer;
@@ -29,6 +29,11 @@ typedef struct {
     float s0_time;          // 7
     float s0_volume;        // 8
     float s0_pan;           // 9
+    float s0_loop;          // 10
+    float s0_one_shot;      // 11
+
+    // Sequencer
+    float bpm;              // 12
 } RGSlicerWASM;
 
 static const char* param_names[PARAM_COUNT] = {
@@ -41,7 +46,10 @@ static const char* param_names[PARAM_COUNT] = {
     "S0 Pitch",
     "S0 Time",
     "S0 Volume",
-    "S0 Pan"
+    "S0 Pan",
+    "S0 Loop",
+    "S0 One-Shot",
+    "BPM"
 };
 
 static const char* param_groups[PARAM_COUNT] = {
@@ -54,7 +62,10 @@ static const char* param_groups[PARAM_COUNT] = {
     "Slice 0",
     "Slice 0",
     "Slice 0",
-    "Slice 0"
+    "Slice 0",
+    "Slice 0",
+    "Slice 0",
+    "Sequencer"
 };
 
 EMSCRIPTEN_KEEPALIVE
@@ -170,6 +181,9 @@ float regroove_synth_get_parameter(RGSlicerWASM* synth, int index) {
         case 7: return synth->s0_time;
         case 8: return synth->s0_volume;
         case 9: return synth->s0_pan;
+        case 10: return synth->s0_loop;
+        case 11: return synth->s0_one_shot;
+        case 12: return synth->bpm;
         default: return 0.0f;
     }
 }
@@ -237,6 +251,21 @@ void regroove_synth_set_parameter(RGSlicerWASM* synth, int index, float value) {
             synth->s0_pan = value;
             rgslicer_set_slice_pan(synth->slicer, 0, value * 2.0f - 1.0f);  // -1.0 to +1.0
             break;
+
+        case 10: // S0 Loop
+            synth->s0_loop = value;
+            rgslicer_set_slice_loop(synth->slicer, 0, value > 0.5f);
+            break;
+
+        case 11: // S0 One-Shot
+            synth->s0_one_shot = value;
+            rgslicer_set_slice_one_shot(synth->slicer, 0, value > 0.5f);
+            break;
+
+        case 12: // BPM
+            synth->bpm = value;
+            rgslicer_set_bpm(synth->slicer, value);
+            break;
     }
 }
 
@@ -269,6 +298,9 @@ float regroove_synth_get_parameter_default(RGSlicerWASM* synth, int index) {
         case 7: return 0.5f;    // S0 Time (1.0x)
         case 8: return 0.5f;    // S0 Volume (1.0)
         case 9: return 0.5f;    // S0 Pan (center)
+        case 10: return 0.0f;   // S0 Loop (off)
+        case 11: return 0.0f;   // S0 One-Shot (off)
+        case 12: return 125.0f; // BPM (125)
         default: return 0.5f;
     }
 }
@@ -303,8 +335,8 @@ const char* regroove_synth_get_group_name(RGSlicerWASM* synth, const char* group
 EMSCRIPTEN_KEEPALIVE
 int regroove_synth_parameter_is_integer(RGSlicerWASM* synth, int index) {
     (void)synth;
-    // Slice mode and num slices are integers
-    return (index == 3 || index == 4) ? 1 : 0;
+    // Slice mode (3), num slices (4), loop (10), one-shot (11), BPM (12) are integers
+    return (index == 3 || index == 4 || index == 10 || index == 11 || index == 12) ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE

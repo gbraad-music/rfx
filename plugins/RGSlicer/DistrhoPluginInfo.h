@@ -47,7 +47,7 @@ enum Parameters {
 
     // Output parameters (read-only, for UI visualization)
     PARAM_PLAYBACK_POS,    // Active voice playback position (0.0-1.0)
-    PARAM_PLAYING_SLICE,   // Currently playing slice index (-1 = none)
+    PARAM_PLAYING_SLICE,   // Currently playing slice index (-1 = none, -2 = full sample)
 
     PARAM_COUNT
 };

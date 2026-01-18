@@ -578,9 +578,15 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
 
         SliceData* slice = &slicer->slices[voice->slice_index];
 
-        // Calculate playback rate from pitch (tape-deck style: 2^(semitones/12))
+        // Calculate playback rate from pitch ONLY (tape-deck style: 2^(semitones/12))
         float total_pitch = slice->pitch_semitones + slicer->master_pitch;
-        float playback_rate = powf(2.0f, total_pitch / 12.0f) * slice->time_stretch * slicer->master_time;
+        float pitch_rate = powf(2.0f, total_pitch / 12.0f);
+
+        // TIME stretching: changes speed WITHOUT changing pitch
+        // time = 1.0 (100%) → normal speed
+        // time = 2.0 (200%) → half speed (slower)
+        // time = 0.5 (50%)  → double speed (faster)
+        float time_factor = slice->time_stretch * slicer->master_time;
 
         for (uint32_t f = 0; f < frames; f++) {
             // Determine playback boundaries (full sample for note 37, else slice boundaries)
@@ -605,16 +611,25 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
                 }
             }
 
-            // Get sample (with bounds check)
-            uint32_t sample_idx = (uint32_t)voice->playback_pos;
-            if (sample_idx >= slicer->sample_length) sample_idx = slicer->sample_length - 1;
-            int16_t raw_sample = slicer->sample_data[sample_idx];
+            // Get sample with bounds check and interpolation
+            float read_pos = voice->playback_pos;
 
-            // NO FX PROCESSOR - it sounds muffled/filtered!
-            // Just use raw sample with pitch via playback rate
+            // Bounds check
+            if (read_pos >= slicer->sample_length - 1) read_pos = slicer->sample_length - 2;
+            if (read_pos < 0) read_pos = 0;
 
-            // Convert to float and apply volume
-            float sample_f32 = (float)raw_sample / 32768.0f;
+            // Linear interpolation for smooth playback
+            uint32_t idx0 = (uint32_t)read_pos;
+            uint32_t idx1 = idx0 + 1;
+            float frac = read_pos - idx0;
+
+            if (idx1 >= slicer->sample_length) idx1 = slicer->sample_length - 1;
+
+            float s0 = (float)slicer->sample_data[idx0] / 32768.0f;
+            float s1 = (float)slicer->sample_data[idx1] / 32768.0f;
+            float sample_f32 = s0 + frac * (s1 - s0);
+
+            // Apply volume
             sample_f32 *= slice->volume * voice->volume * slicer->master_volume;
 
             // Apply pan (stereo)
@@ -625,11 +640,15 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
             buffer[f * 2] += left;
             buffer[f * 2 + 1] += right;
 
-            // Advance playback position by rate (REAL pitch shifting!)
+            // Advance playback position
+            // PITCH: changes playback rate (tape-deck style)
+            // TIME: DISABLED - requires proper time-stretching algorithm (phase vocoder/granular)
+            // TODO: Implement WSOLA or phase vocoder for independent time stretching
+
             if (voice->reverse) {
-                voice->playback_pos -= playback_rate;
+                voice->playback_pos -= pitch_rate;
             } else {
-                voice->playback_pos += playback_rate;
+                voice->playback_pos += pitch_rate;
             }
         }
     }

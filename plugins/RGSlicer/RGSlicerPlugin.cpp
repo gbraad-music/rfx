@@ -199,7 +199,7 @@ protected:
                 parameter.name = "Playing Slice";
                 parameter.symbol = "playing_slice";
                 parameter.ranges.def = -1.0f;
-                parameter.ranges.min = -1.0f;
+                parameter.ranges.min = -2.0f;  // -2 = full sample, -1 = none
                 parameter.ranges.max = 63.0f;
                 parameter.hints = kParameterIsOutput | kParameterIsInteger;
                 break;
@@ -380,7 +380,8 @@ protected:
                 for (int v = 0; v < 16; v++) {  // RGSLICER_MAX_VOICES
                     if (slicer_->voices[v].active) {
                         newPos = slicer_->voices[v].playback_pos / (float)slicer_->sample_length;
-                        newSlice = (float)slicer_->voices[v].slice_index;
+                        // Note 37 (C#2) plays full sample - use special value -2
+                        newSlice = (slicer_->voices[v].note == 37) ? -2.0f : (float)slicer_->voices[v].slice_index;
                         break;  // Use first active voice
                     }
                 }

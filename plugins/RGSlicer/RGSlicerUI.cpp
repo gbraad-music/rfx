@@ -213,6 +213,15 @@ private:
                         uint8_t numSlices = rgslicer_get_num_slices(fUI->fSlicer);
                         int playingSlice = (int)fUI->fParameters[PARAM_PLAYING_SLICE];
 
+                        // If playing full sample (C#2, note 37), highlight entire waveform
+                        if (playingSlice == -2) {
+                            draw->AddRectFilled(
+                                ImVec2(wavePos.x, wavePos.y),
+                                ImVec2(wavePos.x + waveW, wavePos.y + waveH),
+                                IM_COL32(255, 255, 0, 80)  // Yellow with 80/255 alpha
+                            );
+                        }
+
                         for (int i = 0; i < numSlices; i++) {
                             uint32_t offset = rgslicer_get_slice_offset(fUI->fSlicer, i);
                             uint32_t length = rgslicer_get_slice_length(fUI->fSlicer, i);
@@ -316,6 +325,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_MASTER_VOLUME] = vol * 100.0f;
                         fUI->setParameterValue(PARAM_MASTER_VOLUME, vol * 100.0f);
                     }
                 }
@@ -337,6 +347,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_MASTER_PITCH] = pitch * 24.0f - 12.0f;
                         fUI->setParameterValue(PARAM_MASTER_PITCH, pitch * 24.0f - 12.0f);
                     }
                 }
@@ -358,6 +369,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_MASTER_TIME] = time * 150.0f + 50.0f;
                         fUI->setParameterValue(PARAM_MASTER_TIME, time * 150.0f + 50.0f);
                     }
                 }
@@ -379,6 +391,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_BPM] = bpm * 280.0f + 20.0f;
                         fUI->setParameterValue(PARAM_BPM, bpm * 280.0f + 20.0f);
                     }
 
@@ -414,6 +427,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_SLICE0_PITCH] = s0pitch * 24.0f - 12.0f;
                         fUI->setParameterValue(PARAM_SLICE0_PITCH, s0pitch * 24.0f - 12.0f);
                     }
                 }
@@ -430,6 +444,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_SLICE0_TIME] = s0time * 150.0f + 50.0f;
                         fUI->setParameterValue(PARAM_SLICE0_TIME, s0time * 150.0f + 50.0f);
                     }
                 }
@@ -446,6 +461,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_SLICE0_VOLUME] = s0vol * 200.0f;
                         fUI->setParameterValue(PARAM_SLICE0_VOLUME, s0vol * 200.0f);
                     }
                 }
@@ -462,6 +478,7 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
+                        fUI->fParameters[PARAM_SLICE0_PAN] = s0pan * 200.0f - 100.0f;
                         fUI->setParameterValue(PARAM_SLICE0_PAN, s0pan * 200.0f - 100.0f);
                     }
                 }

@@ -26,17 +26,20 @@ public:
         master_volume_ = 1.0f;
         master_pitch_ = 0.0f;
         master_time_ = 1.0f;
-        slice_mode_ = 0;  // Transient
-        num_slices_ = 16;
-        sensitivity_ = 0.5f;
 
         // Per-slice defaults (slice 0)
         slice0_pitch_ = 0.0f;
         slice0_time_ = 1.0f;
         slice0_volume_ = 1.0f;
         slice0_pan_ = 0.0f;
-        slice0_reverse_ = 0.0f;
         slice0_loop_ = 0.0f;
+        slice0_one_shot_ = 0.0f;
+
+        // Random sequencer BPM
+        bpm_ = 125.0f;
+        if (slicer_) {
+            rgslicer_set_bpm(slicer_, bpm_);
+        }
 
         // Sample will be loaded via UI file browser
     }
@@ -113,46 +116,6 @@ protected:
                 parameter.unit = "%";
                 break;
 
-            case PARAM_SLICE_MODE:
-                parameter.name = "Slice Mode";
-                parameter.symbol = "slice_mode";
-                parameter.ranges.def = 0.0f;
-                parameter.ranges.min = 0.0f;
-                parameter.ranges.max = 3.0f;
-                parameter.enumValues.count = 4;
-                parameter.enumValues.restrictedMode = true;
-                {
-                    ParameterEnumerationValue* const values = new ParameterEnumerationValue[4];
-                    parameter.enumValues.values = values;
-                    values[0].label = "Transient";
-                    values[0].value = 0.0f;
-                    values[1].label = "Zero-Cross";
-                    values[1].value = 1.0f;
-                    values[2].label = "Fixed Grid";
-                    values[2].value = 2.0f;
-                    values[3].label = "BPM Sync";
-                    values[3].value = 3.0f;
-                }
-                break;
-
-            case PARAM_NUM_SLICES:
-                parameter.name = "Num Slices";
-                parameter.symbol = "num_slices";
-                parameter.ranges.def = 16.0f;
-                parameter.ranges.min = 1.0f;
-                parameter.ranges.max = 64.0f;
-                parameter.hints = kParameterIsInteger;
-                break;
-
-            case PARAM_SENSITIVITY:
-                parameter.name = "Sensitivity";
-                parameter.symbol = "sensitivity";
-                parameter.ranges.def = 50.0f;
-                parameter.ranges.min = 0.0f;
-                parameter.ranges.max = 100.0f;
-                parameter.unit = "%";
-                break;
-
             case PARAM_SLICE0_PITCH:
                 parameter.name = "Slice 0 Pitch";
                 parameter.symbol = "slice0_pitch";
@@ -189,15 +152,6 @@ protected:
                 parameter.unit = "%";
                 break;
 
-            case PARAM_SLICE0_REVERSE:
-                parameter.name = "Slice 0 Reverse";
-                parameter.symbol = "slice0_reverse";
-                parameter.ranges.def = 0.0f;
-                parameter.ranges.min = 0.0f;
-                parameter.ranges.max = 1.0f;
-                parameter.hints = kParameterIsBoolean;
-                break;
-
             case PARAM_SLICE0_LOOP:
                 parameter.name = "Slice 0 Loop";
                 parameter.symbol = "slice0_loop";
@@ -205,6 +159,24 @@ protected:
                 parameter.ranges.min = 0.0f;
                 parameter.ranges.max = 1.0f;
                 parameter.hints = kParameterIsBoolean;
+                break;
+
+            case PARAM_SLICE0_ONE_SHOT:
+                parameter.name = "Slice 0 One-Shot";
+                parameter.symbol = "slice0_one_shot";
+                parameter.ranges.def = 0.0f;
+                parameter.ranges.min = 0.0f;
+                parameter.ranges.max = 1.0f;
+                parameter.hints = kParameterIsBoolean;
+                break;
+
+            case PARAM_BPM:
+                parameter.name = "BPM";
+                parameter.symbol = "bpm";
+                parameter.ranges.def = 125.0f;
+                parameter.ranges.min = 20.0f;
+                parameter.ranges.max = 300.0f;
+                parameter.unit = "BPM";
                 break;
         }
     }
@@ -215,18 +187,16 @@ protected:
 
     float getParameterValue(uint32_t index) const override {
         switch (index) {
-            case PARAM_MASTER_VOLUME:  return master_volume_ * 100.0f;
-            case PARAM_MASTER_PITCH:   return master_pitch_;
-            case PARAM_MASTER_TIME:    return master_time_ * 100.0f;
-            case PARAM_SLICE_MODE:     return (float)slice_mode_;
-            case PARAM_NUM_SLICES:     return (float)num_slices_;
-            case PARAM_SENSITIVITY:    return sensitivity_ * 100.0f;
-            case PARAM_SLICE0_PITCH:   return slice0_pitch_;
-            case PARAM_SLICE0_TIME:    return slice0_time_ * 100.0f;
-            case PARAM_SLICE0_VOLUME:  return slice0_volume_ * 100.0f;
-            case PARAM_SLICE0_PAN:     return slice0_pan_ * 100.0f;
-            case PARAM_SLICE0_REVERSE: return slice0_reverse_;
-            case PARAM_SLICE0_LOOP:    return slice0_loop_;
+            case PARAM_MASTER_VOLUME:    return master_volume_ * 100.0f;
+            case PARAM_MASTER_PITCH:     return master_pitch_;
+            case PARAM_MASTER_TIME:      return master_time_ * 100.0f;
+            case PARAM_SLICE0_PITCH:     return slice0_pitch_;
+            case PARAM_SLICE0_TIME:      return slice0_time_ * 100.0f;
+            case PARAM_SLICE0_VOLUME:    return slice0_volume_ * 100.0f;
+            case PARAM_SLICE0_PAN:       return slice0_pan_ * 100.0f;
+            case PARAM_SLICE0_LOOP:      return slice0_loop_;
+            case PARAM_SLICE0_ONE_SHOT:  return slice0_one_shot_;
+            case PARAM_BPM:              return bpm_;
             default: return 0.0f;
         }
     }
@@ -246,21 +216,6 @@ protected:
             case PARAM_MASTER_TIME:
                 master_time_ = value / 100.0f;
                 if (slicer_) rgslicer_set_global_time(slicer_, master_time_);
-                break;
-
-            case PARAM_SLICE_MODE:
-                slice_mode_ = (uint8_t)value;
-                triggerAutoSlice();
-                break;
-
-            case PARAM_NUM_SLICES:
-                num_slices_ = (uint8_t)value;
-                triggerAutoSlice();
-                break;
-
-            case PARAM_SENSITIVITY:
-                sensitivity_ = value / 100.0f;
-                triggerAutoSlice();
                 break;
 
             case PARAM_SLICE0_PITCH:
@@ -283,14 +238,19 @@ protected:
                 if (slicer_) rgslicer_set_slice_pan(slicer_, 0, slice0_pan_);
                 break;
 
-            case PARAM_SLICE0_REVERSE:
-                slice0_reverse_ = value;
-                if (slicer_) rgslicer_set_slice_reverse(slicer_, 0, value > 0.5f);
-                break;
-
             case PARAM_SLICE0_LOOP:
                 slice0_loop_ = value;
                 if (slicer_) rgslicer_set_slice_loop(slicer_, 0, value > 0.5f);
+                break;
+
+            case PARAM_SLICE0_ONE_SHOT:
+                slice0_one_shot_ = value;
+                if (slicer_) rgslicer_set_slice_one_shot(slicer_, 0, value > 0.5f);
+                break;
+
+            case PARAM_BPM:
+                bpm_ = value;
+                if (slicer_) rgslicer_set_bpm(slicer_, bpm_);
                 break;
         }
     }
@@ -319,8 +279,9 @@ protected:
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "samplePath") == 0 && value && value[0] != '\0') {
             if (slicer_) {
+                // Load sample - preserves CUE point slicing!
                 rgslicer_load_sample(slicer_, value);
-                triggerAutoSlice();
+                // DO NOT call triggerAutoSlice() - it overwrites CUE points!
             }
         }
     }
@@ -404,22 +365,13 @@ private:
     float master_volume_;
     float master_pitch_;
     float master_time_;
-    uint8_t slice_mode_;
-    uint8_t num_slices_;
-    float sensitivity_;
     float slice0_pitch_;
     float slice0_time_;
     float slice0_volume_;
     float slice0_pan_;
-    float slice0_reverse_;
     float slice0_loop_;
-
-    void triggerAutoSlice() {
-        if (slicer_ && rgslicer_has_sample(slicer_)) {
-            SliceMode mode = (SliceMode)slice_mode_;
-            rgslicer_auto_slice(slicer_, mode, num_slices_, sensitivity_);
-        }
-    }
+    float slice0_one_shot_;
+    float bpm_;
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RGSlicerPlugin)
 };

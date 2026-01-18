@@ -29,7 +29,6 @@ RGSlicer* rgslicer_create(uint32_t sample_rate) {
     slicer->master_pitch = 0.0f;
     slicer->master_time = 1.0f;
     slicer->master_volume = 1.0f;
-    slicer->bpm = 125.0f;
     slicer->root_note = 60;
 
     strcpy(slicer->sample_name, "Untitled");
@@ -38,10 +37,10 @@ RGSlicer* rgslicer_create(uint32_t sample_rate) {
     memset(slicer->note_map, 0xFF, sizeof(slicer->note_map));
     slicer->use_note_map = false;
 
-    // Initialize random sequencer (16th notes at 125 BPM)
+    // Initialize random sequencer
     slicer->random_seq_active = false;
     slicer->random_seq_phase = 0;
-    slicer->random_seq_interval = (uint32_t)((60.0f / 125.0f / 4.0f) * sample_rate); // 16th notes
+    rgslicer_set_bpm(slicer, 125.0f);  // Sets BPM and calculates interval
 
     // Initialize voices
     for (int i = 0; i < RGSLICER_MAX_VOICES; i++) {
@@ -381,8 +380,8 @@ void rgslicer_set_bpm(RGSlicer* slicer, float bpm) {
     if (bpm > 300.0f) bpm = 300.0f;
     slicer->bpm = bpm;
 
-    // Recalculate interval (16th notes)
-    slicer->random_seq_interval = (uint32_t)((60.0f / bpm / 4.0f) * slicer->target_sample_rate);
+    // Recalculate interval (quarter notes - one beat)
+    slicer->random_seq_interval = (uint32_t)((60.0f / bpm) * slicer->target_sample_rate);
 }
 
 float rgslicer_get_bpm(RGSlicer* slicer) {
@@ -458,7 +457,7 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
     if (note == 39) {
         if (slicer->num_slices == 0) return;
         slicer->random_seq_active = true;
-        slicer->random_seq_phase = 0; // Reset phase to trigger immediately
+        slicer->random_seq_phase = slicer->random_seq_interval; // Trigger IMMEDIATELY on next buffer
         printf("[RGSlicer] Note On: %d (RANDOM SEQUENCER START @ %.1f BPM)\n", note, slicer->bpm);
         return;
     }

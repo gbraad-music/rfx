@@ -34,18 +34,16 @@ enum Parameters {
     PARAM_MASTER_PITCH,
     PARAM_MASTER_TIME,
 
-    // Auto-Slice Parameters
-    PARAM_SLICE_MODE,          // 0=Transient, 1=Zero-Cross, 2=Grid, 3=BPM-Sync
-    PARAM_NUM_SLICES,          // 1-64
-    PARAM_SENSITIVITY,         // 0.0-1.0 (for transient detection)
-
     // Per-Slice Parameters (Slice 0 only for now)
     PARAM_SLICE0_PITCH,
     PARAM_SLICE0_TIME,
     PARAM_SLICE0_VOLUME,
     PARAM_SLICE0_PAN,
-    PARAM_SLICE0_REVERSE,
     PARAM_SLICE0_LOOP,
+    PARAM_SLICE0_ONE_SHOT,
+
+    // Random Sequencer
+    PARAM_BPM,
 
     PARAM_COUNT
 };

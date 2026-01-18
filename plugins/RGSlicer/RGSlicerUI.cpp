@@ -42,12 +42,6 @@ protected:
     {
         if (index < PARAM_COUNT) {
             fParameters[index] = value;
-
-            // Update num slices for waveform display
-            if (index == PARAM_NUM_SLICES) {
-                fNumSlices = (uint8_t)value;
-            }
-
             fImGuiWidget->repaint();
         }
     }
@@ -216,6 +210,19 @@ private:
                             draw->AddText(ImVec2(xPos + 2, wavePos.y + 2),
                                 IM_COL32(255, 255, 0, 255), sliceNum);
                         }
+
+                        // Draw playback positions (if voices are active)
+                        // TODO: This requires access to plugin's slicer voice states
+                        // For now, we'll add a pulsing indicator to show the plugin is active
+                        static float pulseTime = 0.0f;
+                        pulseTime += 0.016f; // ~60fps
+                        float pulse = (sinf(pulseTime * 3.14f) + 1.0f) * 0.5f; // 0-1 pulse
+
+                        // Draw "LIVE" indicator when plugin is loaded
+                        ImGui::SetCursorScreenPos(ImVec2(wavePos.x + waveW - 50, wavePos.y + 5));
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f + pulse * 0.7f, 0.3f, 1.0f));
+                        ImGui::Text("LIVE");
+                        ImGui::PopStyleColor();
                     }
 
                     // Filename
@@ -335,84 +342,31 @@ private:
 
                 ImGui::SameLine(0, knobSpacing);
 
-                // Slice Mode
-                float mode = fUI->fParameters[PARAM_SLICE_MODE] / 3.0f;
+                // BPM (for random sequencer)
+                float bpm = (fUI->fParameters[PARAM_BPM] - 20.0f) / 280.0f;
                 ImGui::BeginGroup();
                 {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.2f, 1.0f));
-                    float labelW = ImGui::CalcTextSize("MODE").x;
+                    float labelW = ImGui::CalcTextSize("BPM").x;
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (knobSize - labelW) * 0.5f);
-                    ImGui::Text("MODE");
+                    ImGui::Text("BPM");
                     ImGui::PopStyleColor();
 
-                    if (ImGuiKnobs::Knob("##mode", &mode, 0.0f, 1.0f, 0.01f,
+                    if (ImGuiKnobs::Knob("##bpm", &bpm, 0.0f, 1.0f, 0.01f,
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
-                        fUI->setParameterValue(PARAM_SLICE_MODE, roundf(mode * 3.0f));
+                        fUI->setParameterValue(PARAM_BPM, bpm * 280.0f + 20.0f);
                     }
 
-                    // Mode label
-                    const char* modeNames[] = { "TRANS", "ZERO", "GRID", "BPM" };
-                    int modeIdx = (int)fUI->fParameters[PARAM_SLICE_MODE];
-                    if (modeIdx < 0) modeIdx = 0;
-                    if (modeIdx > 3) modeIdx = 3;
+                    // BPM value label
+                    char bpmVal[8];
+                    snprintf(bpmVal, sizeof(bpmVal), "%d", (int)fUI->fParameters[PARAM_BPM]);
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-                    float modeLabelW = ImGui::CalcTextSize(modeNames[modeIdx]).x;
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (knobSize - modeLabelW) * 0.5f);
-                    ImGui::Text("%s", modeNames[modeIdx]);
+                    float bpmValW = ImGui::CalcTextSize(bpmVal).x;
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (knobSize - bpmValW) * 0.5f);
+                    ImGui::Text("%s", bpmVal);
                     ImGui::PopStyleColor();
-                }
-                ImGui::EndGroup();
-
-                ImGui::SameLine(0, knobSpacing);
-
-                // Num Slices
-                float slices = (fUI->fParameters[PARAM_NUM_SLICES] - 1.0f) / 63.0f;
-                ImGui::BeginGroup();
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.2f, 1.0f));
-                    float labelW = ImGui::CalcTextSize("SLICES").x;
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (knobSize - labelW) * 0.5f);
-                    ImGui::Text("SLICES");
-                    ImGui::PopStyleColor();
-
-                    if (ImGuiKnobs::Knob("##slices", &slices, 0.0f, 1.0f, 0.01f,
-                                         "", ImGuiKnobVariant_Tick, knobSize,
-                                         ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
-                    {
-                        fUI->setParameterValue(PARAM_NUM_SLICES, roundf(slices * 63.0f + 1.0f));
-                    }
-
-                    // Value label
-                    char sliceVal[8];
-                    snprintf(sliceVal, sizeof(sliceVal), "%d", (int)fUI->fParameters[PARAM_NUM_SLICES]);
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
-                    float sliceValW = ImGui::CalcTextSize(sliceVal).x;
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (knobSize - sliceValW) * 0.5f);
-                    ImGui::Text("%s", sliceVal);
-                    ImGui::PopStyleColor();
-                }
-                ImGui::EndGroup();
-
-                ImGui::SameLine(0, knobSpacing);
-
-                // Sensitivity
-                float sense = fUI->fParameters[PARAM_SENSITIVITY] / 100.0f;
-                ImGui::BeginGroup();
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.2f, 1.0f));
-                    float labelW = ImGui::CalcTextSize("SENSE").x;
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (knobSize - labelW) * 0.5f);
-                    ImGui::Text("SENSE");
-                    ImGui::PopStyleColor();
-
-                    if (ImGuiKnobs::Knob("##sense", &sense, 0.0f, 1.0f, 0.01f,
-                                         "", ImGuiKnobVariant_Tick, knobSize,
-                                         ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
-                    {
-                        fUI->setParameterValue(PARAM_SENSITIVITY, sense * 100.0f);
-                    }
                 }
                 ImGui::EndGroup();
 

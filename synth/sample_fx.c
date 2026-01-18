@@ -161,10 +161,10 @@ int16_t sample_fx_process_sample(SampleFX* fx, int16_t input) {
     // Higher pitch = read faster through grain = higher frequency
     float pitch_ratio = powf(2.0f, fx->pitch_semitones / 12.0f);
 
-    // TIME: affects OUTPUT rate (hop size / grain advance rate)
-    // time_stretch < 1.0 = faster output (smaller hop)
-    // time_stretch > 1.0 = slower output (larger hop)
-    float effective_hop = SAMPLE_FX_HOP_SIZE * fx->time_stretch;
+    // TIME: affects grain overlap (INVERSE relationship with hop)
+    // time_stretch > 1.0 (slower) = MORE overlap = SMALLER hop
+    // time_stretch < 1.0 (faster) = LESS overlap = LARGER hop
+    float effective_hop = SAMPLE_FX_HOP_SIZE / fx->time_stretch;
 
     // Spawn new grain periodically (based on time stretch)
     fx->hop_counter++;

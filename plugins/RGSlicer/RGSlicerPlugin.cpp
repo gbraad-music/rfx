@@ -41,6 +41,11 @@ public:
             rgslicer_set_bpm(slicer_, bpm_);
         }
 
+        // Pitch/Time algorithms
+        pitch_algorithm_ = 0.0f;  // Simple (rate) default
+        time_algorithm_ = 1.0f;   // AKAI/Amiga default
+        if (slicer_) rgslicer_set_time_algorithm(slicer_, 1);
+
         // Output parameters
         playback_pos_ = 0.0f;
         playing_slice_ = -1.0f;
@@ -118,8 +123,8 @@ protected:
                 parameter.name = "Master Time";
                 parameter.symbol = "master_time";
                 parameter.ranges.def = 100.0f;
-                parameter.ranges.min = 50.0f;
-                parameter.ranges.max = 200.0f;
+                parameter.ranges.min = 10.0f;
+                parameter.ranges.max = 800.0f;
                 parameter.unit = "%";
                 break;
 
@@ -136,8 +141,8 @@ protected:
                 parameter.name = "Slice 0 Time";
                 parameter.symbol = "slice0_time";
                 parameter.ranges.def = 100.0f;
-                parameter.ranges.min = 50.0f;
-                parameter.ranges.max = 200.0f;
+                parameter.ranges.min = 10.0f;
+                parameter.ranges.max = 800.0f;
                 parameter.unit = "%";
                 break;
 
@@ -186,6 +191,44 @@ protected:
                 parameter.unit = "BPM";
                 break;
 
+            case PARAM_PITCH_ALGORITHM:
+                parameter.name = "Pitch Algorithm";
+                parameter.symbol = "pitch_algorithm";
+                parameter.ranges.def = 0.0f;  // Simple default
+                parameter.ranges.min = 0.0f;
+                parameter.ranges.max = 1.0f;
+                parameter.hints = kParameterIsAutomatable | kParameterIsInteger;
+                parameter.enumValues.count = 2;
+                parameter.enumValues.restrictedMode = true;
+                {
+                    ParameterEnumerationValue* const values = new ParameterEnumerationValue[2];
+                    values[0].label = "Simple (Rate)";
+                    values[0].value = 0.0f;
+                    values[1].label = "Time-Preserving";
+                    values[1].value = 1.0f;
+                    parameter.enumValues.values = values;
+                }
+                break;
+
+            case PARAM_TIME_ALGORITHM:
+                parameter.name = "Time Algorithm";
+                parameter.symbol = "time_algorithm";
+                parameter.ranges.def = 1.0f;  // AKAI/Amiga default
+                parameter.ranges.min = 0.0f;
+                parameter.ranges.max = 1.0f;
+                parameter.hints = kParameterIsAutomatable | kParameterIsInteger;
+                parameter.enumValues.count = 2;
+                parameter.enumValues.restrictedMode = true;
+                {
+                    ParameterEnumerationValue* const values = new ParameterEnumerationValue[2];
+                    values[0].label = "Granular";
+                    values[0].value = 0.0f;
+                    values[1].label = "AKAI/Amiga Rate";
+                    values[1].value = 1.0f;
+                    parameter.enumValues.values = values;
+                }
+                break;
+
             case PARAM_PLAYBACK_POS:
                 parameter.name = "Playback Position";
                 parameter.symbol = "playback_pos";
@@ -222,6 +265,8 @@ protected:
             case PARAM_SLICE0_LOOP:      return slice0_loop_;
             case PARAM_SLICE0_ONE_SHOT:  return slice0_one_shot_;
             case PARAM_BPM:              return bpm_;
+            case PARAM_PITCH_ALGORITHM:  return pitch_algorithm_;
+            case PARAM_TIME_ALGORITHM:   return time_algorithm_;
             case PARAM_PLAYBACK_POS:     return playback_pos_;
             case PARAM_PLAYING_SLICE:    return playing_slice_;
             default: return 0.0f;
@@ -278,6 +323,16 @@ protected:
             case PARAM_BPM:
                 bpm_ = value;
                 if (slicer_) rgslicer_set_bpm(slicer_, bpm_);
+                break;
+
+            case PARAM_PITCH_ALGORITHM:
+                pitch_algorithm_ = value;
+                if (slicer_) rgslicer_set_pitch_algorithm(slicer_, (int)value);
+                break;
+
+            case PARAM_TIME_ALGORITHM:
+                time_algorithm_ = value;
+                if (slicer_) rgslicer_set_time_algorithm(slicer_, (int)value);
                 break;
         }
     }
@@ -423,8 +478,10 @@ private:
     float slice0_loop_;
     float slice0_one_shot_;
     float bpm_;
-    float playback_pos_;   // Output parameter for UI visualization
-    float playing_slice_;  // Currently playing slice index
+    float pitch_algorithm_;  // 0 = Simple (rate), 1 = Time-Preserving
+    float time_algorithm_;   // 0 = Granular, 1 = Amiga Offset
+    float playback_pos_;     // Output parameter for UI visualization
+    float playing_slice_;    // Currently playing slice index
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RGSlicerPlugin)
 };

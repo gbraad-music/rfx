@@ -328,6 +328,11 @@ private:
                         fUI->fParameters[PARAM_MASTER_VOLUME] = vol * 100.0f;
                         fUI->setParameterValue(PARAM_MASTER_VOLUME, vol * 100.0f);
                     }
+                    // Double-click to reset to 100%
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                        fUI->fParameters[PARAM_MASTER_VOLUME] = 100.0f;
+                        fUI->setParameterValue(PARAM_MASTER_VOLUME, 100.0f);
+                    }
                 }
                 ImGui::EndGroup();
 
@@ -350,13 +355,18 @@ private:
                         fUI->fParameters[PARAM_MASTER_PITCH] = pitch * 24.0f - 12.0f;
                         fUI->setParameterValue(PARAM_MASTER_PITCH, pitch * 24.0f - 12.0f);
                     }
+                    // Double-click to reset to 0 semitones
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                        fUI->fParameters[PARAM_MASTER_PITCH] = 0.0f;
+                        fUI->setParameterValue(PARAM_MASTER_PITCH, 0.0f);
+                    }
                 }
                 ImGui::EndGroup();
 
                 ImGui::SameLine(0, knobSpacing);
 
                 // Master Time
-                float time = (fUI->fParameters[PARAM_MASTER_TIME] - 50.0f) / 150.0f;
+                float time = (fUI->fParameters[PARAM_MASTER_TIME] - 10.0f) / 790.0f;
                 ImGui::BeginGroup();
                 {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.7f, 0.2f, 1.0f));
@@ -369,8 +379,13 @@ private:
                                          "", ImGuiKnobVariant_Tick, knobSize,
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
-                        fUI->fParameters[PARAM_MASTER_TIME] = time * 150.0f + 50.0f;
-                        fUI->setParameterValue(PARAM_MASTER_TIME, time * 150.0f + 50.0f);
+                        fUI->fParameters[PARAM_MASTER_TIME] = time * 790.0f + 10.0f;
+                        fUI->setParameterValue(PARAM_MASTER_TIME, time * 790.0f + 10.0f);
+                    }
+                    // Double-click to reset to 100%
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                        fUI->fParameters[PARAM_MASTER_TIME] = 100.0f;
+                        fUI->setParameterValue(PARAM_MASTER_TIME, 100.0f);
                     }
                 }
                 ImGui::EndGroup();

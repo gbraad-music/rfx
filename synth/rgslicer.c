@@ -29,6 +29,8 @@ RGSlicer* rgslicer_create(uint32_t sample_rate) {
     slicer->master_pitch = 0.0f;
     slicer->master_time = 1.0f;
     slicer->master_volume = 1.0f;
+    slicer->pitch_algorithm = RGSLICER_PITCH_SIMPLE;  // Default to Simple (rate)
+    slicer->time_algorithm = RGSLICER_TIME_GRANULAR;  // Default to Granular
     slicer->root_note = 60;
 
     strcpy(slicer->sample_name, "Untitled");
@@ -442,11 +444,31 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
         v->reverse = false;
         v->volume = velocity / 127.0f;
 
-        // Configure FX for full sample
+        // Initialize AKAI cyclic time-stretch state
+        v->akai_grain_playing = 0;
+        v->akai_phase[0] = 0.0f;
+        v->akai_phase[1] = -1.0f;
+        v->akai_grain[0] = 0.0f;
+        v->akai_grain[1] = 0.0f;
+        v->akai_total_phase = 0.0f;
+
+        // Configure FX for full sample (same logic as slices)
         if (v->fx) {
             sample_fx_reset(v->fx);
-            sample_fx_set_pitch(v->fx, 0.0f);  // NO pitch shift in FX
-            sample_fx_set_time_stretch(v->fx, slicer->master_time);
+
+            // PITCH ALGORITHM
+            if (slicer->pitch_algorithm == RGSLICER_PITCH_TIME_PRESERVING) {
+                sample_fx_set_pitch(v->fx, slicer->master_pitch);
+            } else {
+                sample_fx_set_pitch(v->fx, 0.0f);
+            }
+
+            // TIME ALGORITHM
+            if (slicer->time_algorithm == RGSLICER_TIME_GRANULAR) {
+                sample_fx_set_time_stretch(v->fx, slicer->master_time);
+            } else {
+                sample_fx_set_time_stretch(v->fx, 1.0f);
+            }
         }
 
         printf("[RGSlicer] Note On: %d (FULL SAMPLE, voice %d)\n", note, voice_idx);
@@ -499,14 +521,36 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
     v->reverse = slicer->slices[slice_index].reverse;
     v->volume = velocity / 127.0f;
 
-    // Configure FX for TIME stretching only (pitch is handled by playback rate)
+    // Initialize AKAI cyclic time-stretch state
+    v->akai_grain_playing = 0;
+    v->akai_phase[0] = 0.0f;
+    v->akai_phase[1] = -1.0f;  // Inactive
+    v->akai_grain[0] = v->playback_pos;
+    v->akai_grain[1] = v->playback_pos;
+    v->akai_total_phase = v->playback_pos;
+
+    // Configure FX based on pitch/time algorithms
     if (v->fx) {
         sample_fx_reset(v->fx);
-        sample_fx_set_pitch(v->fx, 0.0f);  // NO pitch shift in FX (already done via playback rate)
 
-        // Set time stretch
-        float total_time = slice->time_stretch * slicer->master_time;
-        sample_fx_set_time_stretch(v->fx, total_time);
+        // PITCH ALGORITHM determines if FX is used for pitch
+        if (slicer->pitch_algorithm == RGSLICER_PITCH_TIME_PRESERVING) {
+            // Time-preserving pitch shift via granular FX
+            float total_pitch = slice->pitch_semitones + slicer->master_pitch;
+            sample_fx_set_pitch(v->fx, total_pitch);
+        } else {
+            // Simple pitch shift via playback rate only
+            sample_fx_set_pitch(v->fx, 0.0f);
+        }
+
+        // TIME ALGORITHM determines if FX is used for time stretch
+        if (slicer->time_algorithm == RGSLICER_TIME_GRANULAR) {
+            float total_time = slice->time_stretch * slicer->master_time;
+            sample_fx_set_time_stretch(v->fx, total_time);
+        } else {
+            // AKAI/Amiga mode: No FX time stretch (done via playback rate)
+            sample_fx_set_time_stretch(v->fx, 1.0f);
+        }
     }
 
     printf("[RGSlicer] Note On: %d (slice %d, voice %d)\n", note, slice_index, voice_idx);
@@ -585,6 +629,14 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
             v->playback_pos = (float)slicer->slices[random_slice].offset;
             v->reverse = slicer->slices[random_slice].reverse;
             v->volume = 0.8f;
+
+            // Initialize AKAI cyclic time-stretch state
+            v->akai_grain_playing = 0;
+            v->akai_phase[0] = 0.0f;
+            v->akai_phase[1] = -1.0f;
+            v->akai_grain[0] = v->playback_pos;
+            v->akai_grain[1] = v->playback_pos;
+            v->akai_total_phase = v->playback_pos;
         }
     }
 
@@ -595,15 +647,26 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
 
         SliceData* slice = &slicer->slices[voice->slice_index];
 
-        // PITCH: Classic sampler pitch shift (playback rate)
-        // Higher pitch = faster playback (affects both pitch and duration)
+        // Calculate pitch/time parameters
         float total_pitch = slice->pitch_semitones + slicer->master_pitch;
-        float playback_rate = powf(2.0f, total_pitch / 12.0f);
-
-        // TIME: Time-preserving stretch (via granular processing)
-        // Applied AFTER pitch shift to preserve the pitched result
         float total_time = slice->time_stretch * slicer->master_time;
-        bool use_time_stretch = (fabsf(total_time - 1.0f) > 0.01f);
+
+        // PLAYBACK RATE calculation:
+        float playback_rate = 1.0f;
+
+        // PITCH ALGORITHM:
+        if (slicer->pitch_algorithm == RGSLICER_PITCH_SIMPLE) {
+            // Simple: pitch affects playback rate (classic sampler)
+            playback_rate *= powf(2.0f, total_pitch / 12.0f);
+        }
+        // Time-Preserving: pitch is handled by granular FX, not playback rate
+
+        // NOTE: In AKAI/Amiga mode, TIME does NOT affect playback_rate!
+        // It uses offset jumps to repeat/skip chunks (implemented below)
+
+        // Determine if FX processing is needed
+        bool use_fx = (slicer->pitch_algorithm == RGSLICER_PITCH_TIME_PRESERVING) ||
+                      (slicer->time_algorithm == RGSLICER_TIME_GRANULAR && fabsf(total_time - 1.0f) > 0.01f);
 
         for (uint32_t f = 0; f < frames; f++) {
             // Determine playback boundaries (full sample for note 37, else slice boundaries)
@@ -644,12 +707,12 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
 
             float s0 = (float)slicer->sample_data[idx0];
             float s1 = (float)slicer->sample_data[idx1];
-            int16_t pitched_sample = (int16_t)(s0 + frac * (s1 - s0));
+            int16_t raw_sample = (int16_t)(s0 + frac * (s1 - s0));
 
-            // Apply TIME stretching (granular processing) if needed
-            int16_t final_sample = pitched_sample;
-            if (use_time_stretch && voice->fx) {
-                final_sample = sample_fx_process_sample(voice->fx, pitched_sample);
+            // Apply FX if needed (granular pitch-shift and/or time-stretch)
+            int16_t final_sample = raw_sample;
+            if (use_fx && voice->fx) {
+                final_sample = sample_fx_process_sample(voice->fx, raw_sample);
             }
 
             // Convert to float
@@ -666,12 +729,80 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
             buffer[f * 2] += left;
             buffer[f * 2 + 1] += right;
 
-            // Advance playback position by rate (simple pitch shifting!)
-            // Higher pitch = faster playback = higher frequency
-            if (voice->reverse) {
-                voice->playback_pos -= playback_rate;
+            // Advance playback position using different methods based on algorithm
+            // Check MASTER time only for deadzone (ignore per-slice time)
+            bool use_akai = (slicer->time_algorithm == RGSLICER_TIME_AMIGA_OFFSET &&
+                           fabsf(slicer->master_time - 1.0f) > 0.15f);  // 15% deadzone (85%-115%)
+
+            if (use_akai) {
+                // AKAI/Amiga cyclic time-stretch (potenza algorithm)
+                const float GRAIN_SIZE = 4096.0f;
+                const float C = 0.4f;  // Crossfade amount
+                const float C_PRIME = 1.0f - C;
+                const float F2 = GRAIN_SIZE * C_PRIME;
+
+                float pitch_delta = playback_rate;  // Always 1.0 for no pitch compensation
+                float stretch_factor_inv = 1.0f / total_time;
+                float grain_offset = GRAIN_SIZE * C_PRIME * stretch_factor_inv;
+
+                // Advance virtual playback position
+                voice->akai_total_phase += pitch_delta * stretch_factor_inv;
+
+                // Advance both grain phases by pitch_delta
+                int playing = voice->akai_grain_playing;
+                int not_playing = 1 - playing;
+
+                // Active grain always advances
+                if (voice->akai_grain[playing] + voice->akai_phase[playing] < playback_end) {
+                    voice->akai_phase[playing] += pitch_delta;
+                }
+
+                // Crossfading grain advances if active
+                if (voice->akai_phase[not_playing] > -1.0f &&
+                    voice->akai_grain[not_playing] + voice->akai_phase[not_playing] < playback_end) {
+                    voice->akai_phase[not_playing] += pitch_delta;
+                }
+
+                // Deactivate crossfade grain if it finishes
+                if (voice->akai_phase[not_playing] >= GRAIN_SIZE) {
+                    voice->akai_phase[not_playing] = -1.0f;
+                }
+
+                // Switch grains when main grain reaches fade point
+                if (voice->akai_phase[playing] >= F2) {
+                    voice->akai_phase[not_playing] = 0.0f;
+                    voice->akai_grain[not_playing] = voice->akai_grain[playing] + grain_offset;
+                    voice->akai_grain_playing = not_playing;
+                }
+
+                // Update playback_pos from current grain
+                voice->playback_pos = voice->akai_grain[voice->akai_grain_playing] +
+                                     voice->akai_phase[voice->akai_grain_playing];
+
+                // Check if we've finished
+                if (voice->akai_total_phase >= playback_end) {
+                    if (slice->loop || voice->note == 37) {
+                        // Reset
+                        voice->akai_grain_playing = 0;
+                        voice->akai_phase[0] = 0.0f;
+                        voice->akai_phase[1] = -1.0f;
+                        voice->akai_grain[0] = playback_start;
+                        voice->akai_grain[1] = playback_start;
+                        voice->akai_total_phase = playback_start;
+                        voice->playback_pos = playback_start;
+                    } else {
+                        voice->active = false;
+                        break;
+                    }
+                }
             } else {
-                voice->playback_pos += playback_rate;
+                // Normal playback or granular mode
+                float advance = playback_rate;
+                if (voice->reverse) {
+                    voice->playback_pos -= advance;
+                } else {
+                    voice->playback_pos += advance;
+                }
             }
         }
     }
@@ -763,4 +894,18 @@ const char* rgslicer_get_name(RGSlicer* slicer) {
 
 uint8_t rgslicer_get_root_note(RGSlicer* slicer) {
     return slicer ? slicer->root_note : 60;
+}
+
+// ============================================================================
+// Global Parameters
+// ============================================================================
+
+void rgslicer_set_pitch_algorithm(RGSlicer* slicer, int algorithm) {
+    if (!slicer) return;
+    slicer->pitch_algorithm = (RGSlicerPitchAlgorithm)algorithm;
+}
+
+void rgslicer_set_time_algorithm(RGSlicer* slicer, int algorithm) {
+    if (!slicer) return;
+    slicer->time_algorithm = (RGSlicerTimeAlgorithm)algorithm;
 }

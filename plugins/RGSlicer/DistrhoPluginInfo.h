@@ -45,6 +45,10 @@ enum Parameters {
     // Random Sequencer
     PARAM_BPM,
 
+    // Effect Algorithms
+    PARAM_PITCH_ALGORITHM, // 0 = Simple (rate), 1 = Time-preserving (granular)
+    PARAM_TIME_ALGORITHM,  // 0 = Granular (default), 1 = Amiga Offset
+
     // Output parameters (read-only, for UI visualization)
     PARAM_PLAYBACK_POS,    // Active voice playback position (0.0-1.0)
     PARAM_PLAYING_SLICE,   // Currently playing slice index (-1 = none, -2 = full sample)

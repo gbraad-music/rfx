@@ -49,7 +49,25 @@ typedef struct SliceVoice {
 
     SampleFX* fx;              // Per-voice effects (pitch + time stretch)
     float volume;              // Voice volume (from velocity)
+
+    // AKAI cyclic time-stretch state (dual-grain crossfading)
+    float akai_phase[2];       // Phase for two grains (0 to grain_size)
+    float akai_grain[2];       // Start position of each grain
+    int akai_grain_playing;    // Which grain is currently playing (0 or 1)
+    float akai_total_phase;    // Virtual playback position
 } SliceVoice;
+
+// Pitch shift algorithms
+typedef enum {
+    RGSLICER_PITCH_SIMPLE = 0,           // Simple playback rate (default)
+    RGSLICER_PITCH_TIME_PRESERVING = 1   // Granular (preserves duration)
+} RGSlicerPitchAlgorithm;
+
+// Time stretch algorithms
+typedef enum {
+    RGSLICER_TIME_GRANULAR = 0,     // Granular synthesis (pitch-preserving)
+    RGSLICER_TIME_AMIGA_OFFSET = 1  // AKAI/Amiga rate change (pitch follows speed)
+} RGSlicerTimeAlgorithm;
 
 // Main RGSlicer structure
 typedef struct RGSlicer {
@@ -76,6 +94,8 @@ typedef struct RGSlicer {
     float master_pitch;        // Global pitch offset
     float master_time;         // Global time stretch
     float master_volume;       // Global volume
+    RGSlicerPitchAlgorithm pitch_algorithm;  // Pitch shift algorithm
+    RGSlicerTimeAlgorithm time_algorithm;    // Time stretch algorithm
 
     // Metadata
     char sample_name[RGSLICER_MAX_NAME];
@@ -283,6 +303,22 @@ float rgslicer_get_global_volume(RGSlicer* slicer);
  */
 void rgslicer_set_bpm(RGSlicer* slicer, float bpm);
 float rgslicer_get_bpm(RGSlicer* slicer);
+
+// ============================================================================
+// Global Parameters
+// ============================================================================
+
+/**
+ * Set pitch shift algorithm
+ * algorithm: 0 = Simple (rate), 1 = Time-Preserving (granular)
+ */
+void rgslicer_set_pitch_algorithm(RGSlicer* slicer, int algorithm);
+
+/**
+ * Set time stretch algorithm
+ * algorithm: 0 = Granular (pitch-preserving), 1 = AKAI/Amiga (rate change)
+ */
+void rgslicer_set_time_algorithm(RGSlicer* slicer, int algorithm);
 
 // ============================================================================
 // MIDI / Playback

@@ -157,23 +157,23 @@ int16_t sample_fx_process_sample(SampleFX* fx, int16_t input) {
         return input;
     }
 
-    // Calculate combined playback ratio
-    // Pitch ratio: 2^(semitones/12)
+    // PITCH: affects READ rate through grains (2^(semitones/12))
+    // Higher pitch = read faster through grain = higher frequency
     float pitch_ratio = powf(2.0f, fx->pitch_semitones / 12.0f);
 
-    // Combined ratio for grain playback
-    // - Pitch shift alone: read_rate = 1.0 / pitch_ratio (higher pitch = read faster)
-    // - Time stretch alone: output_rate = time_stretch (slower = output slower)
-    // - Combined: read_rate adjusts for both pitch and time
-    float combined_ratio = pitch_ratio / fx->time_stretch;
+    // TIME: affects OUTPUT rate (hop size / grain advance rate)
+    // time_stretch < 1.0 = faster output (smaller hop)
+    // time_stretch > 1.0 = slower output (larger hop)
+    float effective_hop = SAMPLE_FX_HOP_SIZE * fx->time_stretch;
 
-    // Spawn new grain periodically
+    // Spawn new grain periodically (based on time stretch)
     fx->hop_counter++;
-    if (fx->hop_counter >= SAMPLE_FX_HOP_SIZE) {
+    if (fx->hop_counter >= (int)effective_hop) {
         fx->hop_counter = 0;
 
-        // Start grain at current write position - grain_size/2 (look-behind)
-        float start_pos = (float)fx->write_pos - (SAMPLE_FX_GRAIN_SIZE / 2.0f);
+        // Start grain with look-behind into delay buffer
+        float base_delay = (float)(SAMPLE_FX_GRAIN_SIZE * 2);
+        float start_pos = (float)fx->write_pos - base_delay;
         spawn_grain(fx, start_pos);
     }
 
@@ -190,18 +190,19 @@ int16_t sample_fx_process_sample(SampleFX* fx, int16_t input) {
             continue;
         }
 
-        // Grain index into window
+        // Window position (0 to GRAIN_SIZE-1)
         float f_idx = phase * (float)(SAMPLE_FX_GRAIN_SIZE - 1);
         int i_idx = (int)f_idx;
         float window_val = fx->window[i_idx];
 
-        // Read position: advance based on combined ratio
-        float read_pos = gr->read_pos + f_idx * (1.0f / combined_ratio);
+        // Read position in delay buffer - PITCH affects read rate
+        // Higher pitch = faster read through grain = divide by ratio
+        float read_pos = gr->read_pos + f_idx * (1.0f / pitch_ratio);
 
         float sample = granular_read_int16(fx->delay_buffer, read_pos, SAMPLE_FX_BUFFER_SIZE);
         output += sample * window_val;
 
-        // Advance grain phase
+        // Advance grain phase (fixed rate - TIME affects grain spawning, not phase)
         gr->phase += 1.0f / (float)SAMPLE_FX_GRAIN_SIZE;
 
         if (gr->phase >= 1.0f) {

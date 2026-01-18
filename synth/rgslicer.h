@@ -47,7 +47,7 @@ typedef struct SliceVoice {
     float playback_pos;        // Current position in slice (fractional for pitch shift)
     bool reverse;              // Playback direction
 
-    SampleFX* fx;              // Per-voice effects (UNUSED - sounds muffled)
+    SampleFX* fx;              // Per-voice effects (pitch + time stretch)
     float volume;              // Voice volume (from velocity)
 } SliceVoice;
 

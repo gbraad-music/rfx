@@ -442,6 +442,13 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
         v->reverse = false;
         v->volume = velocity / 127.0f;
 
+        // Configure FX for full sample
+        if (v->fx) {
+            sample_fx_reset(v->fx);
+            sample_fx_set_pitch(v->fx, 0.0f);  // NO pitch shift in FX
+            sample_fx_set_time_stretch(v->fx, slicer->master_time);
+        }
+
         printf("[RGSlicer] Note On: %d (FULL SAMPLE, voice %d)\n", note, voice_idx);
         return;
     }
@@ -491,6 +498,16 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
     v->playback_pos = (float)slicer->slices[slice_index].offset;
     v->reverse = slicer->slices[slice_index].reverse;
     v->volume = velocity / 127.0f;
+
+    // Configure FX for TIME stretching only (pitch is handled by playback rate)
+    if (v->fx) {
+        sample_fx_reset(v->fx);
+        sample_fx_set_pitch(v->fx, 0.0f);  // NO pitch shift in FX (already done via playback rate)
+
+        // Set time stretch
+        float total_time = slice->time_stretch * slicer->master_time;
+        sample_fx_set_time_stretch(v->fx, total_time);
+    }
 
     printf("[RGSlicer] Note On: %d (slice %d, voice %d)\n", note, slice_index, voice_idx);
 }
@@ -578,15 +595,15 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
 
         SliceData* slice = &slicer->slices[voice->slice_index];
 
-        // Calculate playback rate from pitch ONLY (tape-deck style: 2^(semitones/12))
+        // PITCH: Classic sampler pitch shift (playback rate)
+        // Higher pitch = faster playback (affects both pitch and duration)
         float total_pitch = slice->pitch_semitones + slicer->master_pitch;
-        float pitch_rate = powf(2.0f, total_pitch / 12.0f);
+        float playback_rate = powf(2.0f, total_pitch / 12.0f);
 
-        // TIME stretching: changes speed WITHOUT changing pitch
-        // time = 1.0 (100%) → normal speed
-        // time = 2.0 (200%) → half speed (slower)
-        // time = 0.5 (50%)  → double speed (faster)
-        float time_factor = slice->time_stretch * slicer->master_time;
+        // TIME: Time-preserving stretch (via granular processing)
+        // Applied AFTER pitch shift to preserve the pitched result
+        float total_time = slice->time_stretch * slicer->master_time;
+        bool use_time_stretch = (fabsf(total_time - 1.0f) > 0.01f);
 
         for (uint32_t f = 0; f < frames; f++) {
             // Determine playback boundaries (full sample for note 37, else slice boundaries)
@@ -611,23 +628,32 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
                 }
             }
 
-            // Get sample with bounds check and interpolation
+            // Get sample with linear interpolation (for smooth pitch shifting)
             float read_pos = voice->playback_pos;
 
             // Bounds check
             if (read_pos >= slicer->sample_length - 1) read_pos = slicer->sample_length - 2;
             if (read_pos < 0) read_pos = 0;
 
-            // Linear interpolation for smooth playback
+            // Linear interpolation
             uint32_t idx0 = (uint32_t)read_pos;
             uint32_t idx1 = idx0 + 1;
             float frac = read_pos - idx0;
 
             if (idx1 >= slicer->sample_length) idx1 = slicer->sample_length - 1;
 
-            float s0 = (float)slicer->sample_data[idx0] / 32768.0f;
-            float s1 = (float)slicer->sample_data[idx1] / 32768.0f;
-            float sample_f32 = s0 + frac * (s1 - s0);
+            float s0 = (float)slicer->sample_data[idx0];
+            float s1 = (float)slicer->sample_data[idx1];
+            int16_t pitched_sample = (int16_t)(s0 + frac * (s1 - s0));
+
+            // Apply TIME stretching (granular processing) if needed
+            int16_t final_sample = pitched_sample;
+            if (use_time_stretch && voice->fx) {
+                final_sample = sample_fx_process_sample(voice->fx, pitched_sample);
+            }
+
+            // Convert to float
+            float sample_f32 = (float)final_sample / 32768.0f;
 
             // Apply volume
             sample_f32 *= slice->volume * voice->volume * slicer->master_volume;
@@ -640,15 +666,12 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
             buffer[f * 2] += left;
             buffer[f * 2 + 1] += right;
 
-            // Advance playback position
-            // PITCH: changes playback rate (tape-deck style)
-            // TIME: DISABLED - requires proper time-stretching algorithm (phase vocoder/granular)
-            // TODO: Implement WSOLA or phase vocoder for independent time stretching
-
+            // Advance playback position by rate (simple pitch shifting!)
+            // Higher pitch = faster playback = higher frequency
             if (voice->reverse) {
-                voice->playback_pos -= pitch_rate;
+                voice->playback_pos -= playback_rate;
             } else {
-                voice->playback_pos += pitch_rate;
+                voice->playback_pos += playback_rate;
             }
         }
     }

@@ -20,10 +20,17 @@ public:
     {
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true);
 
-        // Initialize parameters to defaults
-        for (uint32_t i = 0; i < PARAM_COUNT; i++) {
-            fParameters[i] = 0.0f;
-        }
+        // Initialize parameters to defaults (matching plugin defaults)
+        fParameters[PARAM_MASTER_VOLUME] = 100.0f;
+        fParameters[PARAM_MASTER_PITCH] = 0.0f;
+        fParameters[PARAM_MASTER_TIME] = 100.0f;
+        fParameters[PARAM_SLICE0_PITCH] = 0.0f;
+        fParameters[PARAM_SLICE0_TIME] = 100.0f;
+        fParameters[PARAM_SLICE0_VOLUME] = 100.0f;
+        fParameters[PARAM_SLICE0_PAN] = 0.0f;
+        fParameters[PARAM_SLICE0_LOOP] = 0.0f;
+        fParameters[PARAM_SLICE0_ONE_SHOT] = 0.0f;
+        fParameters[PARAM_BPM] = 125.0f;
 
         // Create temporary slicer for waveform data access
         fSlicer = rgslicer_create(48000);
@@ -90,7 +97,14 @@ protected:
 
     void uiIdle() override
     {
-        // Repaint for animations
+        // Repaint to sync UI with parameter changes from DAW/automation
+        fImGuiWidget->repaint();
+    }
+
+    void uiReshape(uint width, uint height) override
+    {
+        UI::uiReshape(width, height);
+        fImGuiWidget->setSize(width, height);
     }
 
 private:
@@ -195,12 +209,26 @@ private:
                                 IM_COL32(100, 200, 100, 255), 1.0f);
                         }
 
-                        // Draw slice markers
+                        // Draw slice markers and active slice overlay
                         uint8_t numSlices = rgslicer_get_num_slices(fUI->fSlicer);
+                        int playingSlice = (int)fUI->fParameters[PARAM_PLAYING_SLICE];
+
                         for (int i = 0; i < numSlices; i++) {
                             uint32_t offset = rgslicer_get_slice_offset(fUI->fSlicer, i);
+                            uint32_t length = rgslicer_get_slice_length(fUI->fSlicer, i);
                             float xPos = wavePos.x + (offset / (float)sampleLen) * waveW;
+                            float xEnd = wavePos.x + ((offset + length) / (float)sampleLen) * waveW;
 
+                            // Draw yellow transparent overlay for active slice
+                            if (i == playingSlice) {
+                                draw->AddRectFilled(
+                                    ImVec2(xPos, wavePos.y),
+                                    ImVec2(xEnd, wavePos.y + waveH),
+                                    IM_COL32(255, 255, 0, 80)  // Yellow with 80/255 alpha
+                                );
+                            }
+
+                            // Draw slice marker line
                             draw->AddLine(ImVec2(xPos, wavePos.y), ImVec2(xPos, wavePos.y + waveH),
                                 IM_COL32(255, 255, 0, 200), 2.0f);
 
@@ -211,18 +239,13 @@ private:
                                 IM_COL32(255, 255, 0, 255), sliceNum);
                         }
 
-                        // Draw playback positions (if voices are active)
-                        // TODO: This requires access to plugin's slicer voice states
-                        // For now, we'll add a pulsing indicator to show the plugin is active
-                        static float pulseTime = 0.0f;
-                        pulseTime += 0.016f; // ~60fps
-                        float pulse = (sinf(pulseTime * 3.14f) + 1.0f) * 0.5f; // 0-1 pulse
-
-                        // Draw "LIVE" indicator when plugin is loaded
-                        ImGui::SetCursorScreenPos(ImVec2(wavePos.x + waveW - 50, wavePos.y + 5));
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f + pulse * 0.7f, 0.3f, 1.0f));
-                        ImGui::Text("LIVE");
-                        ImGui::PopStyleColor();
+                        // Draw playback position marker (red vertical line)
+                        float playbackPos = fUI->fParameters[PARAM_PLAYBACK_POS];
+                        if (playbackPos > 0.0f && playbackPos <= 1.0f) {
+                            float xPos = wavePos.x + playbackPos * waveW;
+                            draw->AddLine(ImVec2(xPos, wavePos.y), ImVec2(xPos, wavePos.y + waveH),
+                                IM_COL32(255, 0, 0, 255), 3.0f);  // Red playback marker
+                        }
                     }
 
                     // Filename
@@ -440,6 +463,34 @@ private:
                                          ImGuiKnobFlags_NoTitle | ImGuiKnobFlags_NoInput, 10))
                     {
                         fUI->setParameterValue(PARAM_SLICE0_PAN, s0pan * 200.0f - 100.0f);
+                    }
+                }
+                ImGui::EndGroup();
+
+                ImGui::SameLine(0, knobSpacing);
+
+                // S0 Loop toggle
+                ImGui::BeginGroup();
+                {
+                    ImGui::Text("S0 LOOP");
+                    bool loop = fUI->fParameters[PARAM_SLICE0_LOOP] > 0.5f;
+                    if (ImGui::Checkbox("##s0loop", &loop))
+                    {
+                        fUI->setParameterValue(PARAM_SLICE0_LOOP, loop ? 1.0f : 0.0f);
+                    }
+                }
+                ImGui::EndGroup();
+
+                ImGui::SameLine(0, knobSpacing);
+
+                // S0 One-Shot toggle
+                ImGui::BeginGroup();
+                {
+                    ImGui::Text("S0 ONE-SHOT");
+                    bool oneshot = fUI->fParameters[PARAM_SLICE0_ONE_SHOT] > 0.5f;
+                    if (ImGui::Checkbox("##s0oneshot", &oneshot))
+                    {
+                        fUI->setParameterValue(PARAM_SLICE0_ONE_SHOT, oneshot ? 1.0f : 0.0f);
                     }
                 }
                 ImGui::EndGroup();

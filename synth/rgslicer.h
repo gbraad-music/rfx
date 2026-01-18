@@ -44,10 +44,10 @@ typedef struct SliceVoice {
     uint8_t note;              // MIDI note that triggered
     uint8_t velocity;          // MIDI velocity
 
-    uint32_t playback_pos;     // Current position in slice
+    float playback_pos;        // Current position in slice (fractional for pitch shift)
     bool reverse;              // Playback direction
 
-    SampleFX* fx;              // Per-voice effects
+    SampleFX* fx;              // Per-voice effects (UNUSED - sounds muffled)
     float volume;              // Voice volume (from velocity)
 } SliceVoice;
 

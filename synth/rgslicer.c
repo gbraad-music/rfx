@@ -438,16 +438,9 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
         v->slice_index = 0;  // Use slice 0 as template
         v->note = note;
         v->velocity = velocity;
-        v->playback_pos = 0;  // Start at beginning of sample
+        v->playback_pos = 0.0f;  // Start at beginning of sample
         v->reverse = false;
         v->volume = velocity / 127.0f;
-
-        // Configure FX with global parameters only
-        if (v->fx) {
-            sample_fx_reset(v->fx);
-            sample_fx_set_pitch(v->fx, slicer->master_pitch);
-            sample_fx_set_time_stretch(v->fx, slicer->master_time);
-        }
 
         printf("[RGSlicer] Note On: %d (FULL SAMPLE, voice %d)\n", note, voice_idx);
         return;
@@ -495,16 +488,9 @@ void rgslicer_note_on(RGSlicer* slicer, uint8_t note, uint8_t velocity) {
     v->slice_index = slice_index;
     v->note = note;
     v->velocity = velocity;
-    v->playback_pos = slicer->slices[slice_index].offset;
+    v->playback_pos = (float)slicer->slices[slice_index].offset;
     v->reverse = slicer->slices[slice_index].reverse;
     v->volume = velocity / 127.0f;
-
-    // Configure FX (slice pointer already defined above)
-    if (v->fx) {
-        sample_fx_reset(v->fx);
-        sample_fx_set_pitch(v->fx, slice->pitch_semitones + slicer->master_pitch);
-        sample_fx_set_time_stretch(v->fx, slice->time_stretch * slicer->master_time);
-    }
 
     printf("[RGSlicer] Note On: %d (slice %d, voice %d)\n", note, slice_index, voice_idx);
 }
@@ -579,17 +565,9 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
             v->slice_index = random_slice;
             v->note = 39;  // Mark as triggered by sequencer
             v->velocity = 100;  // Fixed velocity
-            v->playback_pos = slicer->slices[random_slice].offset;
+            v->playback_pos = (float)slicer->slices[random_slice].offset;
             v->reverse = slicer->slices[random_slice].reverse;
             v->volume = 0.8f;
-
-            // Configure FX
-            SliceData* slice = &slicer->slices[random_slice];
-            if (v->fx) {
-                sample_fx_reset(v->fx);
-                sample_fx_set_pitch(v->fx, slice->pitch_semitones + slicer->master_pitch);
-                sample_fx_set_time_stretch(v->fx, slice->time_stretch * slicer->master_time);
-            }
         }
     }
 
@@ -600,14 +578,18 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
 
         SliceData* slice = &slicer->slices[voice->slice_index];
 
+        // Calculate playback rate from pitch (tape-deck style: 2^(semitones/12))
+        float total_pitch = slice->pitch_semitones + slicer->master_pitch;
+        float playback_rate = powf(2.0f, total_pitch / 12.0f) * slice->time_stretch * slicer->master_time;
+
         for (uint32_t f = 0; f < frames; f++) {
             // Determine playback boundaries (full sample for note 37, else slice boundaries)
-            uint32_t playback_end = (voice->note == 37) ? slicer->sample_length : slice->end;
-            uint32_t playback_start = (voice->note == 37) ? 0 : slice->offset;
+            float playback_end = (voice->note == 37) ? (float)slicer->sample_length : (float)slice->end;
+            float playback_start = (voice->note == 37) ? 0.0f : (float)slice->offset;
 
             // Check if playback finished
             if (!voice->reverse && voice->playback_pos >= playback_end) {
-                if (slice->loop && voice->note != 37) {  // Note 37 never loops
+                if (slice->loop || voice->note == 37) {  // Note 37 ALWAYS loops!
                     voice->playback_pos = playback_start;  // Loop back
                 } else {
                     voice->active = false;
@@ -615,25 +597,24 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
                 }
             }
             if (voice->reverse && voice->playback_pos <= playback_start) {
-                if (slice->loop && voice->note != 37) {
-                    voice->playback_pos = playback_end - 1;  // Loop back
+                if (slice->loop || voice->note == 37) {
+                    voice->playback_pos = playback_end - 1.0f;  // Loop back
                 } else {
                     voice->active = false;
                     break;
                 }
             }
 
-            // Get sample
-            int16_t raw_sample = slicer->sample_data[voice->playback_pos];
+            // Get sample (with bounds check)
+            uint32_t sample_idx = (uint32_t)voice->playback_pos;
+            if (sample_idx >= slicer->sample_length) sample_idx = slicer->sample_length - 1;
+            int16_t raw_sample = slicer->sample_data[sample_idx];
 
-            // Apply FX if active
-            int16_t processed_sample = raw_sample;
-            if (voice->fx && (sample_fx_is_active(voice->fx))) {
-                processed_sample = sample_fx_process_sample(voice->fx, raw_sample);
-            }
+            // NO FX PROCESSOR - it sounds muffled/filtered!
+            // Just use raw sample with pitch via playback rate
 
             // Convert to float and apply volume
-            float sample_f32 = (float)processed_sample / 32768.0f;
+            float sample_f32 = (float)raw_sample / 32768.0f;
             sample_f32 *= slice->volume * voice->volume * slicer->master_volume;
 
             // Apply pan (stereo)
@@ -644,11 +625,11 @@ void rgslicer_process_f32(RGSlicer* slicer, float* buffer, uint32_t frames) {
             buffer[f * 2] += left;
             buffer[f * 2 + 1] += right;
 
-            // Advance playback position
+            // Advance playback position by rate (REAL pitch shifting!)
             if (voice->reverse) {
-                voice->playback_pos--;
+                voice->playback_pos -= playback_rate;
             } else {
-                voice->playback_pos++;
+                voice->playback_pos += playback_rate;
             }
         }
     }

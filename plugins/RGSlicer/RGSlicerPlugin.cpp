@@ -41,6 +41,10 @@ public:
             rgslicer_set_bpm(slicer_, bpm_);
         }
 
+        // Output parameters
+        playback_pos_ = 0.0f;
+        playing_slice_ = -1.0f;
+
         // Sample will be loaded via UI file browser
     }
 
@@ -88,6 +92,9 @@ protected:
     // ========================================================================
 
     void initParameter(uint32_t index, Parameter& parameter) override {
+        // Make ALL parameters automatable!
+        parameter.hints = kParameterIsAutomatable;
+
         switch (index) {
             case PARAM_MASTER_VOLUME:
                 parameter.name = "Master Volume";
@@ -158,7 +165,7 @@ protected:
                 parameter.ranges.def = 0.0f;
                 parameter.ranges.min = 0.0f;
                 parameter.ranges.max = 1.0f;
-                parameter.hints = kParameterIsBoolean;
+                parameter.hints |= kParameterIsBoolean;
                 break;
 
             case PARAM_SLICE0_ONE_SHOT:
@@ -167,7 +174,7 @@ protected:
                 parameter.ranges.def = 0.0f;
                 parameter.ranges.min = 0.0f;
                 parameter.ranges.max = 1.0f;
-                parameter.hints = kParameterIsBoolean;
+                parameter.hints |= kParameterIsBoolean;
                 break;
 
             case PARAM_BPM:
@@ -177,6 +184,24 @@ protected:
                 parameter.ranges.min = 20.0f;
                 parameter.ranges.max = 300.0f;
                 parameter.unit = "BPM";
+                break;
+
+            case PARAM_PLAYBACK_POS:
+                parameter.name = "Playback Position";
+                parameter.symbol = "playback_pos";
+                parameter.ranges.def = 0.0f;
+                parameter.ranges.min = 0.0f;
+                parameter.ranges.max = 1.0f;
+                parameter.hints = kParameterIsOutput;  // Output-only for UI
+                break;
+
+            case PARAM_PLAYING_SLICE:
+                parameter.name = "Playing Slice";
+                parameter.symbol = "playing_slice";
+                parameter.ranges.def = -1.0f;
+                parameter.ranges.min = -1.0f;
+                parameter.ranges.max = 63.0f;
+                parameter.hints = kParameterIsOutput | kParameterIsInteger;
                 break;
         }
     }
@@ -197,6 +222,8 @@ protected:
             case PARAM_SLICE0_LOOP:      return slice0_loop_;
             case PARAM_SLICE0_ONE_SHOT:  return slice0_one_shot_;
             case PARAM_BPM:              return bpm_;
+            case PARAM_PLAYBACK_POS:     return playback_pos_;
+            case PARAM_PLAYING_SLICE:    return playing_slice_;
             default: return 0.0f;
         }
     }
@@ -278,6 +305,7 @@ protected:
 
     void setState(const char* key, const char* value) override {
         if (std::strcmp(key, "samplePath") == 0 && value && value[0] != '\0') {
+            samplePath_ = value;  // SAVE the path for getState()!
             if (slicer_) {
                 // Load sample - preserves CUE point slicing!
                 rgslicer_load_sample(slicer_, value);
@@ -344,6 +372,28 @@ protected:
 
         if (slicer_) {
             rgslicer_process_f32(slicer_, interleavedBuffer, frames);
+
+            // Update playback position and active slice for UI visualization
+            float newPos = 0.0f;
+            float newSlice = -1.0f;
+            if (rgslicer_has_sample(slicer_)) {
+                for (int v = 0; v < 16; v++) {  // RGSLICER_MAX_VOICES
+                    if (slicer_->voices[v].active) {
+                        newPos = slicer_->voices[v].playback_pos / (float)slicer_->sample_length;
+                        newSlice = (float)slicer_->voices[v].slice_index;
+                        break;  // Use first active voice
+                    }
+                }
+            }
+
+            if (newPos != playback_pos_) {
+                playback_pos_ = newPos;
+                setParameterValue(PARAM_PLAYBACK_POS, playback_pos_);
+            }
+            if (newSlice != playing_slice_) {
+                playing_slice_ = newSlice;
+                setParameterValue(PARAM_PLAYING_SLICE, playing_slice_);
+            }
         } else {
             std::memset(interleavedBuffer, 0, frames * 2 * sizeof(float));
         }
@@ -372,6 +422,8 @@ private:
     float slice0_loop_;
     float slice0_one_shot_;
     float bpm_;
+    float playback_pos_;   // Output parameter for UI visualization
+    float playing_slice_;  // Currently playing slice index
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RGSlicerPlugin)
 };

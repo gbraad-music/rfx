@@ -42,6 +42,7 @@ RGSlicer* rgslicer_create(uint32_t sample_rate) {
     // Initialize random sequencer
     slicer->random_seq_active = false;
     slicer->random_seq_phase = 0;
+    slicer->note_division = 4.0f;  // Default to 16th notes
     rgslicer_set_bpm(slicer, 125.0f);  // Sets BPM and calculates interval
 
     // Initialize voices
@@ -382,12 +383,25 @@ void rgslicer_set_bpm(RGSlicer* slicer, float bpm) {
     if (bpm > 300.0f) bpm = 300.0f;
     slicer->bpm = bpm;
 
-    // Recalculate interval (quarter notes - one beat)
-    slicer->random_seq_interval = (uint32_t)((60.0f / bpm) * slicer->target_sample_rate);
+    // Recalculate interval using note division
+    // quarter note = 60/bpm, then divide by note_division
+    // e.g. 16th notes = (60/bpm) / 4
+    slicer->random_seq_interval = (uint32_t)((60.0f / bpm / slicer->note_division) * slicer->target_sample_rate);
 }
 
 float rgslicer_get_bpm(RGSlicer* slicer) {
     return slicer ? slicer->bpm : 125.0f;
+}
+
+void rgslicer_set_note_division(RGSlicer* slicer, float division) {
+    if (!slicer) return;
+    slicer->note_division = division;
+    // Recalculate interval with new division
+    rgslicer_set_bpm(slicer, slicer->bpm);
+}
+
+float rgslicer_get_note_division(RGSlicer* slicer) {
+    return slicer ? slicer->note_division : 4.0f;
 }
 
 // ============================================================================

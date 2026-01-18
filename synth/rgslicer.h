@@ -106,6 +106,7 @@ typedef struct RGSlicer {
     bool random_seq_active;    // Is random sequencer running?
     uint32_t random_seq_phase; // Sample counter for tempo sync
     uint32_t random_seq_interval; // Samples between triggers
+    float note_division;       // Note division: 1=quarter, 2=8th, 4=16th, 8=32nd
 
     uint32_t target_sample_rate;
 } RGSlicer;
@@ -303,6 +304,13 @@ float rgslicer_get_global_volume(RGSlicer* slicer);
  */
 void rgslicer_set_bpm(RGSlicer* slicer, float bpm);
 float rgslicer_get_bpm(RGSlicer* slicer);
+
+/**
+ * Set note division for random sequencer
+ * division: 1.0 = quarter notes, 2.0 = 8th notes, 4.0 = 16th notes, 8.0 = 32nd notes
+ */
+void rgslicer_set_note_division(RGSlicer* slicer, float division);
+float rgslicer_get_note_division(RGSlicer* slicer);
 
 // ============================================================================
 // Global Parameters

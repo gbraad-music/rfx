@@ -37,6 +37,19 @@ class SynthUI extends HTMLElement {
     setSynthInstance(instance) {
         this.synthInstance = instance;
 
+        // Lazy-load synth descriptor if not loaded during connectedCallback
+        if (!this.synth) {
+            const synthId = this.getAttribute('synth');
+            this.synth = SynthRegistry.get(synthId);
+            if (this.synth) {
+                console.log(`[SynthUI] Lazy-loaded synth descriptor for '${synthId}'`);
+                this.render(); // Render shadow DOM now
+            } else {
+                console.error(`[SynthUI] Still cannot find synth '${synthId}' in registry`);
+                return;
+            }
+        }
+
         // Get parameter metadata
         let params = null;
         if (this.synthInstance && typeof this.synthInstance.getParameterInfo === 'function') {

@@ -423,6 +423,7 @@
                 <button id="btnInitRGSID">Initialize RGSID</button>
                 <button id="btnInitRG1Piano">Initialize RG1Piano</button>
                 <button id="btnInitRGSFZ">Initialize RGSFZ Sampler</button>
+                <button id="btnInitRGSlicer">Initialize RGSlicer</button>
             </div>
             <div class="info">
                 Simple: Basic Web Audio oscillators<br>
@@ -430,7 +431,8 @@
                 RGAHX: WASM Amiga AHX/HivelyTracker synthesizer (authentic algorithms)<br>
                 RGSID: WASM Commodore 64 SID chip synthesizer (3-voice, filter, ring mod)<br>
                 RG1Piano: WASM M1 Piano with modal synthesis<br>
-                RGSFZ: SFZ sampler with WAV sample playback
+                RGSFZ: SFZ sampler with WAV sample playback<br>
+                RGSlicer: Slicing sampler with WAV+CUE support (maps slices to MIDI notes 36-99)
             </div>
 
             <!-- RGAHX Synth Controls (AUTO-GENERATED from parameter metadata) -->
@@ -459,6 +461,27 @@
                     1. Load SFZ file to define regions<br>
                     2. Load WAV files (select all samples referenced in SFZ)<br>
                     3. Play via MIDI or on-screen keyboard
+                </div>
+            </div>
+
+            <!-- RGSlicer Controls (shown after initialization) -->
+            <synth-ui id="rgslicerControls" synth="rgslicer" style="display: none;"></synth-ui>
+
+            <div id="rgslicerWavControls" style="display: none; margin-top: 15px; padding: 15px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 4px;">
+                <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                    <input type="file" id="slicerWavInput" accept=".wav" style="display: none;">
+                    <button id="btnLoadSlicerWav">Load WAV File</button>
+                    <span id="slicerWavFileName" style="color: #666; font-size: 12px;"></span>
+                </div>
+                <div id="slicerInfo" style="font-size: 11px; font-family: monospace; color: #888; background: #0a0a0a; padding: 10px; border-radius: 4px; display: none; margin-bottom: 10px;">
+                    <!-- Slice info will be shown here -->
+                </div>
+                <div class="info" style="font-size: 11px;">
+                    1. Load WAV file (optionally with embedded CUE points)<br>
+                    2. Slices map to <strong>WHITE KEYS</strong> only (C2, D2, E2, F2, ...)<br>
+                    3. <strong>Note 37 (C#2/Db2)</strong> plays entire sample<br>
+                    4. Black keys reserved for functions (future use)<br>
+                    5. Adjust slice mode and parameters to re-slice
                 </div>
             </div>
         </div>
@@ -529,6 +552,7 @@
     <script src="external/rgsid-synth.js"></script>
     <script src="external/rg1piano-synth.js"></script>
     <script src="external/rg909-drum.js"></script>
+    <script src="external/rgslicer-synth.js"></script>
     <script src="external/rgsfz-synth.js"></script>
 
     <!-- Load WASM modules -->
@@ -548,6 +572,7 @@
         let webrtcMidi = null;
         let currentSynth = null;
         let drumSynth = null;
+        let slicerSynth = null;
         let sfzPlayer = null;
         let sharedAnalyzer = null;
         let isAudible = true;
@@ -607,6 +632,7 @@
             document.getElementById('btnInitRGSID').addEventListener('click', () => initializeSynth('rgsid'));
             document.getElementById('btnInitRG1Piano').addEventListener('click', () => initializeSynth('rg1piano'));
             document.getElementById('btnInitRGSFZ').addEventListener('click', initializeRGSFZ);
+            document.getElementById('btnInitRGSlicer').addEventListener('click', initializeRGSlicer);
 
             // Initialize drum
             document.getElementById('btnInitDrum').addEventListener('click', initializeDrum);
@@ -719,6 +745,9 @@
                 currentSynth = new RGSIDSynth(audioContext);
             } else if (engine === 'rg1piano') {
                 currentSynth = new RG1PianoSynth(audioContext);
+            } else if (engine === 'rgslicer') {
+                currentSynth = new RGSlicerSynth(audioContext);
+                slicerSynth = currentSynth; // Keep reference for WAV loading
             } else {
                 currentSynth = new MIDIAudioSynth(audioContext);
             }
@@ -738,6 +767,12 @@
                     synthUI.setSynthInstance(currentSynth);
                     console.log('[RGSID] Auto-generated UI connected to synth instance');
                 }, 500);
+            } else if (engine === 'rgslicer') {
+                const synthUI = document.getElementById('rgslicerControls');
+                setTimeout(() => {
+                    synthUI.setSynthInstance(currentSynth);
+                    console.log('[RGSlicer] Auto-generated UI connected to synth instance');
+                }, 500);
             }
 
             // Connect synth to shared analyzer
@@ -752,6 +787,7 @@
             else if (engine === 'rgahx') engineName = 'RGAHX';
             else if (engine === 'rgsid') engineName = 'RGSID';
             else if (engine === 'rg1piano') engineName = 'RG1Piano';
+            else if (engine === 'rgslicer') engineName = 'RGSlicer';
 
             synthStatus.innerHTML = `Synth: <span>${engineName}</span>`;
 
@@ -772,6 +808,8 @@
             // Show/hide engine-specific controls
             document.getElementById('rgahxControls').style.display = engine === 'rgahx' ? 'block' : 'none';
             document.getElementById('rgsidControls').style.display = engine === 'rgsid' ? 'block' : 'none';
+            document.getElementById('rgslicerControls').style.display = engine === 'rgslicer' ? 'block' : 'none';
+            document.getElementById('rgslicerWavControls').style.display = engine === 'rgslicer' ? 'block' : 'none';
 
             // Don't call setAudible(true) - already connected through analyzer
             // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
@@ -1773,6 +1811,182 @@
         }
 
         // RGSFZ Sampler (WASM-based SFZ player)
+        // ===========================================
+        // RGSlicer Initialization and Handlers
+        // ===========================================
+
+        async function initializeRGSlicer() {
+            await initializeSynth('rgslicer');
+
+            // Listen for slice info events from worklet
+            if (slicerSynth) {
+                slicerSynth.on('sliceInfo', (data) => {
+                    const { numSlices, slices } = data;
+                    console.log(`[RGSlicer] Received slice info: ${numSlices} slices`);
+
+                    const slicerInfo = document.getElementById('slicerInfo');
+                    let infoHTML = slicerInfo.textContent.split('\n').slice(0, 3).join('\n') + '\n';
+                    infoHTML += `Slices: ${numSlices}\n\n`;
+
+                    if (numSlices > 0 && slices) {
+                        infoHTML += `Slice Mapping (MIDI notes 36-99):\n`;
+                        for (let i = 0; i < Math.min(numSlices, 10); i++) {
+                            if (slices[i]) {
+                                const note = 36 + i;
+                                const noteName = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][(note - 12) % 12];
+                                const octave = Math.floor((note - 12) / 12);
+                                infoHTML += `  ${i}: Note ${note} (${noteName}${octave}) - Offset ${slices[i].offset}, Length ${slices[i].length}\n`;
+                            }
+                        }
+                        if (numSlices > 10) {
+                            infoHTML += `  ... and ${numSlices - 10} more slices\n`;
+                        }
+                    }
+
+                    slicerInfo.textContent = infoHTML;
+                    document.getElementById('slicerWavFileName').textContent = document.getElementById('slicerWavFileName').textContent.replace('(loading...)', `(${numSlices} slices)`);
+                });
+            }
+        }
+
+        document.getElementById('btnLoadSlicerWav').addEventListener('click', () => {
+            document.getElementById('slicerWavInput').click();
+        });
+
+        // Parse WAV CUE points from raw file data
+        function parseWavCuePoints(arrayBuffer) {
+            const view = new DataView(arrayBuffer);
+            let offset = 12; // Skip RIFF header (12 bytes)
+            const cuePoints = [];
+
+            while (offset < view.byteLength - 8) {
+                const chunkId = String.fromCharCode(
+                    view.getUint8(offset),
+                    view.getUint8(offset + 1),
+                    view.getUint8(offset + 2),
+                    view.getUint8(offset + 3)
+                );
+                const chunkSize = view.getUint32(offset + 4, true);
+
+                if (chunkId === 'cue ') {
+                    const numCuePoints = view.getUint32(offset + 8, true);
+                    console.log(`[RGSlicer] Found ${numCuePoints} CUE points in WAV file`);
+
+                    for (let i = 0; i < numCuePoints; i++) {
+                        const cueOffset = offset + 12 + (i * 24);
+                        const cueId = view.getUint32(cueOffset, true);
+                        const position = view.getUint32(cueOffset + 20, true); // sample offset
+
+                        cuePoints.push({ id: cueId, position: position, label: '' });
+                    }
+                } else if (chunkId === 'LIST') {
+                    const listType = String.fromCharCode(
+                        view.getUint8(offset + 8),
+                        view.getUint8(offset + 9),
+                        view.getUint8(offset + 10),
+                        view.getUint8(offset + 11)
+                    );
+
+                    if (listType === 'adtl') {
+                        // Parse labels
+                        let listOffset = offset + 12;
+                        const listEnd = offset + 8 + chunkSize;
+
+                        while (listOffset < listEnd - 8) {
+                            const subChunkId = String.fromCharCode(
+                                view.getUint8(listOffset),
+                                view.getUint8(listOffset + 1),
+                                view.getUint8(listOffset + 2),
+                                view.getUint8(listOffset + 3)
+                            );
+                            const subChunkSize = view.getUint32(listOffset + 4, true);
+
+                            if (subChunkId === 'labl') {
+                                const cueId = view.getUint32(listOffset + 8, true);
+                                let label = '';
+                                for (let i = 0; i < subChunkSize - 5 && listOffset + 12 + i < listEnd; i++) {
+                                    const char = view.getUint8(listOffset + 12 + i);
+                                    if (char === 0) break;
+                                    label += String.fromCharCode(char);
+                                }
+
+                                const cue = cuePoints.find(c => c.id === cueId);
+                                if (cue) cue.label = label;
+                            }
+
+                            listOffset += 8 + subChunkSize + (subChunkSize % 2);
+                        }
+                    }
+                }
+
+                offset += 8 + chunkSize + (chunkSize % 2);
+            }
+
+            return cuePoints;
+        }
+
+        document.getElementById('slicerWavInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                console.log('[RGSlicer] Loading WAV:', file.name);
+                document.getElementById('slicerWavFileName').textContent = `Loading ${file.name}...`;
+
+                // Read WAV file as raw ArrayBuffer first (to extract CUE points)
+                const arrayBuffer = await file.arrayBuffer();
+
+                // Parse CUE points BEFORE decoding
+                const cuePoints = parseWavCuePoints(arrayBuffer);
+                if (cuePoints.length > 0) {
+                    console.log(`[RGSlicer] Found ${cuePoints.length} CUE points:`, cuePoints);
+                } else {
+                    console.log('[RGSlicer] No CUE points found - will auto-slice');
+                }
+
+                // Now decode audio
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+                // Convert to mono int16 PCM
+                const channelData = audioBuffer.getChannelData(0);
+                const pcmData = new Int16Array(channelData.length);
+                for (let i = 0; i < channelData.length; i++) {
+                    pcmData[i] = Math.max(-32768, Math.min(32767, channelData[i] * 32768));
+                }
+
+                // Check if slicer synth is initialized
+                if (!slicerSynth || !slicerSynth.wasmReady) {
+                    throw new Error('RGSlicer not initialized or WASM not ready');
+                }
+
+                // Load WAV into slicer (sends to worklet with CUE points)
+                await slicerSynth.loadWavFile(pcmData, audioBuffer.sampleRate, cuePoints);
+
+                console.log(`[RGSlicer] Loaded ${file.name}: ${pcmData.length} samples @ ${audioBuffer.sampleRate} Hz`);
+
+                // Display basic info (slice details will come from worklet event)
+                const slicerInfo = document.getElementById('slicerInfo');
+                slicerInfo.style.display = 'block';
+
+                let infoHTML = `Loaded: ${file.name}\n`;
+                infoHTML += `Sample Rate: ${audioBuffer.sampleRate} Hz\n`;
+                infoHTML += `Length: ${pcmData.length} samples (${(pcmData.length / audioBuffer.sampleRate).toFixed(2)}s)\n`;
+                infoHTML += `Waiting for slice info from WASM...\n`;
+
+                slicerInfo.textContent = infoHTML;
+                document.getElementById('slicerWavFileName').textContent = `${file.name} (loading...)`;
+
+            } catch (error) {
+                console.error('[RGSlicer] WAV load error:', error);
+                document.getElementById('slicerWavFileName').textContent = `Error: ${error.message}`;
+                alert('Failed to load WAV file: ' + error.message);
+            }
+        });
+
+        // ===========================================
+        // RGSFZ Initialization and Handlers
+        // ===========================================
+
         async function initializeRGSFZ() {
             // Resume AudioContext if needed
             if (audioContext.state === 'suspended') {

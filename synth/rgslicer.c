@@ -189,33 +189,51 @@ bool rgslicer_has_sample(RGSlicer* slicer) {
 // Slicing - Basic Operations
 // ============================================================================
 
+// Helper: Compare function for qsort
+static int compare_slices(const void* a, const void* b) {
+    const SliceData* sa = (const SliceData*)a;
+    const SliceData* sb = (const SliceData*)b;
+    if (sa->offset < sb->offset) return -1;
+    if (sa->offset > sb->offset) return 1;
+    return 0;
+}
+
 int rgslicer_add_slice(RGSlicer* slicer, uint32_t offset) {
     if (!slicer || slicer->num_slices >= RGSLICER_MAX_SLICES) return -1;
     if (!slicer->sample_loaded || offset >= slicer->sample_length) return -1;
 
     uint8_t index = slicer->num_slices;
 
-    // Calculate length (to next slice or end of sample)
-    uint32_t length = slicer->sample_length - offset;
-    if (index > 0) {
-        // Update previous slice length
-        slicer->slices[index - 1].length = offset - slicer->slices[index - 1].offset;
-        slicer->slices[index - 1].end = offset;
-    }
-
     // Initialize new slice
     slicer->slices[index].offset = offset;
-    slicer->slices[index].length = length;
-    slicer->slices[index].end = offset + length;
+    slicer->slices[index].length = 0;  // Will be recalculated after sort
+    slicer->slices[index].end = offset;
     slicer->slices[index].pitch_semitones = 0.0f;
     slicer->slices[index].time_stretch = 1.0f;
     slicer->slices[index].volume = 1.0f;
     slicer->slices[index].pan = 0.0f;
     slicer->slices[index].reverse = false;
     slicer->slices[index].loop = false;
-    slicer->slices[index].one_shot = false;  // Default: respect note-off
+    slicer->slices[index].one_shot = false;
 
     slicer->num_slices++;
+
+    // Sort slices by offset
+    qsort(slicer->slices, slicer->num_slices, sizeof(SliceData), compare_slices);
+
+    // Recalculate all slice lengths after sorting
+    for (uint8_t i = 0; i < slicer->num_slices; i++) {
+        if (i < slicer->num_slices - 1) {
+            slicer->slices[i].length = slicer->slices[i + 1].offset - slicer->slices[i].offset;
+            slicer->slices[i].end = slicer->slices[i + 1].offset;
+        } else {
+            slicer->slices[i].length = slicer->sample_length - slicer->slices[i].offset;
+            slicer->slices[i].end = slicer->sample_length;
+        }
+    }
+
+    // Remap MIDI notes after adding slice
+    rgslicer_remap_notes(slicer);
 
     return index;
 }
@@ -230,21 +248,7 @@ void rgslicer_remove_slice(RGSlicer* slicer, uint8_t slice_index) {
 
     slicer->num_slices--;
 
-    // Recalculate last slice length
-    if (slicer->num_slices > 0) {
-        uint8_t last = slicer->num_slices - 1;
-        slicer->slices[last].length = slicer->sample_length - slicer->slices[last].offset;
-        slicer->slices[last].end = slicer->sample_length;
-    }
-}
-
-void rgslicer_move_slice(RGSlicer* slicer, uint8_t slice_index, uint32_t new_offset) {
-    if (!slicer || slice_index >= slicer->num_slices) return;
-    if (new_offset >= slicer->sample_length) return;
-
-    slicer->slices[slice_index].offset = new_offset;
-
-    // Recalculate lengths
+    // Recalculate ALL slice lengths after removal
     for (uint8_t i = 0; i < slicer->num_slices; i++) {
         if (i < slicer->num_slices - 1) {
             slicer->slices[i].length = slicer->slices[i + 1].offset - slicer->slices[i].offset;
@@ -254,6 +258,33 @@ void rgslicer_move_slice(RGSlicer* slicer, uint8_t slice_index, uint32_t new_off
             slicer->slices[i].end = slicer->sample_length;
         }
     }
+
+    // Remap MIDI notes after removing slice
+    rgslicer_remap_notes(slicer);
+}
+
+void rgslicer_move_slice(RGSlicer* slicer, uint8_t slice_index, uint32_t new_offset) {
+    if (!slicer || slice_index >= slicer->num_slices) return;
+    if (new_offset >= slicer->sample_length) return;
+
+    slicer->slices[slice_index].offset = new_offset;
+
+    // Sort slices by offset
+    qsort(slicer->slices, slicer->num_slices, sizeof(SliceData), compare_slices);
+
+    // Recalculate all slice lengths after sorting
+    for (uint8_t i = 0; i < slicer->num_slices; i++) {
+        if (i < slicer->num_slices - 1) {
+            slicer->slices[i].length = slicer->slices[i + 1].offset - slicer->slices[i].offset;
+            slicer->slices[i].end = slicer->slices[i + 1].offset;
+        } else {
+            slicer->slices[i].length = slicer->sample_length - slicer->slices[i].offset;
+            slicer->slices[i].end = slicer->sample_length;
+        }
+    }
+
+    // Remap MIDI notes after moving slice
+    rgslicer_remap_notes(slicer);
 }
 
 void rgslicer_clear_slices(RGSlicer* slicer) {
@@ -267,6 +298,38 @@ void rgslicer_clear_slices(RGSlicer* slicer) {
 
 uint8_t rgslicer_get_num_slices(RGSlicer* slicer) {
     return slicer ? slicer->num_slices : 0;
+}
+
+void rgslicer_remap_notes(RGSlicer* slicer) {
+    if (!slicer) return;
+
+    // Clear existing mapping
+    memset(slicer->note_map, 0xFF, sizeof(slicer->note_map));
+
+    // White key offsets within octave (C=0, D=2, E=4, F=5, G=7, A=9, B=11)
+    const uint8_t white_keys[7] = {0, 2, 4, 5, 7, 9, 11};
+
+    // Map slices to white keys starting from C2 (MIDI 36)
+    uint8_t slice_idx = 0;
+    for (uint8_t midi_note = 36; midi_note <= 127 && slice_idx < slicer->num_slices; midi_note++) {
+        uint8_t note_in_octave = (midi_note - 36) % 12;
+
+        // Check if this is a white key
+        bool is_white_key = false;
+        for (int i = 0; i < 7; i++) {
+            if (note_in_octave == white_keys[i]) {
+                is_white_key = true;
+                break;
+            }
+        }
+
+        if (is_white_key) {
+            slicer->note_map[midi_note] = slice_idx;
+            slice_idx++;
+        }
+    }
+
+    slicer->use_note_map = true;
 }
 
 // ============================================================================

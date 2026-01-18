@@ -213,6 +213,12 @@ void rgslicer_move_slice(RGSlicer* slicer, uint8_t slice_index, uint32_t new_off
 void rgslicer_clear_slices(RGSlicer* slicer);
 
 /**
+ * Redistribute MIDI note mapping across white keys (C2-B8)
+ * Maps slices 0-N to white keys starting from C2 (MIDI 36)
+ */
+void rgslicer_remap_notes(RGSlicer* slicer);
+
+/**
  * Get number of slices
  */
 uint8_t rgslicer_get_num_slices(RGSlicer* slicer);

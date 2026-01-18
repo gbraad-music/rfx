@@ -35,10 +35,12 @@ public:
         slice0_loop_ = 0.0f;
         slice0_one_shot_ = 0.0f;
 
-        // Random sequencer BPM
+        // Random sequencer BPM and note division
         bpm_ = 125.0f;
+        note_division_ = 4.0f;  // 16th notes default
         if (slicer_) {
             rgslicer_set_bpm(slicer_, bpm_);
+            rgslicer_set_note_division(slicer_, note_division_);
         }
 
         // Pitch/Time algorithms
@@ -49,6 +51,9 @@ public:
         // Output parameters
         playback_pos_ = 0.0f;
         playing_slice_ = -1.0f;
+
+        // Trigger parameter
+        trigger_note_ = -1.0f;
 
         // Sample will be loaded via UI file browser
     }
@@ -191,6 +196,29 @@ protected:
                 parameter.unit = "BPM";
                 break;
 
+            case PARAM_NOTE_DIVISION:
+                parameter.name = "Note Division";
+                parameter.symbol = "note_division";
+                parameter.ranges.def = 4.0f;  // 16th notes default
+                parameter.ranges.min = 1.0f;
+                parameter.ranges.max = 8.0f;
+                parameter.hints = kParameterIsAutomatable | kParameterIsInteger;
+                parameter.enumValues.count = 4;
+                parameter.enumValues.restrictedMode = true;
+                {
+                    ParameterEnumerationValue* const values = new ParameterEnumerationValue[4];
+                    values[0].label = "Quarter";
+                    values[0].value = 1.0f;
+                    values[1].label = "8th";
+                    values[1].value = 2.0f;
+                    values[2].label = "16th";
+                    values[2].value = 4.0f;
+                    values[3].label = "32nd";
+                    values[3].value = 8.0f;
+                    parameter.enumValues.values = values;
+                }
+                break;
+
             case PARAM_PITCH_ALGORITHM:
                 parameter.name = "Pitch Algorithm";
                 parameter.symbol = "pitch_algorithm";
@@ -246,6 +274,15 @@ protected:
                 parameter.ranges.max = 63.0f;
                 parameter.hints = kParameterIsOutput | kParameterIsInteger;
                 break;
+
+            case PARAM_TRIGGER_NOTE:
+                parameter.name = "Trigger Note";
+                parameter.symbol = "trigger_note";
+                parameter.ranges.def = 0.0f;
+                parameter.ranges.min = 0.0f;
+                parameter.ranges.max = 255.0f;  // note (0-127) + toggle bit (0 or 128)
+                parameter.hints = kParameterIsInteger | kParameterIsHidden;  // Hidden, not automatable
+                break;
         }
     }
 
@@ -265,10 +302,12 @@ protected:
             case PARAM_SLICE0_LOOP:      return slice0_loop_;
             case PARAM_SLICE0_ONE_SHOT:  return slice0_one_shot_;
             case PARAM_BPM:              return bpm_;
+            case PARAM_NOTE_DIVISION:    return note_division_;
             case PARAM_PITCH_ALGORITHM:  return pitch_algorithm_;
             case PARAM_TIME_ALGORITHM:   return time_algorithm_;
             case PARAM_PLAYBACK_POS:     return playback_pos_;
             case PARAM_PLAYING_SLICE:    return playing_slice_;
+            case PARAM_TRIGGER_NOTE:     return trigger_note_;
             default: return 0.0f;
         }
     }
@@ -325,6 +364,11 @@ protected:
                 if (slicer_) rgslicer_set_bpm(slicer_, bpm_);
                 break;
 
+            case PARAM_NOTE_DIVISION:
+                note_division_ = value;
+                if (slicer_) rgslicer_set_note_division(slicer_, note_division_);
+                break;
+
             case PARAM_PITCH_ALGORITHM:
                 pitch_algorithm_ = value;
                 if (slicer_) rgslicer_set_pitch_algorithm(slicer_, (int)value);
@@ -333,6 +377,15 @@ protected:
             case PARAM_TIME_ALGORITHM:
                 time_algorithm_ = value;
                 if (slicer_) rgslicer_set_time_algorithm(slicer_, (int)value);
+                break;
+
+            case PARAM_TRIGGER_NOTE:
+                trigger_note_ = value;
+                // Extract MIDI note using modulo 128
+                if (slicer_ && trigger_note_ > 0.0f) {
+                    uint8_t note = (uint8_t)((int)trigger_note_ % 128);
+                    rgslicer_note_on(slicer_, note, 100);
+                }
                 break;
         }
     }
@@ -478,10 +531,12 @@ private:
     float slice0_loop_;
     float slice0_one_shot_;
     float bpm_;
+    float note_division_;    // 1.0 = quarter, 2.0 = 8th, 4.0 = 16th, 8.0 = 32nd
     float pitch_algorithm_;  // 0 = Simple (rate), 1 = Time-Preserving
     float time_algorithm_;   // 0 = Granular, 1 = Amiga Offset
     float playback_pos_;     // Output parameter for UI visualization
     float playing_slice_;    // Currently playing slice index
+    float trigger_note_;     // Trigger parameter for UI to send note-on (-1 = none)
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RGSlicerPlugin)
 };

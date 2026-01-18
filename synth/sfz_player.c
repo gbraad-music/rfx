@@ -1,8 +1,9 @@
 /**
- * RGSFZ Player - WebAssembly Wrapper
- * Exposes SFZ sampler functionality to JavaScript
+ * SFZ Player - Shared SFZ Sampler Engine
+ * Cross-platform SFZ sampler (WASM, ARM, x86)
  */
 
+#include "sfz_player.h"
 #include "sfz_parser.h"
 #include "synth_sample_player.h"
 #include <stdlib.h>
@@ -19,20 +20,20 @@ typedef struct {
     bool active;
 } SFZVoice;
 
-typedef struct {
+struct RGSFZPlayer {
     SFZData* sfz;
     SFZVoice voices[MAX_VOICES];
     float volume;
     float pan;
     float decay;
     uint32_t sample_rate;
-} RGSFZPlayer;
+};
 
 // ============================================================================
 // Player Management
 // ============================================================================
 
-RGSFZPlayer* rgsfz_player_create_wasm(uint32_t sample_rate) {
+RGSFZPlayer* rgsfz_player_create(uint32_t sample_rate) {
     RGSFZPlayer* player = (RGSFZPlayer*)calloc(1, sizeof(RGSFZPlayer));
     if (!player) return NULL;
 
@@ -61,7 +62,7 @@ RGSFZPlayer* rgsfz_player_create_wasm(uint32_t sample_rate) {
     return player;
 }
 
-void rgsfz_player_destroy_wasm(RGSFZPlayer* player) {
+void rgsfz_player_destroy(RGSFZPlayer* player) {
     if (!player) return;
 
     for (int i = 0; i < MAX_VOICES; i++) {
@@ -114,12 +115,13 @@ int rgsfz_player_load_sfz_from_memory(RGSFZPlayer* player, const char* data, uin
  * Add a region to the SFZ player (called from JavaScript after parsing)
  */
 int rgsfz_player_add_region(RGSFZPlayer* player,
-                              const char* sample_path,
                               uint8_t lokey, uint8_t hikey,
                               uint8_t lovel, uint8_t hivel,
                               uint8_t pitch_keycenter,
-                              float pan,
-                              uint32_t offset, uint32_t end) {
+                              const char* sample_path,
+                              float pan) {
+    uint32_t offset = 0;  // Default values
+    uint32_t end = 0;
     if (!player || !player->sfz) {
         printf("[RGSFZ C] add_region: player or sfz is NULL\n");
         return 0;
@@ -157,16 +159,16 @@ int rgsfz_player_add_region(RGSFZPlayer* player,
  * length: Number of samples
  * sample_rate: Sample rate in Hz
  */
-int rgsfz_player_load_region_sample(RGSFZPlayer* player, uint32_t region_index,
-                                      int16_t* sample_data, uint32_t length,
+void rgsfz_player_load_region_sample(RGSFZPlayer* player, uint32_t region_index,
+                                      int16_t* data, uint32_t num_samples,
                                       uint32_t sample_rate) {
     if (!player || !player->sfz) {
         printf("[RGSFZ C] load_region_sample: player or sfz is NULL\n");
-        return 0;
+        return;
     }
     if (region_index >= player->sfz->num_regions) {
         printf("[RGSFZ C] load_region_sample: region_index %d >= num_regions %d\n", region_index, player->sfz->num_regions);
-        return 0;
+        return;
     }
 
     SFZRegion* r = &player->sfz->regions[region_index];
@@ -175,18 +177,17 @@ int rgsfz_player_load_region_sample(RGSFZPlayer* player, uint32_t region_index,
     if (r->sample_data) {
         free(r->sample_data);
     }
-    r->sample_data = (int16_t*)malloc(length * sizeof(int16_t));
+    r->sample_data = (int16_t*)malloc(num_samples * sizeof(int16_t));
     if (!r->sample_data) {
         printf("[RGSFZ C] load_region_sample: Failed to allocate memory\n");
-        return 0;
+        return;
     }
 
-    memcpy(r->sample_data, sample_data, length * sizeof(int16_t));
-    r->sample_length = length;
+    memcpy(r->sample_data, data, num_samples * sizeof(int16_t));
+    r->sample_length = num_samples;
     r->sample_rate = sample_rate;
 
-    printf("[RGSFZ C] load_region_sample: Loaded region %d, length=%d, rate=%d\n", region_index, length, sample_rate);
-    return 1;
+    printf("[RGSFZ C] load_region_sample: Loaded region %d, length=%d, rate=%d\n", region_index, num_samples, sample_rate);
 }
 
 // ============================================================================

@@ -233,6 +233,33 @@ private:
                     }
                 }
 
+                // === PAN when zoomed (middle-mouse or Shift+left drag) ===
+                if (fZoomLevel > 1.0f && isWaveformActive) {
+                    uint32_t sampleLen = fUI->fSlicer ? fUI->fSlicer->sample_length : 0;
+
+                    bool isPanning = ImGui::IsMouseDragging(2, 0.0f) ||  // Middle mouse
+                                     (ImGui::IsMouseDragging(0, 0.0f) && io.KeyShift &&
+                                      fMarkerState != MARKER_DRAGGING);
+
+                    if (isPanning && sampleLen > 0) {
+                        float dragDelta = io.MouseDelta.x;
+                        uint32_t visibleSamples = (uint32_t)(sampleLen / fZoomLevel);
+                        float sampleDelta = -(dragDelta / waveW) * visibleSamples;
+
+                        uint32_t currentStartSample = (uint32_t)(fPanOffset * sampleLen);
+                        int newStartSample = (int)currentStartSample + (int)sampleDelta;
+
+                        // Clamp to valid range
+                        if (newStartSample < 0) newStartSample = 0;
+                        if (newStartSample > (int)(sampleLen - visibleSamples)) {
+                            newStartSample = sampleLen - visibleSamples;
+                        }
+
+                        fPanOffset = (float)newStartSample / (float)sampleLen;
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                    }
+                }
+
                 // === DOUBLE-CLICK to Reset Zoom ===
                 // (but not in play button area to avoid accidental resets)
                 float playBarY = wavePos.y + waveH - 18;

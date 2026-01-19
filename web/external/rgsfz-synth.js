@@ -27,7 +27,7 @@ class RGSFZSynth {
         console.log('[RGSFZ] WASM module loaded');
 
         // Create player instance
-        this.playerPtr = this.wasmModule._rgsfz_player_create_wasm(this.audioContext.sampleRate);
+        this.playerPtr = this.wasmModule._rgsfz_player_create(this.audioContext.sampleRate);
         if (!this.playerPtr) {
             throw new Error('Failed to create RGSFZ player');
         }
@@ -327,7 +327,7 @@ class RGSFZSynth {
         }
 
         if (this.playerPtr) {
-            this.wasmModule._rgsfz_player_destroy_wasm(this.playerPtr);
+            this.wasmModule._rgsfz_player_destroy(this.playerPtr);
             this.playerPtr = null;
         }
 

@@ -28,8 +28,8 @@ CFLAGS="$CFLAGS -I../../synth"
 
 # Exported functions
 EXPORTED_FUNCTIONS="-s EXPORTED_FUNCTIONS=[_malloc,_free"
-EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_create_wasm"
-EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_destroy_wasm"
+EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_create"
+EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_destroy"
 EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_load_sfz_from_memory"
 EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_add_region"
 EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_player_load_region_sample"
@@ -53,7 +53,7 @@ EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS},_rgsfz_destroy_audio_buffer"
 EXPORTED_FUNCTIONS="${EXPORTED_FUNCTIONS}]"
 
 # Source files
-SOURCES="../../synth/rgsfz_player_wasm.c"
+SOURCES="../../synth/sfz_player.c"
 SOURCES="$SOURCES ../../synth/sfz_parser.c"
 SOURCES="$SOURCES ../../synth/synth_sample_player.c"
 SOURCES="$SOURCES ../../synth/synth_envelope.c"

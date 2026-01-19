@@ -1529,13 +1529,16 @@ function updatePlaybackPosition() {
     }
 }
 
-function drawVisualizer() {
-    // Initialize visualization components
+async function drawVisualizer() {
+    // Initialize visualization components (WASM-backed)
     if (!vuMeterComponent) {
         vuMeterComponent = new VUMeterCanvas('vumeter');
+        await vuMeterComponent.init(); // Initialize WASM (tests shared C code!)
     }
     if (!waveformComponent) {
         waveformComponent = new WaveformDisplayCanvas('visualizer');
+        // Waveform uses direct oscilloscope mode (no WASM init needed for draw())
+        // But WASM is available for optional buffered mode
     }
     if (!spectrumComponent) {
         spectrumComponent = new SpectrumAnalyzerCanvas('spectrum');
@@ -1734,7 +1737,7 @@ document.getElementById('testSignal').addEventListener('change', (e) => {
         await processor.init();
         createModel1UI();
         createEffectUI();
-        drawVisualizer();
+        await drawVisualizer();
 
         // Setup master gain fader after processor is initialized
         const gainFader = document.getElementById('gainFader');

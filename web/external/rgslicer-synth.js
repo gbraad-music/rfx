@@ -39,7 +39,7 @@ class RGSlicerSynth {
             console.log('[RGSlicer] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (reuse synth-worklet, with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=187');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=190');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');

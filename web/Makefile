@@ -21,6 +21,7 @@ SOURCES = $(EFFECTS_DIR)/fx_distortion.c \
           $(EFFECTS_DIR)/fx_stereo_widen.c \
           $(EFFECTS_DIR)/fx_ring_mod.c \
           $(EFFECTS_DIR)/fx_vocoder.c \
+          $(EFFECTS_DIR)/fx_lofi.c \
           $(EFFECTS_DIR)/fx_model1_trim.c \
           $(EFFECTS_DIR)/fx_model1_hpf.c \
           $(EFFECTS_DIR)/fx_model1_lpf.c \
@@ -91,6 +92,14 @@ EXPORTED_FUNCTIONS = \
     "_fx_vocoder_get_formant_shift", "_fx_vocoder_get_release", "_fx_vocoder_get_mix",\
     "_fx_vocoder_get_carrier_mode", "_fx_vocoder_get_midi_note",\
     "_fx_vocoder_process_f32", "_fx_vocoder_process_dual_f32",\
+    "_fx_lofi_create", "_fx_lofi_destroy", "_fx_lofi_reset",\
+    "_fx_lofi_set_enabled", "_fx_lofi_set_bit_depth", "_fx_lofi_set_sample_rate_ratio", "_fx_lofi_set_filter_cutoff",\
+    "_fx_lofi_set_saturation", "_fx_lofi_set_noise_level", "_fx_lofi_set_wow_flutter_depth",\
+    "_fx_lofi_set_wow_flutter_rate",\
+    "_fx_lofi_get_enabled", "_fx_lofi_get_bit_depth", "_fx_lofi_get_sample_rate_ratio", "_fx_lofi_get_filter_cutoff",\
+    "_fx_lofi_get_saturation", "_fx_lofi_get_noise_level", "_fx_lofi_get_wow_flutter_depth",\
+    "_fx_lofi_get_wow_flutter_rate",\
+    "_fx_lofi_process_f32",\
     "_fx_model1_trim_create", "_fx_model1_trim_destroy", "_fx_model1_trim_reset",\
     "_fx_model1_trim_set_enabled", "_fx_model1_trim_set_drive",\
     "_fx_model1_trim_get_enabled", "_fx_model1_trim_get_drive", "_fx_model1_trim_get_peak_level",\

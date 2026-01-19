@@ -1259,7 +1259,8 @@ const effectDefinitions = [
     { name: 'phaser', title: 'Phaser', params: ['rate', 'depth', 'feedback'] },
     { name: 'stereo_widen', title: 'Stereo Widening', params: ['width', 'mix'] },
     { name: 'ring_mod', title: 'Ring Modulator', params: ['frequency', 'mix'] },
-    { name: 'pitchshift', title: 'Pitch Shift', params: ['pitch', 'mix'] }
+    { name: 'pitchshift', title: 'Pitch Shift', params: ['pitch', 'mix'] },
+    { name: 'lofi', title: 'Lo-Fi', params: ['bit_depth', 'sample_rate_ratio', 'filter_cutoff', 'saturation', 'noise_level', 'wow_flutter_depth', 'wow_flutter_rate'] }
 ];
 
 function createModel1UI() {
@@ -1448,7 +1449,18 @@ function createEffectUI() {
         knobsContainer.style.cssText = 'display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; justify-content: center;';
 
         def.params.forEach((paramName, idx) => {
-            const defaultValue = 50;
+            let defaultValue = 50;
+
+            // Special defaults for lofi to start clean/transparent
+            if (def.name === 'lofi') {
+                if (paramName === 'bit_depth') defaultValue = 100;           // 16-bit (clean)
+                else if (paramName === 'sample_rate_ratio') defaultValue = 100; // 100% (no reduction)
+                else if (paramName === 'filter_cutoff') defaultValue = 100;     // 20kHz (no filtering)
+                else if (paramName === 'saturation') defaultValue = 0;          // No saturation
+                else if (paramName === 'noise_level') defaultValue = 0;         // No noise
+                else if (paramName === 'wow_flutter_depth') defaultValue = 0;   // No wow/flutter
+                else if (paramName === 'wow_flutter_rate') defaultValue = 50;   // Mid-range (doesn't matter if depth=0)
+            }
 
             // Use pad-knob component for each parameter
             const knob = document.createElement('pad-knob');

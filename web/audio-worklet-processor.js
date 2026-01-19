@@ -95,13 +95,17 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             { name: 'phaser', prefix: '_fx_phaser', defaultEnabled: false },
             { name: 'stereo_widen', prefix: '_fx_stereo_widen', defaultEnabled: false },
             { name: 'ring_mod', prefix: '_fx_ring_mod', defaultEnabled: false },
-            { name: 'pitchshift', prefix: '_fx_pitchshift', defaultEnabled: false }
+            { name: 'pitchshift', prefix: '_fx_pitchshift', defaultEnabled: false },
+            { name: 'lofi', prefix: '_fx_lofi', defaultEnabled: false }
         ];
 
         for (const config of effectConfigs) {
             const createFn = this.wasmModule[config.prefix + '_create'];
             if (createFn) {
-                const ptr = createFn();
+                // Lofi needs sample rate parameter
+                const ptr = (config.name === 'lofi')
+                    ? createFn(globalThis.sampleRate || 48000)
+                    : createFn();
 
                 this.effects.set(config.name, {
                     ptr: ptr,
@@ -176,7 +180,8 @@ class WasmEffectsProcessor extends AudioWorkletProcessor {
             'phaser': ['rate', 'depth', 'feedback'],
             'stereo_widen': ['width', 'mix'],
             'ring_mod': ['frequency', 'mix'],
-            'pitchshift': ['pitch', 'mix']
+            'pitchshift': ['pitch', 'mix'],
+            'lofi': ['bit_depth', 'sample_rate_ratio', 'filter_cutoff', 'saturation', 'noise_level', 'wow_flutter_depth', 'wow_flutter_rate']
         };
 
         for (const [name, effect] of this.effects) {

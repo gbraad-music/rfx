@@ -5,7 +5,7 @@
 
 #include "DistrhoUI.hpp"
 #include "DearImGui.hpp"
-#include "fx_phaser_ui.h"
+#include "../fx_phaser_ui.h"
 
 START_NAMESPACE_DISTRHO
 USE_NAMESPACE_DGL

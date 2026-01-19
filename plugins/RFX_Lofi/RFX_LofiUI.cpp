@@ -5,7 +5,7 @@
 
 #include "DistrhoUI.hpp"
 #include "DearImGui.hpp"
-#include "fx_lofi_ui.h"  // Now in same directory
+#include "../fx_lofi_ui.h"
 
 START_NAMESPACE_DISTRHO
 USE_NAMESPACE_DGL

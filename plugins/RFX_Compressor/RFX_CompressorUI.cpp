@@ -1,6 +1,6 @@
 #include "DistrhoUI.hpp"
 #include "DearImGui.hpp"
-#include "fx_compressor_ui.h"
+#include "../fx_compressor_ui.h"
 
 START_NAMESPACE_DISTRHO
 USE_NAMESPACE_DGL

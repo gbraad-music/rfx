@@ -5,7 +5,7 @@
 
 #include "rgslicer.h"
 #include "sample_fx.h"
-#include "wav_loader.h"
+#include "../common/sample_loader.h"
 #include "wav_cue.h"
 #include <stdlib.h>
 #include <string.h>

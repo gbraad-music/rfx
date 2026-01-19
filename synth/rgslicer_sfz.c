@@ -4,7 +4,7 @@
 
 #include "rgslicer.h"
 #include "sfz_parser.h"
-#include "wav_loader.h"
+#include "../common/sample_loader.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

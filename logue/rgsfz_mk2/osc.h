@@ -28,7 +28,7 @@
 extern "C" {
 #include "sfz_player.h"
 #include "sfz_parser.h"
-#include "wav_loader.h"
+#include "../../common/sample_loader.h"
 }
 
 // Parameter indices

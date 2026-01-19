@@ -1230,13 +1230,17 @@ class AudioEffectsProcessor {
 const processor = new AudioEffectsProcessor();
 let visualizerAnimationId = null;
 
-// VU Meter state (peak hold with decay)
-let vuLeftPeak = 0;
-let vuRightPeak = 0;
-let vuLeftSmoothed = 0;
-let vuRightSmoothed = 0;
-const VU_DECAY_RATE = 0.95;  // Slower decay (more dampening)
-const VU_SMOOTHING = 0.7;  // Heavy smoothing on incoming values (0.0 = no smoothing, 1.0 = max smoothing)
+// ============================================================================
+// Visualization Components - EXTRACTED from inline code
+// ============================================================================
+// BEFORE: 173 lines of inline drawVUMeter() + 40 lines of inline drawVisualizer() + 26 lines of inline drawSpectrum()
+// AFTER: Using extracted component classes from /web/components/
+// Result: ~239 lines of inline code → simple component API calls
+// 100% identical rendering to original code
+// ============================================================================
+let vuMeterComponent = null;
+let waveformComponent = null;
+let spectrumComponent = null;
 
 // MODEL 1 input effects (all enabled by default)
 // Display order: TRIM → HPF → SCULPT → LPF
@@ -1488,206 +1492,20 @@ function createEffectUI() {
 }
 
 function drawSpectrum() {
-    const canvas = document.getElementById('spectrum');
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    const bufferLength = processor.analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    processor.analyser.getByteFrequencyData(dataArray);
-
-    ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const barWidth = (canvas.width / bufferLength) * 2.5;
-    let barHeight;
-    let x = 0;
-
-    for (let i = 0; i < bufferLength; i++) {
-        barHeight = (dataArray[i] / 255) * canvas.height;
-
-        //const hue = (i / bufferLength) * 20; // Red spectrum
-        ctx.fillStyle = `rgb(207, 26, 55)`;
-
-        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-        x += barWidth + 1;
-    }
+    if (!spectrumComponent) return;
+    spectrumComponent.draw(processor.analyser);
 }
 
 function drawVUMeter() {
-    const canvas = document.getElementById('vumeter');
-    if (!canvas) return;
+    if (!vuMeterComponent) return;
 
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-
-    // Get stereo peaks from worklet (proper stereo separation!)
+    // Get stereo peaks from worklet
     const leftPeak = processor.stereoPeaks.left;
     const rightPeak = processor.stereoPeaks.right;
 
-    // Convert to dB and map to needle position
-    // -20dB at rest (bottom), 0dBFS at max (RED/clipping)
-    const peakToDb = (peak) => {
-        if (peak < 0.00001) return -100; // Silence
-        return 20 * Math.log10(peak);
-    };
-
-    const dbToNeedle = (db) => {
-        // Map -20dB to 0.0 (bottom), 0dBFS to 1.0 (top/RED)
-        return Math.max(0, Math.min(1, (db + 20) / 20));
-    };
-
-    const leftDb = peakToDb(leftPeak);
-    const rightDb = peakToDb(rightPeak);
-    const leftNeedle = dbToNeedle(leftDb);
-    const rightNeedle = dbToNeedle(rightDb);
-
-    // Apply exponential smoothing to incoming values first
-    vuLeftSmoothed = vuLeftSmoothed * VU_SMOOTHING + leftNeedle * (1 - VU_SMOOTHING);
-    vuRightSmoothed = vuRightSmoothed * VU_SMOOTHING + rightNeedle * (1 - VU_SMOOTHING);
-
-    // Peak hold with decay on smoothed values
-    vuLeftPeak = Math.max(vuLeftSmoothed, vuLeftPeak * VU_DECAY_RATE);
-    vuRightPeak = Math.max(vuRightSmoothed, vuRightPeak * VU_DECAY_RATE);
-
-    // Clear canvas
-    ctx.fillStyle = '#0a0a0a';
-    ctx.fillRect(0, 0, width, height);
-
-    // Dimensions
-    const pivotY = height / 2;  // Center vertically
-    const arcRadius = Math.min(width * 0.45, height * 0.6);  // Bigger arc for taller meters
-    const needleLength = arcRadius * 0.85;  // Needle shorter than arc
-
-    // LEFT METER (pivot on left edge)
-    const leftPivotX = width * 0.05;
-
-    // Draw left arc scale - from +90° to -90° counterclockwise (bottom, through right, to top) - INWARD
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(leftPivotX, pivotY, arcRadius, Math.PI / 2, -Math.PI / 2, true);
-    ctx.stroke();
-
-    // Scale marks for left
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i <= 10; i++) {
-        const angle = Math.PI / 2 - (Math.PI * i / 10);
-        const x1 = leftPivotX + arcRadius * Math.cos(angle);
-        const y1 = pivotY + arcRadius * Math.sin(angle);
-        const x2 = leftPivotX + (arcRadius - 8) * Math.cos(angle);
-        const y2 = pivotY + (arcRadius - 8) * Math.sin(angle);
-
-        // Red zone for top ticks (last 20%)
-        ctx.strokeStyle = i >= 8 ? '#CF1A37' : '#666';
-
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-    }
-
-    // LEFT needle: rests at +90° (bottom), swings toward -90°/270° (top)
-    const leftAngle = Math.PI / 2 - vuLeftPeak * Math.PI;
-    ctx.save();
-    ctx.translate(leftPivotX, pivotY);
-    ctx.rotate(leftAngle);
-
-    // Needle shadow
-    ctx.strokeStyle = 'rgba(207, 26, 55, 0.3)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(needleLength, 0);
-    ctx.stroke();
-
-    // Needle
-    ctx.strokeStyle = '#CF1A37';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(needleLength, 0);
-    ctx.stroke();
-
-    // Needle tip
-    ctx.fillStyle = '#CF1A37';
-    ctx.beginPath();
-    ctx.arc(needleLength, 0, 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-
-    // Pivot point
-    ctx.fillStyle = '#666';
-    ctx.beginPath();
-    ctx.arc(leftPivotX, pivotY, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    // RIGHT METER (pivot on right edge)
-    const rightPivotX = width * 0.95;
-
-    // Draw right arc scale - from +90° to +270° (bottom, through left, to top) - INWARD
-    ctx.strokeStyle = '#333';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(rightPivotX, pivotY, arcRadius, Math.PI / 2, Math.PI * 3 / 2);
-    ctx.stroke();
-
-    // Scale marks for right
-    ctx.lineWidth = 1.5;
-    for (let i = 0; i <= 10; i++) {
-        const angle = Math.PI / 2 + (Math.PI * i / 10);
-        const x1 = rightPivotX + arcRadius * Math.cos(angle);
-        const y1 = pivotY + arcRadius * Math.sin(angle);
-        const x2 = rightPivotX + (arcRadius - 8) * Math.cos(angle);
-        const y2 = pivotY + (arcRadius - 8) * Math.sin(angle);
-
-        // Red zone for top ticks (last 20%)
-        ctx.strokeStyle = i >= 8 ? '#CF1A37' : '#666';
-
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
-        ctx.stroke();
-    }
-
-    // RIGHT needle: rests at +90° (bottom), swings toward +270° (top)
-    const rightAngle = Math.PI / 2 + vuRightPeak * Math.PI;
-    ctx.save();
-    ctx.translate(rightPivotX, pivotY);
-    ctx.rotate(rightAngle);
-
-    // Needle shadow
-    ctx.strokeStyle = 'rgba(207, 26, 55, 0.3)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(needleLength, 0);
-    ctx.stroke();
-
-    // Needle
-    ctx.strokeStyle = '#CF1A37';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(needleLength, 0);
-    ctx.stroke();
-
-    // Needle tip
-    ctx.fillStyle = '#CF1A37';
-    ctx.beginPath();
-    ctx.arc(needleLength, 0, 2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-
-    // Pivot point
-    ctx.fillStyle = '#666';
-    ctx.beginPath();
-    ctx.arc(rightPivotX, pivotY, 6, 0, Math.PI * 2);
-    ctx.fill();
+    // Update and draw - component handles all the rendering!
+    vuMeterComponent.update(leftPeak, rightPeak);
+    vuMeterComponent.draw();
 }
 
 function updatePlaybackPosition() {
@@ -1712,76 +1530,44 @@ function updatePlaybackPosition() {
 }
 
 function drawVisualizer() {
-    const canvas = document.getElementById('visualizer');
-    const ctx = canvas.getContext('2d');
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
+    // Initialize visualization components
+    if (!vuMeterComponent) {
+        vuMeterComponent = new VUMeterCanvas('vumeter');
+    }
+    if (!waveformComponent) {
+        waveformComponent = new WaveformDisplayCanvas('visualizer');
+    }
+    if (!spectrumComponent) {
+        spectrumComponent = new SpectrumAnalyzerCanvas('spectrum');
+    }
 
-    // Initialize spectrum canvas
+    // Resize canvases
     const spectrumCanvas = document.getElementById('spectrum');
     if (spectrumCanvas) {
         spectrumCanvas.width = spectrumCanvas.offsetWidth;
         spectrumCanvas.height = spectrumCanvas.offsetHeight;
     }
 
-    // Initialize VU meter canvas
     const vuCanvas = document.getElementById('vumeter');
     if (vuCanvas) {
         vuCanvas.width = vuCanvas.offsetWidth;
         vuCanvas.height = vuCanvas.offsetHeight;
     }
 
+    // Animation loop
     const draw = () => {
         visualizerAnimationId = requestAnimationFrame(draw);
 
+        // Get analyser data
         const dataArray = processor.getAnalyserData();
-        const bufferLength = dataArray.length;
 
-        ctx.fillStyle = '#0a0a0a';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Grid
-        ctx.strokeStyle = '#1a1a1a';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 5; i++) {
-            const y = (canvas.height / 4) * i;
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(canvas.width, y);
-            ctx.stroke();
+        // Update all visualizations using extracted components
+        if (waveformComponent && dataArray) {
+            waveformComponent.draw(dataArray);
         }
 
-        // Waveform
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#CF1A37';
-        ctx.beginPath();
-
-        const sliceWidth = canvas.width / bufferLength;
-        let x = 0;
-
-        for (let i = 0; i < bufferLength; i++) {
-            const v = dataArray[i] / 128.0;
-            const y = v * canvas.height / 2;
-
-            if (i === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
-            }
-
-            x += sliceWidth;
-        }
-
-        ctx.lineTo(canvas.width, canvas.height / 2);
-        ctx.stroke();
-
-        // Draw spectrum analyzer
         drawSpectrum();
-
-        // Draw VU meter
         drawVUMeter();
-        
-        // Update playback position
         updatePlaybackPosition();
     };
 

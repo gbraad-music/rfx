@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v161';
+const CACHE_NAME = 'rfx-effects-v186';
 const ASSETS = [
     './',
     './index.html',
@@ -14,9 +14,13 @@ const ASSETS = [
     './audio-worklet-processor.js',
     './regroove-effects.js',
     './regroove-effects.wasm',
-    './pad-knob.js',
-    './svg-slider.js',
-    './fader-components.js',
+    // Web UI components
+    './components/pad-knob.js',
+    './components/svg-slider.js',
+    './components/fader-components.js',
+    './components/vu-meter.js',
+    './components/waveform-display.js',
+    './components/spectrum-analyzer.js',
     // Unified Deck Player (MOD/MED/AHX/SID with automatic detection)
     './players/deck-player.js',
     './players/deck-player.wasm',
@@ -52,6 +56,8 @@ const ASSETS = [
     './synths/rg909-drum.wasm',
     './synths/rgsfz-player.js',
     './synths/rgsfz-player.wasm',
+    './synths/rgslicer.js',
+    './synths/rgslicer.wasm',
     // Preset data files
     './data/sid_presets.h'
 ];

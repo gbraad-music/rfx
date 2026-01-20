@@ -1,0 +1,56 @@
+{
+  "header": {
+    "platform": "nts-3",
+    "module": "modfx",
+    "api": "1.1-0",
+    "dev_id": 0,
+    "prg_id": 17,
+    "version": "1.0-0",
+    "name": "RFX Lofi",
+    "num_param": 7,
+    "params": [
+      [
+        "Bit Depth",
+        0,
+        3,
+        3
+      ],
+      [
+        "Sample Rate",
+        0,
+        7,
+        7
+      ],
+      [
+        "Filter",
+        0,
+        100,
+        100
+      ],
+      [
+        "Saturation",
+        0,
+        100,
+        0
+      ],
+      [
+        "Noise",
+        0,
+        100,
+        0
+      ],
+      [
+        "WowFlutter",
+        0,
+        100,
+        0
+      ],
+      [
+        "WF Rate",
+        1,
+        100,
+        5
+      ]
+    ]
+  }
+}

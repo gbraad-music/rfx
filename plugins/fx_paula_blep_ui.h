@@ -1,102 +1,64 @@
-/**
- * Paula BLEP UI Helper
- * ImGui rendering for fx_paula_blep
+/*
+ * FX Paula BLEP UI Component
+ * Copyright (C) 2025
+ * SPDX-License-Identifier: ISC
  */
 
 #ifndef FX_PAULA_BLEP_UI_H
 #define FX_PAULA_BLEP_UI_H
 
-#include "../effects/fx_paula_blep.h"
-#include "DearImGuiKnobs/imgui-knobs.h"
-#include "DearImGuiToggle/imgui_toggle.h"
+#include "rfx_ui_utils.h"
 
-namespace PaulaBlepUI {
+namespace FX {
+namespace PaulaBlep {
 
 static const char* mode_names[] = {
-    "A500 (4.9kHz)",
-    "A500+LED (3.3kHz)",
-    "A1200 (32kHz)",
-    "A1200+LED (3.3kHz)",
-    "Unfiltered"
+    "A500",
+    "A500+LED",
+    "A1200",
+    "A1200+LED"
 };
 
 /**
- * Render Paula BLEP controls
+ * Render Paula BLEP effect UI
  * Returns true if any parameter changed
  */
-static inline bool render(FXPaulaBlep* fx, float width = 300.0f, bool compact = false) {
-    if (!fx) return false;
-
+inline bool renderUI(float* enabled, float* mode, float* mix,
+                    float width = RFX::UI::Size::FaderWidth)
+{
     bool changed = false;
-    int enabled = fx_paula_blep_get_enabled(fx);
-    PaulaMode mode = fx_paula_blep_get_mode(fx);
-    float mix = fx_paula_blep_get_mix(fx);
+    const float spacing = RFX::UI::Size::Spacing;
 
-    if (compact) {
-        // Compact layout - single row
-        ImGui::BeginGroup();
+    RFX::UI::beginEffectGroup();
 
-        if (ImGui::ToggleButton("##paula_enable", &enabled)) {
-            fx_paula_blep_set_enabled(fx, enabled);
-            changed = true;
-        }
-        ImGui::SameLine();
+    // Title
+    RFX::UI::renderEffectTitle("PAULA BLEP");
 
-        ImGui::SetNextItemWidth(width * 0.5f);
-        int mode_idx = (int)mode;
-        if (ImGui::Combo("##paula_mode", &mode_idx, mode_names, PAULA_NUM_MODES)) {
-            fx_paula_blep_set_mode(fx, (PaulaMode)mode_idx);
-            changed = true;
-        }
-        ImGui::SameLine();
-
-        if (ImGuiKnobs::Knob("Mix##paula", &mix, 0.0f, 1.0f, 0.01f, "%.0f%%", ImGuiKnobVariant_Tick, 0.0f, ImGuiKnobFlags_ValueTooltip)) {
-            fx_paula_blep_set_mix(fx, mix);
-            changed = true;
-        }
-
-        ImGui::EndGroup();
-    } else {
-        // Full layout - vertical
-        ImGui::BeginGroup();
-        ImGui::Text("Paula BLEP");
-        ImGui::Spacing();
-
-        if (ImGui::Checkbox("Enable##paula", (bool*)&enabled)) {
-            fx_paula_blep_set_enabled(fx, enabled);
-            changed = true;
-        }
-
-        ImGui::SetNextItemWidth(width);
-        int mode_idx = (int)mode;
-        if (ImGui::Combo("Mode##paula", &mode_idx, mode_names, PAULA_NUM_MODES)) {
-            fx_paula_blep_set_mode(fx, (PaulaMode)mode_idx);
-            changed = true;
-        }
-
-        if (ImGuiKnobs::Knob("Mix##paula", &mix, 0.0f, 1.0f, 0.01f, "%.0f%%", ImGuiKnobVariant_Tick, 0.0f, ImGuiKnobFlags_ValueTooltip)) {
-            fx_paula_blep_set_mix(fx, mix);
-            changed = true;
-        }
-
-        ImGui::SameLine();
-        ImGui::TextDisabled("(?)");
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("Amiga Paula DAC emulation");
-            ImGui::Text("Uses BLEP synthesis for authentic sound");
-            ImGui::Text("A500: Warmer, more filtered");
-            ImGui::Text("A1200: Brighter, less filtered");
-            ImGui::Text("+LED: Additional 3.3kHz lowpass");
-            ImGui::EndTooltip();
-        }
-
-        ImGui::EndGroup();
+    // Enable button
+    bool en = *enabled >= 0.5f;
+    if (RFX::UI::renderEnableButton("ON##paulablep", &en, width)) {
+        *enabled = en ? 1.0f : 0.0f;
+        changed = true;
     }
+    ImGui::Dummy(ImVec2(0, spacing));
+
+    // Mode selector (0-3: A500, A500+LED, A1200, A1200+LED)
+    if (RFX::UI::renderFader("Mode", "##paulablep_mode", mode, 0.0f, 3.0f, width)) {
+        changed = true;
+    }
+    ImGui::SameLine(0, spacing);
+
+    // Mix (0.0 to 1.0)
+    if (RFX::UI::renderFader("Mix", "##paulablep_mix", mix, 0.0f, 1.0f)) {
+        changed = true;
+    }
+
+    RFX::UI::endEffectGroup();
 
     return changed;
 }
 
-} // namespace PaulaBlepUI
+} // namespace PaulaBlep
+} // namespace FX
 
 #endif // FX_PAULA_BLEP_UI_H

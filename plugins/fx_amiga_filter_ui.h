@@ -9,6 +9,7 @@
 #include "../effects/fx_amiga_filter.h"
 #include "DearImGuiKnobs/imgui-knobs.h"
 #include "DearImGuiToggle/imgui_toggle.h"
+#include "rfx_ui_utils.h"
 
 namespace AmigaFilterUI {
 
@@ -22,9 +23,10 @@ static const char* filter_type_names[] = {
 };
 
 /**
- * Render Amiga filter controls
+ * Render Amiga filter controls (OLD - uses knobs and toggle buttons)
  * Returns true if any parameter changed
  */
+#if 0  // Disabled - requires ToggleButton and Knobs
 static inline bool render(FXAmigaFilter* fx, float width = 300.0f, bool compact = false) {
     if (!fx) return false;
 
@@ -82,6 +84,40 @@ static inline bool render(FXAmigaFilter* fx, float width = 300.0f, bool compact 
 
         ImGui::EndGroup();
     }
+
+    return changed;
+}
+#endif  // Disabled
+
+/**
+ * Render Amiga filter UI with parameter pointers
+ * Returns true if any parameter changed
+ */
+static inline bool renderUI(float* type, float* mix,
+                            float width = RFX::UI::Size::FaderWidth)
+{
+    bool changed = false;
+    const float spacing = RFX::UI::Size::Spacing;
+
+    RFX::UI::beginEffectGroup();
+
+    // Title
+    RFX::UI::renderEffectTitle("AMIGA FILTER");
+
+    ImGui::Dummy(ImVec2(0, spacing));
+
+    // Type selector (0-3: A500, A500+LED, A1200, A1200+LED)
+    if (RFX::UI::renderFader("Type", "##amigafilter_type", type, 0.0f, 3.0f, width)) {
+        changed = true;
+    }
+    ImGui::SameLine(0, spacing);
+
+    // Mix (0.0 to 1.0)
+    if (RFX::UI::renderFader("Mix", "##amigafilter_mix", mix, 0.0f, 1.0f)) {
+        changed = true;
+    }
+
+    RFX::UI::endEffectGroup();
 
     return changed;
 }

@@ -1,92 +1,82 @@
-/**
- * Resampler UI Helper
- * ImGui rendering for fx_resampler
+/*
+ * FX Resampler UI Component
+ * Copyright (C) 2025
+ * SPDX-License-Identifier: ISC
  */
 
 #ifndef FX_RESAMPLER_UI_H
 #define FX_RESAMPLER_UI_H
 
-#include "../effects/fx_resampler.h"
-#include "DearImGuiKnobs/imgui-knobs.h"
-#include "DearImGuiToggle/imgui_toggle.h"
+#include "rfx_ui_utils.h"
 
-namespace ResamplerUI {
+namespace FX {
+namespace Resampler {
 
 static const char* mode_names[] = {
-    "Nearest (Zero-Hold)",
-    "Linear (2-point)",
-    "Cubic (4-point Sinc)",
-    "Sinc8 (8-point AA)"
+    "Nearest",
+    "Linear",
+    "Cubic",
+    "Sinc8"
 };
 
 /**
- * Render resampler controls
+ * Render resampler effect UI
  * Returns true if any parameter changed
  */
-static inline bool render(FXResampler* fx, float width = 300.0f, bool compact = false) {
-    if (!fx) return false;
-
+inline bool renderUI(float* enabled, float* mode, float* rate,
+                    float width = RFX::UI::Size::FaderWidth)
+{
     bool changed = false;
-    int enabled = fx_resampler_get_enabled(fx);
-    ResamplerMode mode = fx_resampler_get_mode(fx);
-    float rate = fx_resampler_get_rate(fx);
+    const float spacing = RFX::UI::Size::Spacing;
 
-    if (compact) {
-        // Compact layout - single row
-        ImGui::BeginGroup();
+    RFX::UI::beginEffectGroup();
 
-        if (ImGui::ToggleButton("##resamp_enable", &enabled)) {
-            fx_resampler_set_enabled(fx, enabled);
-            changed = true;
-        }
-        ImGui::SameLine();
+    // Title
+    RFX::UI::renderEffectTitle("RESAMPLER");
 
-        ImGui::SetNextItemWidth(width * 0.4f);
-        int mode_idx = (int)mode;
-        if (ImGui::Combo("##resamp_mode", &mode_idx, mode_names, RESAMPLER_NUM_MODES)) {
-            fx_resampler_set_mode(fx, (ResamplerMode)mode_idx);
-            changed = true;
-        }
-        ImGui::SameLine();
-
-        if (ImGuiKnobs::Knob("Rate##resamp", &rate, 0.25f, 4.0f, 0.01f, "%.2fx", ImGuiKnobVariant_Tick, 0.0f, ImGuiKnobFlags_ValueTooltip)) {
-            fx_resampler_set_rate(fx, rate);
-            changed = true;
-        }
-
-        ImGui::EndGroup();
-    } else {
-        // Full layout - vertical
-        ImGui::BeginGroup();
-        ImGui::Text("Resampler");
-        ImGui::Spacing();
-
-        if (ImGui::Checkbox("Enable##resamp", (bool*)&enabled)) {
-            fx_resampler_set_enabled(fx, enabled);
-            changed = true;
-        }
-
-        ImGui::SetNextItemWidth(width);
-        int mode_idx = (int)mode;
-        if (ImGui::Combo("Mode##resamp", &mode_idx, mode_names, RESAMPLER_NUM_MODES)) {
-            fx_resampler_set_mode(fx, (ResamplerMode)mode_idx);
-            changed = true;
-        }
-
-        if (ImGuiKnobs::Knob("Rate##resamp", &rate, 0.25f, 4.0f, 0.01f, "%.2fx", ImGuiKnobVariant_Tick, 0.0f, ImGuiKnobFlags_ValueTooltip)) {
-            fx_resampler_set_rate(fx, rate);
-            changed = true;
-        }
-
-        ImGui::SameLine();
-        ImGui::Text("(0.25x - 4.0x)");
-
-        ImGui::EndGroup();
+    // Enable button
+    bool en = *enabled >= 0.5f;
+    if (RFX::UI::renderEnableButton("ON##resampler", &en, width)) {
+        *enabled = en ? 1.0f : 0.0f;
+        changed = true;
     }
+    ImGui::Dummy(ImVec2(0, spacing));
+
+    // Mode selector (0-3)
+    ImGui::BeginGroup();
+    int current_mode = (int)(*mode + 0.5f);
+    if (current_mode < 0) current_mode = 0;
+    if (current_mode > 3) current_mode = 3;
+
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.81f, 0.10f, 0.22f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, ImVec4(0.91f, 0.20f, 0.32f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, width - 4.0f);
+    if (ImGui::VSliderFloat("##resampler_mode", ImVec2(width, 200.0f), mode, 0.0f, 3.0f, "")) {
+        changed = true;
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(3);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.90f, 0.90f, 1.0f));
+    ImGui::Text("%s", mode_names[current_mode]);
+    ImGui::PopStyleColor();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.0f));
+    ImGui::Text("Mode");
+    ImGui::PopStyleColor();
+    ImGui::EndGroup();
+    ImGui::SameLine(0, spacing);
+
+    // Rate (0.25x to 4.0x)
+    if (RFX::UI::renderFader("Rate", "##resampler_rate", rate, 0.25f, 4.0f)) {
+        changed = true;
+    }
+
+    RFX::UI::endEffectGroup();
 
     return changed;
 }
 
-} // namespace ResamplerUI
+} // namespace Resampler
+} // namespace FX
 
 #endif // FX_RESAMPLER_UI_H

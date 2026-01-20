@@ -1,0 +1,26 @@
+{
+  "header": {
+    "platform": "nts-3",
+    "module": "modfx",
+    "api": "1.1-0",
+    "dev_id": 0,
+    "prg_id": 16,
+    "version": "1.0-0",
+    "name": "RFX AmigaFilter",
+    "num_param": 2,
+    "params": [
+      [
+        "Type",
+        0,
+        3,
+        0
+      ],
+      [
+        "Depth",
+        0,
+        100,
+        100
+      ]
+    ]
+  }
+}

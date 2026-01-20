@@ -4,10 +4,7 @@
 ifeq ($(WINDOWS),true)
 CC  = x86_64-w64-mingw32-gcc
 CXX = x86_64-w64-mingw32-g++
-<<<<<<< HEAD
 export CC CXX
-=======
->>>>>>> e8a3505 (Amiga resampler/filter as plugin)
 endif
 
 include ../../dpf/Makefile.base.mk
@@ -37,21 +34,13 @@ endif
 
 LINK_FLAGS += -lm
 
-<<<<<<< HEAD
-=======
-include ../../dpf/Makefile.plugins.mk
-
->>>>>>> e8a3505 (Amiga resampler/filter as plugin)
 # Fix Windows .def file handling for modern MinGW
 ifeq ($(WINDOWS),true)
 SYMBOLS_VST3 = -Wl,--version-script=$(DPF_PATH)/utils/symbols/vst3.version
 endif
 
-<<<<<<< HEAD
 include ../../dpf/Makefile.plugins.mk
 
-=======
->>>>>>> e8a3505 (Amiga resampler/filter as plugin)
 lv2_sep: $(lv2_dsp) $(lv2_ui)
 	cp ../../assets/icon-192x192.png ../../bin/$(NAME).lv2/icon.png 2>/dev/null || true
 

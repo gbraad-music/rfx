@@ -28,6 +28,9 @@ extern "C" {
 #include "../../common/sample_loader.h"
 }
 
+// Regroove resource paths
+#include "../../common/regroove_paths.h"
+
 // Parameter indices
 enum {
   PARAM_VOLUME = 0,
@@ -208,9 +211,9 @@ public:
     current_preset_ = preset_idx;
     sfz_loaded_ = false;
 
-    // Construct path to SFZ file
+    // Construct path to SFZ file using Regroove paths
     char sfz_path[256];
-    snprintf(sfz_path, sizeof(sfz_path), "/user/osc/rgsfz/preset_%d.sfz", preset_idx);
+    snprintf(sfz_path, sizeof(sfz_path), "%s/preset_%d.sfz", REGROOVE_RESOURCE_PATH, preset_idx);
 
     // Open and read SFZ file
     FILE* sfz_file = fopen(sfz_path, "r");
@@ -262,9 +265,9 @@ public:
         continue;  // No sample for this region
       }
 
-      // Construct full path to WAV file
+      // Construct full path to WAV file using Regroove paths
       char wav_path[512];
-      snprintf(wav_path, sizeof(wav_path), "/user/osc/rgsfz/%s", sample_path);
+      snprintf(wav_path, sizeof(wav_path), "%s/%s", REGROOVE_RESOURCE_PATH, sample_path);
 
       // Load WAV file
       LoadWAVSample(i, wav_path);

@@ -313,6 +313,9 @@ struct RDJ_Deck : Module {
 	std::atomic<size_t> audioSize{0};  // Safe to read from any thread
 	std::atomic<bool> initialized{false};  // Module fully initialized and safe to access
 
+	// Shared waveform display (uses common C code from /common/audio_viz/)
+	WaveformDisplay waveform;
+
 	RDJ_Deck() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 
@@ -329,6 +332,9 @@ struct RDJ_Deck : Module {
 		configOutput(AUDIO_L_OUTPUT, "Left audio");
 		configOutput(AUDIO_R_OUTPUT, "Right audio");
 
+		// Initialize waveform display (5 seconds buffer, stereo, 48kHz)
+		waveform_init(&waveform, 48000 * 5, WAVEFORM_CHANNEL_STEREO, 48000);
+
 		// Mark as initialized - safe for displays to access
 		initialized = true;
 	}
@@ -339,6 +345,9 @@ struct RDJ_Deck : Module {
 		if (loadingThread.joinable()) {
 			loadingThread.join();
 		}
+
+		// Clean up waveform display
+		waveform_destroy(&waveform);
 	}
 
 	void loadFile(const std::string& path) {
@@ -503,6 +512,10 @@ struct RDJ_Deck : Module {
 		float rightSample = audio.dataR[pos];
 		int sampleRate = audio.sampleRate;
 
+		// Feed samples to shared waveform display
+		float samples[2] = {leftSample, rightSample};
+		waveform_write_stereo(&waveform, samples, 1);
+
 		// Output audio
 		float gain = muted ? 0.f : 5.f;
 		outputs[AUDIO_L_OUTPUT].setVoltage(leftSample * gain);
@@ -555,434 +568,6 @@ struct RDJ_Deck : Module {
 };
 
 // Overview waveform - shows entire file with playhead
-struct OverviewWaveformDisplay : TransparentWidget {
-	RDJ_Deck* module;
-
-	void draw(const DrawArgs& args) override {
-		// Red border
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-		nvgStrokeColor(args.vg, REGROOVE_RED);
-		nvgStrokeWidth(args.vg, 2);
-		nvgStroke(args.vg);
-
-		if (!module || !module->initialized || module->loading || !module->fileLoaded) {
-			nvgFontSize(args.vg, 10);
-			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-			nvgTextAlign(args.vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			nvgFillColor(args.vg, nvgRGB(0x55, 0x55, 0x55));
-			const char* text = (!module || !module->fileLoaded) ? "Right-click to load file" : "Loading...";
-			nvgText(args.vg, box.size.x / 2, box.size.y / 2, text, NULL);
-			Widget::draw(args);
-			return;
-		}
-
-		// Read atomic size - safe from any thread
-		size_t dataSize = module->audioSize;
-		double playPos = module->playPosition;
-
-		// Double-check flags haven't changed
-		if (module->loading || !module->fileLoaded || dataSize == 0) {
-			Widget::draw(args);
-			return;
-		}
-
-		if (dataSize == 0 || dataSize > 1000000000) {  // Sanity check
-			Widget::draw(args);
-			return;
-		}
-
-		// Use cached waveform frames for efficient, thread-safe display
-		// Try to lock for safe data access - if we can't get the lock, skip this frame
-		if (!module->swapMutex.try_lock()) {
-			Widget::draw(args);
-			return;
-		}
-
-		// Read size INSIDE the lock!
-		size_t numFrames = module->audio.waveformFrames.size();
-
-		// If no waveform cache yet, use raw audio (slower but works)
-		if (numFrames == 0) {
-			// Draw from raw audio data
-			const float samplesPerPixel = (float)dataSize / box.size.x;
-			const float centerY = box.size.y / 2;
-			const float borderWidth = 2.0f;  // Border stroke width
-			const float scale = (box.size.y - borderWidth * 2) / 2;  // Leave room for border
-
-			nvgStrokeColor(args.vg, REGROOVE_RED);
-			nvgStrokeWidth(args.vg, 1);
-
-			for (float x = 0; x < box.size.x; x += 1.0f) {
-				size_t startSample = (size_t)(x * samplesPerPixel);
-				size_t endSample = (size_t)((x + 1) * samplesPerPixel);
-
-				if (startSample >= dataSize) break;
-				if (endSample > dataSize) endSample = dataSize;
-
-				float peak = 0.0f;
-				for (size_t i = startSample; i < endSample; i++) {
-					float absVal = fabs(module->audio.dataL[i]);
-					if (absVal > peak) peak = absVal;
-				}
-
-				float height = peak * scale;
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, x, centerY - height);
-				nvgLineTo(args.vg, x, centerY + height);
-				nvgStroke(args.vg);
-			}
-		} else {
-			// Draw from cached waveform frames (much faster and safer!)
-			const float framesPerPixel = (float)numFrames / box.size.x;
-			const float centerY = box.size.y / 2;
-			const float borderWidth = 2.0f;  // Border stroke width
-			const float scale = (box.size.y - borderWidth * 2) / 2;  // Leave room for border
-
-			nvgStrokeWidth(args.vg, 1);
-
-			for (float x = 0; x < box.size.x; x += 1.0f) {
-				size_t frameIdx = (size_t)(x * framesPerPixel);
-				if (frameIdx >= numFrames) break;
-
-				WaveformFrame& frame = module->audio.waveformFrames[frameIdx];
-				float amplitude = frame.amplitude;
-				float height = amplitude * scale;
-
-				// Spectral coloring (like rescratch/Mixxx)
-				float totalEnergy = frame.bands.low + frame.bands.mid + frame.bands.high;
-
-				// Fallback to red if no spectral data
-				if (totalEnergy < 0.001f) {
-					nvgStrokeColor(args.vg, REGROOVE_RED);
-				} else {
-					int r = (int)(255.0f * frame.bands.low / totalEnergy);
-					int g = (int)(255.0f * frame.bands.mid / totalEnergy);
-					int b = (int)(255.0f * frame.bands.high / totalEnergy);
-					nvgStrokeColor(args.vg, nvgRGB(r, g, b));
-				}
-
-				nvgBeginPath(args.vg);
-				nvgMoveTo(args.vg, x, centerY - height);
-				nvgLineTo(args.vg, x, centerY + height);
-				nvgStroke(args.vg);
-			}
-		}
-
-		module->swapMutex.unlock();
-
-		// Playhead (drawn without lock)
-		if (dataSize > 0 && playPos >= 0 && playPos < dataSize) {
-			float playheadX = (playPos / dataSize) * box.size.x;
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, playheadX, 0);
-			nvgLineTo(args.vg, playheadX, box.size.y);
-			nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 200));
-			nvgStrokeWidth(args.vg, 2);
-			nvgStroke(args.vg);
-		}
-
-		Widget::draw(args);
-	}
-
-	void onButton(const ButtonEvent& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module && module->initialized && !module->loading && module->fileLoaded) {
-				size_t dataSize = module->audioSize;
-				if (dataSize > 0) {
-					float newPos = e.pos.x / box.size.x;
-					newPos = clamp(newPos, 0.f, 1.f);
-					module->playPosition = newPos * dataSize;
-					e.consume(this);
-				}
-			}
-		}
-		TransparentWidget::onButton(e);
-	}
-
-	void onDragMove(const DragMoveEvent& e) override {
-		if (module && module->initialized && !module->loading && module->fileLoaded) {
-			size_t dataSize = module->audioSize;
-			if (dataSize > 0) {
-				float deltaPos = e.mouseDelta.x / box.size.x;
-				module->playPosition += deltaPos * dataSize;
-				if (module->playPosition < 0.0) module->playPosition = 0.0;
-				if (module->playPosition >= dataSize) {
-					module->playPosition = dataSize - 1;
-				}
-			}
-		}
-		TransparentWidget::onDragMove(e);
-	}
-};
-
-// Detail waveform - shows zoomed view that scrolls with playback
-struct DetailWaveformDisplay : TransparentWidget {
-	RDJ_Deck* module;
-	float windowTimeSeconds = 4.0f;  // Show fixed 4-second time window (close-up view)
-
-	void draw(const DrawArgs& args) override {
-		// Red border
-		nvgBeginPath(args.vg);
-		nvgRect(args.vg, 0, 0, box.size.x, box.size.y);
-		nvgStrokeColor(args.vg, REGROOVE_RED);
-		nvgStrokeWidth(args.vg, 2);
-		nvgStroke(args.vg);
-
-		if (!module || !module->initialized || module->loading || !module->fileLoaded) {
-			Widget::draw(args);
-			return;
-		}
-
-		// Read atomic size - safe from any thread
-		size_t dataSize = module->audioSize;
-		double playPos = module->playPosition;
-
-		// Double-check flags haven't changed
-		if (module->loading || !module->fileLoaded || dataSize == 0) {
-			Widget::draw(args);
-			return;
-		}
-
-		if (dataSize == 0 || dataSize > 1000000000) {
-			Widget::draw(args);
-			return;
-		}
-
-		// Calculate visible window - ALWAYS centered on playhead
-		// Fixed time window (like Mixxx) instead of percentage of file
-		const size_t windowSize = (size_t)(windowTimeSeconds * module->audio.sampleRate);
-		if (windowSize == 0) {
-			Widget::draw(args);
-			return;
-		}
-
-		// Clamp playPos to valid range
-		if (playPos < 0) playPos = 0;
-		if (playPos >= dataSize) playPos = dataSize - 1;
-
-		// Calculate window centered on playhead (may go beyond file boundaries)
-		const double halfWindow = windowSize / 2.0;
-		const long long startSample = (long long)playPos - (long long)halfWindow;
-
-		const float samplesPerPixel = (float)windowSize / box.size.x;
-		const float centerY = box.size.y / 2;
-		const float borderWidth = 2.0f;  // Border stroke width
-		const float scale = (box.size.y - borderWidth * 2) / 2;  // Leave room for border
-
-		nvgStrokeWidth(args.vg, 1);
-
-		// Try to lock for safe data access
-		if (!module->swapMutex.try_lock()) {
-			Widget::draw(args);
-			return;
-		}
-
-		// Read size INSIDE the lock!
-		size_t numFrames = module->audio.waveformFrames.size();
-		bool hasSpectral = (numFrames > 0);
-
-		// Draw waveform - playhead always at center
-		for (float x = 0; x < box.size.x; x += 1.0f) {
-			long long sampleStart = startSample + (long long)(x * samplesPerPixel);
-			long long sampleEnd = startSample + (long long)((x + 1) * samplesPerPixel);
-
-			// Skip if completely outside valid range
-			if (sampleEnd < 0 || sampleStart >= (long long)dataSize) continue;
-
-			// Clamp to valid range
-			if (sampleStart < 0) sampleStart = 0;
-			if (sampleEnd > (long long)dataSize) sampleEnd = dataSize;
-
-			float peak = 0.0f;
-			for (long long i = sampleStart; i < sampleEnd; i++) {
-				float absVal = fabs(module->audio.dataL[i]);
-				if (absVal > peak) peak = absVal;
-			}
-
-			float height = peak * scale;
-
-			// Get spectral color if available
-			if (hasSpectral) {
-				// Map sample position to frame index
-				size_t midSample = (sampleStart + sampleEnd) / 2;
-				size_t frameIdx = midSample / WAVEFORM_DOWNSAMPLE;
-
-				if (frameIdx < numFrames) {
-					WaveformFrame& frame = module->audio.waveformFrames[frameIdx];
-					float totalEnergy = frame.bands.low + frame.bands.mid + frame.bands.high;
-
-					// Fallback to red if no spectral data
-					if (totalEnergy < 0.001f) {
-						nvgStrokeColor(args.vg, REGROOVE_RED);
-					} else {
-						int r = (int)(255.0f * frame.bands.low / totalEnergy);
-						int g = (int)(255.0f * frame.bands.mid / totalEnergy);
-						int b = (int)(255.0f * frame.bands.high / totalEnergy);
-						nvgStrokeColor(args.vg, nvgRGB(r, g, b));
-					}
-				} else {
-					nvgStrokeColor(args.vg, REGROOVE_RED);
-				}
-			} else {
-				nvgStrokeColor(args.vg, REGROOVE_RED);
-			}
-
-			nvgBeginPath(args.vg);
-			nvgMoveTo(args.vg, x, centerY - height);
-			nvgLineTo(args.vg, x, centerY + height);
-			nvgStroke(args.vg);
-		}
-
-		// Get beat grid data and loop info before unlocking
-		float bpm = module->audio.bpm;
-		size_t firstBeat = module->audio.firstBeat;
-		int sampleRate = module->audio.sampleRate;
-		bool looping = module->looping;
-		size_t loopStart = module->loopStartSample;
-		size_t loopEnd = module->loopEndSample;
-
-		module->swapMutex.unlock();
-
-		// Draw beat grid using BPM and first beat offset
-		if (bpm > 0.0f && bpm < 300.0f) {
-			float samplesPerBeat = (60.0f / bpm) * sampleRate;
-			double windowStartSample = playPos - (windowSize / 2.0);
-			double windowEndSample = windowStartSample + windowSize;
-
-			// Use firstBeat as offset (0 if not detected)
-			// Grid extends backwards and forwards from this point
-			size_t gridOffset = firstBeat;
-
-			// Find first beat marker in visible window (allow negative beat numbers)
-			long long beatNumber = (long long)((windowStartSample - gridOffset) / samplesPerBeat);
-			// Don't clamp to 0 - allow grid to extend before first detected beat
-
-			nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 60));
-			nvgStrokeWidth(args.vg, 1);
-
-			// Draw beat markers within visible window
-			for (long long bn = beatNumber; ; bn++) {
-				double beatSample = gridOffset + bn * samplesPerBeat;
-
-				if (beatSample > windowEndSample) break;
-				if (beatSample < windowStartSample) continue;
-
-				// Convert beat sample position to screen X coordinate
-				double relativePos = beatSample - windowStartSample;
-				float beatX = (float)(relativePos / windowSize * box.size.x);
-
-				if (beatX >= 0 && beatX <= box.size.x) {
-					nvgBeginPath(args.vg);
-					nvgMoveTo(args.vg, beatX, 0);
-					nvgLineTo(args.vg, beatX, box.size.y);
-					nvgStroke(args.vg);
-				}
-			}
-		}
-
-		// Draw yellow loop region overlay (if looping)
-		if (looping && loopEnd > loopStart) {
-			double windowStartSample = playPos - (windowSize / 2.0);
-			double windowEndSample = windowStartSample + windowSize;
-
-			// Check if loop region is visible in current window
-			if ((double)loopEnd >= windowStartSample && (double)loopStart <= windowEndSample) {
-				// Calculate screen coordinates for loop region
-				double loopStartRelative = (double)loopStart - windowStartSample;
-				double loopEndRelative = (double)loopEnd - windowStartSample;
-
-				// Convert to pixel coordinates
-				float loopStartX = (float)(loopStartRelative / windowSize * box.size.x);
-				float loopEndX = (float)(loopEndRelative / windowSize * box.size.x);
-
-				// Clamp to visible area
-				if (loopStartX < 0) loopStartX = 0;
-				if (loopEndX > box.size.x) loopEndX = box.size.x;
-
-				// Draw yellow overlay with 50% opacity
-				nvgBeginPath(args.vg);
-				nvgRect(args.vg, loopStartX, 0, loopEndX - loopStartX, box.size.y);
-				nvgFillColor(args.vg, nvgRGBA(255, 255, 0, 128));  // Yellow 50% opacity
-				nvgFill(args.vg);
-			}
-		}
-
-		// Playhead ALWAYS at center (drawn on top of beat markers and loop overlay)
-		float playheadX = box.size.x / 2;
-
-		nvgBeginPath(args.vg);
-		nvgMoveTo(args.vg, playheadX, 0);
-		nvgLineTo(args.vg, playheadX, box.size.y);
-		nvgStrokeColor(args.vg, nvgRGBA(255, 255, 255, 200));
-		nvgStrokeWidth(args.vg, 2);
-		nvgStroke(args.vg);
-
-		// BPM Display (top-left corner in red accent color)
-		if (bpm > 0.0f && bpm < 300.0f) {
-			nvgFontSize(args.vg, 12);
-			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-			nvgFillColor(args.vg, REGROOVE_RED);
-
-			char bpmText[32];
-			snprintf(bpmText, sizeof(bpmText), "%.1f BPM", bpm);
-			nvgText(args.vg, 5, 5, bpmText, NULL);
-		} else {
-			nvgFontSize(args.vg, 12);
-			nvgFontFaceId(args.vg, APP->window->uiFont->handle);
-			nvgTextAlign(args.vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-			nvgFillColor(args.vg, REGROOVE_RED);
-			nvgText(args.vg, 5, 5, "NO BPM", NULL);
-		}
-
-		Widget::draw(args);
-	}
-
-	void onButton(const ButtonEvent& e) override {
-		if (e.action == GLFW_PRESS && e.button == GLFW_MOUSE_BUTTON_LEFT) {
-			if (module && module->initialized && !module->loading && module->fileLoaded) {
-				const size_t dataSize = module->audioSize;
-				if (dataSize > 0) {
-					const size_t windowSize = (size_t)(windowTimeSeconds * module->audio.sampleRate);
-					if (windowSize > 0) {
-						// Calculate click position relative to window
-						float relativeX = (e.pos.x / box.size.x) - 0.5f;  // -0.5 to 0.5
-						double currentPos = module->playPosition;
-						if (currentPos < 0) currentPos = 0;
-						if (currentPos >= dataSize) currentPos = dataSize - 1;
-
-						double offset = relativeX * (double)windowSize;
-						double newPos = currentPos + offset;
-						if (newPos < 0) newPos = 0;
-						if (newPos >= dataSize) newPos = dataSize - 1;
-						module->playPosition = newPos;
-						e.consume(this);
-					}
-				}
-			}
-		}
-		TransparentWidget::onButton(e);
-	}
-
-	void onDragMove(const DragMoveEvent& e) override {
-		if (module && module->initialized && !module->loading && module->fileLoaded) {
-			const size_t dataSize = module->audioSize;
-			if (dataSize > 0) {
-				const size_t windowSize = (size_t)(windowTimeSeconds * module->audio.sampleRate);
-				if (windowSize > 0) {
-					float deltaPos = e.mouseDelta.x / box.size.x;
-					module->playPosition += deltaPos * windowSize;
-					if (module->playPosition < 0.0) module->playPosition = 0.0;
-					if (module->playPosition >= dataSize) {
-						module->playPosition = dataSize - 1;
-					}
-				}
-			}
-		}
-		TransparentWidget::onDragMove(e);
-	}
-};
 
 struct DeckPad : RegroovePad {
 	RDJ_Deck* module;
@@ -1054,19 +639,17 @@ struct RDJ_DeckWidget : ModuleWidget {
 		titleLabel->bold = true;
 		addChild(titleLabel);
 
-		// Overview waveform display (top)
-		OverviewWaveformDisplay* overview = new OverviewWaveformDisplay();
-		overview->box.pos = mm2px(Vec(3, 16));
-		overview->box.size = mm2px(Vec(54.96, 10));
-		overview->module = module;
-		addChild(overview);
-
-		// Detail waveform display (bottom, scrolls with playback)
-		DetailWaveformDisplay* detail = new DetailWaveformDisplay();
-		detail->box.pos = mm2px(Vec(3, 26));
-		detail->box.size = mm2px(Vec(54.96, 25));
-		detail->module = module;
-		addChild(detail);
+		// Waveform display (using shared component from rack/components/)
+		// Uses the SAME C code as web UI and VST3!
+		if (module) {
+			auto* waveform = new WaveformDisplayWidget(&module->waveform,
+			                                           WAVEFORM_STYLE_OSCILLOSCOPE,
+			                                           WAVEFORM_COLOR_REGROOVE);
+			waveform->box.pos = mm2px(Vec(3, 16));
+			waveform->box.size = mm2px(Vec(54.96, 35));  // Combined height of both previous displays
+			waveform->show_grid = true;
+			addChild(waveform);
+		}
 
 		// Pad grid - positioned in red box area with VISIBLE spacing
 		float padStartX = 5;

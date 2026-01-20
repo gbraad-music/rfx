@@ -23,6 +23,10 @@
 
 using namespace rack;
 
+// Include shared visualization components (uses common C code)
+#include "components/VUMeter.hpp"
+#include "components/WaveformDisplay.hpp"
+
 // Regroove Brand Colors - EXACT match to VST3 + Web UI
 // VST3: /plugins/DearImGuiKnobs/imgui-knobs.cpp lines 235-257
 // Web:  /web/index.html lines 17-27

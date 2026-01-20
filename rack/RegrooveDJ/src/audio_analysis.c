@@ -261,10 +261,11 @@ static TempoResult detect_tempo_and_beats(
 
     result.num_beats_found = num_beats;
 
+    // Skip first 1-2 beats - they're often noisy (Mixxx does this too)
+    size_t beats_to_skip = (num_beats > 10) ? 2 : 1;
+
     // Robust beat grid alignment using multiple beats
     if (num_beats >= 4) {
-        // Skip first 1-2 beats - they're often noisy (Mixxx does this too)
-        size_t beats_to_skip = (num_beats > 10) ? 2 : 1;
 
         // Calculate BPM from TOTAL TIME SPAN (first to last beat)
         // This is more accurate than median spacing and prevents drift!
@@ -324,15 +325,6 @@ static TempoResult detect_tempo_and_beats(
             }
 
             result.first_beat = (size_t)best_offset;
-            free(spacings);
-        } else {
-            // Memory allocation failed, use simple spacing from first two beats
-            if (num_beats >= 2) {
-                double spacing = (double)(beat_positions[1] - beat_positions[0]);
-                result.bpm = (60.0 * sample_rate) / spacing;
-            }
-            result.first_beat = beat_positions[beats_to_skip];
-        }
     } else if (num_beats >= 2) {
         // Not enough beats for robust analysis, calculate from first two beats
         double spacing = (double)(beat_positions[1] - beat_positions[0]);

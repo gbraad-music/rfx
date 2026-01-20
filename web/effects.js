@@ -1436,7 +1436,7 @@ function createEffectUI() {
                 def.params.forEach(paramName => {
                     const knob = document.getElementById(`${def.name}-${paramName}-knob`);
                     if (knob) {
-                        const value = parseFloat(knob.getAttribute('value')) / 100;
+                        const value = parseFloat(knob.getAttribute('value')) / 100;  // 0-1 normalized
                         processor.setParameter(def.name, paramName, value);
                         console.log(`[Toggle] Restoring ${def.name}.${paramName} = ${value}`);
                     }
@@ -1478,7 +1478,7 @@ function createEffectUI() {
 
             // Listen for value changes
             knob.addEventListener('cc-change', (e) => {
-                const value = e.detail.value / 100;
+                const value = e.detail.value / 100;  // 0-1 normalized
                 processor.setParameter(def.name, paramName, value);
             });
 

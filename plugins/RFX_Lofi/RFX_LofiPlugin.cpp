@@ -51,14 +51,19 @@ public:
         fEffect = fx_lofi_create(getSampleRate());
         // Enable the effect
         fx_lofi_set_enabled(fEffect, true);
-        // Initialize with default values
-        fx_lofi_set_bit_depth(fEffect, indexToBitDepth((int)fBitDepthIndex));
-        fx_lofi_set_sample_rate_ratio(fEffect, indexToSampleRate((int)fSampleRateIndex, getSampleRate()));
-        fx_lofi_set_filter_cutoff(fEffect, fFilterCutoff);
-        fx_lofi_set_saturation(fEffect, fSaturation);
+        // Initialize with default values (normalized 0-1 for MIDI compatibility)
+        fx_lofi_set_bit_depth(fEffect, fBitDepthIndex / 3.0f);  // Index 3 → 1.0
+        fx_lofi_set_sample_rate_ratio(fEffect, fSampleRateIndex / 7.0f);  // Index 7 → 1.0
+        {
+            float log_min = logf(200.0f);
+            float log_max = logf(20000.0f);
+            float log_val = logf(fFilterCutoff);
+            fx_lofi_set_filter_cutoff(fEffect, (log_val - log_min) / (log_max - log_min));
+        }
+        fx_lofi_set_saturation(fEffect, fSaturation / 2.0f);
         fx_lofi_set_noise_level(fEffect, fNoiseLevel);
         fx_lofi_set_wow_flutter_depth(fEffect, fWowFlutterDepth);
-        fx_lofi_set_wow_flutter_rate(fEffect, fWowFlutterRate);
+        fx_lofi_set_wow_flutter_rate(fEffect, (fWowFlutterRate - 0.1f) / 9.9f);
     }
 
     ~RFX_LofiPlugin() override
@@ -189,16 +194,43 @@ protected:
         case kParameterWowFlutterRate: fWowFlutterRate = value; break;
         }
 
-        // Apply to DSP engine
+        // Apply to DSP engine (all values normalized 0-1 for MIDI compatibility)
         if (fEffect) {
             switch (index) {
-            case kParameterBitDepth: fx_lofi_set_bit_depth(fEffect, indexToBitDepth((int)value)); break;
-            case kParameterSampleRateRatio: fx_lofi_set_sample_rate_ratio(fEffect, indexToSampleRate((int)value, getSampleRate())); break;
-            case kParameterFilterCutoff: fx_lofi_set_filter_cutoff(fEffect, value); break;
-            case kParameterSaturation: fx_lofi_set_saturation(fEffect, value); break;
-            case kParameterNoiseLevel: fx_lofi_set_noise_level(fEffect, value); break;
-            case kParameterWowFlutterDepth: fx_lofi_set_wow_flutter_depth(fEffect, value); break;
-            case kParameterWowFlutterRate: fx_lofi_set_wow_flutter_rate(fEffect, value); break;
+            case kParameterBitDepth:
+                // Map index 0-3 to normalized 0-1: 0→0, 1→0.33, 2→0.67, 3→1.0
+                fx_lofi_set_bit_depth(fEffect, value / 3.0f);
+                break;
+            case kParameterSampleRateRatio:
+                // Map index 0-7 to normalized 0-1
+                fx_lofi_set_sample_rate_ratio(fEffect, value / 7.0f);
+                break;
+            case kParameterFilterCutoff:
+                // Map 200-20000 Hz to normalized 0-1 (logarithmic)
+                {
+                    float log_min = logf(200.0f);
+                    float log_max = logf(20000.0f);
+                    float log_val = logf(value);
+                    float normalized = (log_val - log_min) / (log_max - log_min);
+                    fx_lofi_set_filter_cutoff(fEffect, normalized);
+                }
+                break;
+            case kParameterSaturation:
+                // Map 0-2.0 to normalized 0-1
+                fx_lofi_set_saturation(fEffect, value / 2.0f);
+                break;
+            case kParameterNoiseLevel:
+                // Already 0-1
+                fx_lofi_set_noise_level(fEffect, value);
+                break;
+            case kParameterWowFlutterDepth:
+                // Already 0-1
+                fx_lofi_set_wow_flutter_depth(fEffect, value);
+                break;
+            case kParameterWowFlutterRate:
+                // Map 0.1-10.0 Hz to normalized 0-1
+                fx_lofi_set_wow_flutter_rate(fEffect, (value - 0.1f) / 9.9f);
+                break;
             }
         }
     }
@@ -244,16 +276,21 @@ protected:
 
         if (std::strcmp(key, "bit_depth") == 0) {
             fBitDepthIndex = fValue;
-            if (fEffect) fx_lofi_set_bit_depth(fEffect, indexToBitDepth((int)fBitDepthIndex));
+            if (fEffect) fx_lofi_set_bit_depth(fEffect, fBitDepthIndex / 3.0f);
         } else if (std::strcmp(key, "sample_rate_ratio") == 0) {
             fSampleRateIndex = fValue;
-            if (fEffect) fx_lofi_set_sample_rate_ratio(fEffect, indexToSampleRate((int)fSampleRateIndex, getSampleRate()));
+            if (fEffect) fx_lofi_set_sample_rate_ratio(fEffect, fSampleRateIndex / 7.0f);
         } else if (std::strcmp(key, "filter_cutoff") == 0) {
             fFilterCutoff = fValue;
-            if (fEffect) fx_lofi_set_filter_cutoff(fEffect, fFilterCutoff);
+            if (fEffect) {
+                float log_min = logf(200.0f);
+                float log_max = logf(20000.0f);
+                float log_val = logf(fFilterCutoff);
+                fx_lofi_set_filter_cutoff(fEffect, (log_val - log_min) / (log_max - log_min));
+            }
         } else if (std::strcmp(key, "saturation") == 0) {
             fSaturation = fValue;
-            if (fEffect) fx_lofi_set_saturation(fEffect, fSaturation);
+            if (fEffect) fx_lofi_set_saturation(fEffect, fSaturation / 2.0f);
         } else if (std::strcmp(key, "noise_level") == 0) {
             fNoiseLevel = fValue;
             if (fEffect) fx_lofi_set_noise_level(fEffect, fNoiseLevel);
@@ -262,7 +299,7 @@ protected:
             if (fEffect) fx_lofi_set_wow_flutter_depth(fEffect, fWowFlutterDepth);
         } else if (std::strcmp(key, "wow_flutter_rate") == 0) {
             fWowFlutterRate = fValue;
-            if (fEffect) fx_lofi_set_wow_flutter_rate(fEffect, fWowFlutterRate);
+            if (fEffect) fx_lofi_set_wow_flutter_rate(fEffect, (fWowFlutterRate - 0.1f) / 9.9f);
         }
     }
 

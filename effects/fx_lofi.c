@@ -15,7 +15,9 @@
 static inline float soft_clip(float x, float amount) {
     if (amount <= 0.0f) return x;
 
-    float drive = 1.0f + amount * 4.0f;
+    // Reduced drive multiplier for less aggressive saturation
+    // amount range is 0-2.0, so drive is 1.0-3.0 (was 1.0-9.0)
+    float drive = 1.0f + amount;
     x *= drive;
 
     // Fast tanh approximation
@@ -93,7 +95,7 @@ bool fx_lofi_get_enabled(FX_Lofi* lofi) {
 
 void fx_lofi_set_bit_depth(FX_Lofi* lofi, float normalized) {
     if (!lofi) return;
-    // Map to discrete bit depths: 2, 8, 12, 16 (like AKAI/Amiga)
+    // Accept normalized 0-1 value, map to discrete bit depths
     normalized = fmaxf(0.0f, fminf(1.0f, normalized));
 
     if (normalized < 0.25f) {
@@ -109,13 +111,13 @@ void fx_lofi_set_bit_depth(FX_Lofi* lofi, float normalized) {
 
 void fx_lofi_set_sample_rate_ratio(FX_Lofi* lofi, float normalized) {
     if (!lofi) return;
-    // Map to discrete sample rates: Amiga + AKAI vintage rates
+    // Accept normalized 0-1 value, map to discrete sample rates
     normalized = fmaxf(0.0f, fminf(1.0f, normalized));
 
     if (normalized < 0.125f) {
         lofi->sample_rate_ratio = 7500.0f / 48000.0f;   // 0-12%: 7.5kHz (AKAI S950 lowest)
     } else if (normalized < 0.25f) {
-        lofi->sample_rate_ratio = 8363.0f / 48000.0f;   // 12-25%: 8363 Hz (Amiga Paula - most common!)
+        lofi->sample_rate_ratio = 8363.0f / 48000.0f;   // 12-25%: 8363 Hz (Amiga Paula)
     } else if (normalized < 0.375f) {
         lofi->sample_rate_ratio = 10000.0f / 48000.0f;  // 25-37%: 10kHz (AKAI S950)
     } else if (normalized < 0.5f) {
@@ -127,13 +129,13 @@ void fx_lofi_set_sample_rate_ratio(FX_Lofi* lofi, float normalized) {
     } else if (normalized < 0.875f) {
         lofi->sample_rate_ratio = 32000.0f / 48000.0f;  // 75-87%: 32kHz
     } else {
-        lofi->sample_rate_ratio = 1.0f;                 // 87-100%: 48kHz (NO reduction - clean!)
+        lofi->sample_rate_ratio = 1.0f;                 // 87-100%: 48kHz (NO reduction)
     }
 }
 
 void fx_lofi_set_filter_cutoff(FX_Lofi* lofi, float normalized) {
     if (!lofi) return;
-    // Map 0-1 to 200Hz-20kHz (logarithmic)
+    // Accept normalized 0-1 value, map to 200Hz-20kHz (logarithmic)
     normalized = fmaxf(0.0f, fminf(1.0f, normalized));
     float log_min = logf(200.0f);
     float log_max = logf(20000.0f);
@@ -142,66 +144,66 @@ void fx_lofi_set_filter_cutoff(FX_Lofi* lofi, float normalized) {
 
 void fx_lofi_set_saturation(FX_Lofi* lofi, float normalized) {
     if (!lofi) return;
-    // Map 0-1 to 0-2.0
+    // Accept normalized 0-1 value, map to 0-2.0
     normalized = fmaxf(0.0f, fminf(1.0f, normalized));
     lofi->saturation = normalized * 2.0f;
 }
 
-void fx_lofi_set_noise_level(FX_Lofi* lofi, float normalized) {
+void fx_lofi_set_noise_level(FX_Lofi* lofi, float level) {
     if (!lofi) return;
-    // Already 0-1 range
-    lofi->noise_level = fmaxf(0.0f, fminf(1.0f, normalized));
+    // Accept noise level (0.0-1.0)
+    lofi->noise_level = fmaxf(0.0f, fminf(1.0f, level));
 }
 
-void fx_lofi_set_wow_flutter_depth(FX_Lofi* lofi, float normalized) {
+void fx_lofi_set_wow_flutter_depth(FX_Lofi* lofi, float depth) {
     if (!lofi) return;
-    // Already 0-1 range
-    lofi->wow_flutter_depth = fmaxf(0.0f, fminf(1.0f, normalized));
+    // Accept wow/flutter depth (0.0-1.0)
+    lofi->wow_flutter_depth = fmaxf(0.0f, fminf(1.0f, depth));
 }
 
 void fx_lofi_set_wow_flutter_rate(FX_Lofi* lofi, float normalized) {
     if (!lofi) return;
-    // Map 0-1 to 0.1-10 Hz
+    // Accept normalized 0-1 value, map to 0.1-10 Hz
     normalized = fmaxf(0.0f, fminf(1.0f, normalized));
     lofi->wow_flutter_rate = 0.1f + normalized * 9.9f;
 }
 
 float fx_lofi_get_bit_depth(FX_Lofi* lofi) {
-    if (!lofi) return 1.0f;  // Default: 100% = 16-bit
+    if (!lofi) return 1.0f;  // Default: 16-bit
 
-    // Return normalized 0-1 value (reverse of setter mapping)
+    // Return canonical normalized value (matches what VST/logue send: index/3)
     if (lofi->bit_depth <= 2.0f) {
-        return 0.125f;  // Middle of 0-25% range
+        return 0.0f / 3.0f;  // Index 0 = 2-bit
     } else if (lofi->bit_depth <= 8.0f) {
-        return 0.375f;  // Middle of 25-50% range
+        return 1.0f / 3.0f;  // Index 1 = 8-bit
     } else if (lofi->bit_depth <= 12.0f) {
-        return 0.625f;  // Middle of 50-75% range
+        return 2.0f / 3.0f;  // Index 2 = 12-bit
     } else {
-        return 1.0f;    // 75-100% range
+        return 3.0f / 3.0f;  // Index 3 = 16-bit
     }
 }
 
 float fx_lofi_get_sample_rate_ratio(FX_Lofi* lofi) {
-    if (!lofi) return 1.0f;  // Default: 100% = no reduction
+    if (!lofi) return 1.0f;  // Default: no reduction
 
-    // Return normalized 0-1 value (reverse of 8-step setter mapping)
+    // Return canonical normalized value (matches what VST/logue send: index/7)
     float ratio = lofi->sample_rate_ratio;
     if (ratio <= 7500.0f / 48000.0f + 0.001f) {
-        return 0.0625f;  // Middle of 0-12.5% range (7.5kHz AKAI)
+        return 0.0f / 7.0f;  // Index 0 = 7.5kHz AKAI
     } else if (ratio <= 8363.0f / 48000.0f + 0.001f) {
-        return 0.1875f;  // Middle of 12.5-25% range (8363 Hz Amiga)
+        return 1.0f / 7.0f;  // Index 1 = 8363 Hz Amiga
     } else if (ratio <= 10000.0f / 48000.0f + 0.001f) {
-        return 0.3125f;  // Middle of 25-37.5% range (10kHz AKAI)
+        return 2.0f / 7.0f;  // Index 2 = 10kHz AKAI
     } else if (ratio <= 15000.0f / 48000.0f + 0.001f) {
-        return 0.4375f;  // Middle of 37.5-50% range (15kHz AKAI)
+        return 3.0f / 7.0f;  // Index 3 = 15kHz AKAI
     } else if (ratio <= 16726.0f / 48000.0f + 0.001f) {
-        return 0.5625f;  // Middle of 50-62.5% range (16726 Hz Amiga 2x)
+        return 4.0f / 7.0f;  // Index 4 = 16726 Hz Amiga 2x
     } else if (ratio <= 22050.0f / 48000.0f + 0.001f) {
-        return 0.6875f;  // Middle of 62.5-75% range (22.05kHz)
+        return 5.0f / 7.0f;  // Index 5 = 22.05kHz
     } else if (ratio <= 32000.0f / 48000.0f + 0.001f) {
-        return 0.8125f;  // Middle of 75-87.5% range (32kHz)
+        return 6.0f / 7.0f;  // Index 6 = 32kHz
     } else {
-        return 0.9375f;  // Middle of 87.5-100% range (48kHz clean)
+        return 7.0f / 7.0f;  // Index 7 = 48kHz clean
     }
 }
 
@@ -336,9 +338,10 @@ void fx_lofi_process_f32(FX_Lofi* lofi, float* buffer, uint32_t frames, uint32_t
             right += noise;
         }
 
-        // === WOW/FLUTTER (simple amplitude modulation for now) ===
+        // === WOW/FLUTTER (amplitude modulation) ===
         if (lofi->wow_flutter_depth > 0.0f) {
-            float lfo = sinf(lofi->lfo_phase) * lofi->wow_flutter_depth * 0.1f;
+            // Increased modulation depth for more noticeable effect (was 0.1, now 0.3)
+            float lfo = sinf(lofi->lfo_phase) * lofi->wow_flutter_depth * 0.3f;
             left *= (1.0f + lfo);
             right *= (1.0f + lfo);
 

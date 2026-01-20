@@ -12,7 +12,7 @@
  */
 
 #include "fx_resampler.h"
-#include <math.h>
+#include "fx_math_compat.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>

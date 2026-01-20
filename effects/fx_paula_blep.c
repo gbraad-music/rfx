@@ -11,7 +11,7 @@
 
 #include "fx_paula_blep.h"
 #include "fx_paula_blep_tables.h"
-#include <math.h>
+#include "fx_math_compat.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>

@@ -10,7 +10,7 @@
  */
 
 #include "fx_amiga_filter.h"
-#include <math.h>
+#include "fx_math_compat.h"
 #include <stdlib.h>
 #include <string.h>
 

@@ -49,6 +49,8 @@ public:
         , fWowFlutterRate(0.5f)
     {
         fEffect = fx_lofi_create(getSampleRate());
+        // Enable the effect
+        fx_lofi_set_enabled(fEffect, true);
         // Initialize with default values
         fx_lofi_set_bit_depth(fEffect, indexToBitDepth((int)fBitDepthIndex));
         fx_lofi_set_sample_rate_ratio(fEffect, indexToSampleRate((int)fSampleRateIndex, getSampleRate()));
@@ -286,7 +288,7 @@ protected:
         }
 
         // Process
-        fx_lofi_process_f32(fEffect, interleavedBuffer, frames);
+        fx_lofi_process_f32(fEffect, interleavedBuffer, frames, (uint32_t)getSampleRate());
 
         // De-interleave output
         for (uint32_t i = 0; i < frames; ++i) {

@@ -15,7 +15,8 @@ namespace ResamplerUI {
 static const char* mode_names[] = {
     "Nearest (Zero-Hold)",
     "Linear (2-point)",
-    "Cubic (4-point Sinc)"
+    "Cubic (4-point Sinc)",
+    "Sinc8 (8-point AA)"
 };
 
 /**

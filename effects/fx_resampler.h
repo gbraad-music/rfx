@@ -9,6 +9,7 @@
  * - Nearest (zero-order hold)
  * - Linear (2-point)
  * - Cubic (4-point windowed sinc)
+ * - Sinc8 (8-point polyphase with anti-aliasing)
  */
 
 #ifndef FX_RESAMPLER_H
@@ -26,6 +27,7 @@ typedef enum {
     RESAMPLER_NEAREST = 0,    // Zero-order hold (blocky, low CPU)
     RESAMPLER_LINEAR,         // Linear interpolation (good for slight pitch changes)
     RESAMPLER_CUBIC,          // Cubic spline (high quality, low CPU)
+    RESAMPLER_SINC8,          // 8-tap windowed sinc with polyphase anti-aliasing (best quality)
     RESAMPLER_NUM_MODES
 } ResamplerMode;
 

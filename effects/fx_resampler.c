@@ -8,12 +8,14 @@
  * - Nearest: Zero-order hold (sample and hold)
  * - Linear: 2-point linear interpolation
  * - Cubic: 4-point cubic spline (windowed sinc)
+ * - Sinc8: 8-point Kaiser-windowed sinc with polyphase anti-aliasing
  */
 
 #include "fx_resampler.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 // ============================================================================
 // Cubic Spline Lookup Table (from OpenMPT)
@@ -92,12 +94,86 @@ static const int16_t FastSincTable[256 * 4] = {
 static float FastSincTablef[256 * 4];
 static int table_initialized = 0;
 
+// ============================================================================
+// 8-tap Sinc (Polyphase) Lookup Tables (from OpenMPT)
+// ============================================================================
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+// Sinc configuration (from OpenMPT Resampler.h)
+#define SINC_WIDTH 8
+#define SINC_PHASES_BITS 12
+#define SINC_PHASES (1 << SINC_PHASES_BITS)  // 4096 phases
+#define SINC_MASK (SINC_PHASES - 1)
+
+// Three polyphase sinc tables for different downsampling ratios
+static float gKaiserSinc[SINC_PHASES * 8];     // Normal upsampling (Kaiser beta=9.6377, cutoff=0.97)
+static float gDownsample13x[SINC_PHASES * 8];  // Downsample 1.333x (beta=8.5, cutoff=0.5)
+static float gDownsample2x[SINC_PHASES * 8];   // Downsample 2x (beta=7.0, cutoff=0.425)
+
+// Bessel function I0 (modified Bessel function of first kind, order 0)
+// Used for Kaiser window calculation
+static double izero(double y) {
+    double s = 1.0, ds = 1.0, d = 0.0;
+    do {
+        d = d + 2.0;
+        ds = ds * (y * y) / (d * d);
+        s = s + ds;
+    } while (ds > 1E-7 * s);
+    return s;
+}
+
+// Generate windowed sinc coefficients (from OpenMPT getsinc function)
+// beta: Kaiser window beta parameter (controls sidelobe suppression)
+// cutoff: Normalized cutoff frequency (0.0 to 1.0, where 1.0 = Nyquist)
+static void generate_sinc_table(float* table, double beta, double cutoff) {
+    if (cutoff >= 0.999) {
+        cutoff = 0.999;  // Avoid mixer overflows
+    }
+
+    const double izeroBeta = izero(beta);
+    const double kPi = 4.0 * atan(1.0) * cutoff;
+
+    for (int isrc = 0; isrc < 8 * SINC_PHASES; isrc++) {
+        double fsinc;
+        int ix = 7 - (isrc & 7);
+        ix = (ix * SINC_PHASES) + (isrc >> 3);
+
+        if (ix == (4 * SINC_PHASES)) {
+            // Center tap
+            fsinc = 1.0;
+        } else {
+            const double x = (double)(ix - (4 * SINC_PHASES)) / (double)SINC_PHASES;
+            const double xPi = x * kPi;
+            // Kaiser-windowed sinc
+            fsinc = sin(xPi) * izero(beta * sqrt(1.0 - x * x / 16.0)) / (izeroBeta * xPi);
+        }
+
+        double coeff = fsinc * cutoff;
+        table[isrc] = (float)coeff;
+    }
+}
+
 static void init_cubic_table(void) {
     if (table_initialized) return;
 
+    // Convert cubic table from int16 to float
     for (int i = 0; i < 256 * 4; i++) {
         FastSincTablef[i] = (float)FastSincTable[i] / 16384.0f;
     }
+
+    // Generate 8-tap sinc tables (from OpenMPT coefficients)
+    // gKaiserSinc: General purpose (beta=9.6377, cutoff=0.97)
+    generate_sinc_table(gKaiserSinc, 9.6377, 0.97);
+
+    // gDownsample13x: For 1.333x downsample (beta=8.5, cutoff=0.5)
+    generate_sinc_table(gDownsample13x, 8.5, 0.5);
+
+    // gDownsample2x: For 2x downsample (beta=7.0, cutoff=0.425)
+    generate_sinc_table(gDownsample2x, 7.0, 0.425);
+
     table_initialized = 1;
 }
 
@@ -141,6 +217,37 @@ static inline float interpolate_cubic(const float* input, double position, int c
 
     // Apply 4-tap filter
     return lut[0] * s_m1 + lut[1] * s0 + lut[2] * s1 + lut[3] * s2;
+}
+
+// 8-tap windowed sinc interpolation (polyphase with anti-aliasing)
+static inline float interpolate_sinc8(const float* input, double position, int channels, int channel, float rate) {
+    int idx = (int)position;
+    float fract = (float)(position - idx);
+
+    // Select appropriate polyphase table based on resampling ratio
+    const float* sinc_table;
+    if (rate > 1.5f) {
+        sinc_table = gDownsample2x;       // 2x downsample
+    } else if (rate > 1.2f) {
+        sinc_table = gDownsample13x;      // 1.33x downsample
+    } else {
+        sinc_table = gKaiserSinc;         // Normal/upsample
+    }
+
+    // Calculate phase (4096 phases)
+    uint32_t phase = (uint32_t)(fract * (float)SINC_PHASES);
+    phase &= SINC_MASK;  // Wrap to valid range
+
+    const float* lut = &sinc_table[phase * SINC_WIDTH];
+
+    // Get 8 samples: [-3, -2, -1, 0, 1, 2, 3, 4] relative to position
+    float sum = 0.0f;
+    for (int i = 0; i < 8; i++) {
+        int sample_idx = (idx - 3 + i) * channels + channel;
+        sum += lut[i] * input[sample_idx];
+    }
+
+    return sum;
 }
 
 // ============================================================================
@@ -194,6 +301,9 @@ void fx_resampler_process_frame(FXResampler* fx, const float* input, float* outp
                 break;
             case RESAMPLER_CUBIC:
                 output[ch] = interpolate_cubic(input, position, channels, ch);
+                break;
+            case RESAMPLER_SINC8:
+                output[ch] = interpolate_sinc8(input, position, channels, ch, fx->rate);
                 break;
             default:
                 output[ch] = input[(int)position * channels + ch];
@@ -268,7 +378,7 @@ float fx_resampler_get_rate(FXResampler* fx) {
 }
 
 int fx_resampler_get_required_input_frames(int output_frames, float rate) {
-    return (int)(output_frames * rate) + 8;  // +8 margin for cubic
+    return (int)(output_frames * rate) + 8;  // +8 margin for sinc8 (needs -3 to +4)
 }
 
 const char* fx_resampler_get_mode_name(ResamplerMode mode) {
@@ -276,6 +386,7 @@ const char* fx_resampler_get_mode_name(ResamplerMode mode) {
         case RESAMPLER_NEAREST: return "Nearest";
         case RESAMPLER_LINEAR: return "Linear";
         case RESAMPLER_CUBIC: return "Cubic";
+        case RESAMPLER_SINC8: return "Sinc8";
         default: return "Unknown";
     }
 }

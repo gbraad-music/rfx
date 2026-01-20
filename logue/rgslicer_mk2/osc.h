@@ -1,15 +1,16 @@
 #pragma once
 /**
- * RGSlicer - Slicing Sampler for Drumlogue
+ * RGSlicer - Slicing Sampler for MicroKorg2
  *
- * Loads WAV samples from user storage and auto-slices them for keyboard playback.
+ * Loads WAV samples from storage and auto-slices them for keyboard playback.
+ * Uses MicroKorg2 device tempo for BPM mode.
  *
  * USAGE:
- * 1. Create /user/osc/rgslicer/ directory on your Drumlogue
- * 2. Copy sample_0.wav, sample_1.wav, ... sample_7.wav to that directory
- * 3. Load this unit
- * 4. Select preset 0-7 to load different samples
- * 5. Play MIDI notes C1-C5 (36-99) to trigger slices
+ * 1. Copy sample_0.wav, sample_1.wav, ... sample_7.wav to:
+ *    /var/lib/microkorgd/userfs/Regroove/
+ * 2. Load this unit
+ * 3. Select preset 0-7 to load different samples
+ * 4. Play MIDI notes C1-C5 (36-99) to trigger slices
  */
 
 #include <atomic>
@@ -21,6 +22,8 @@
 #include <cstdio>
 
 #include "unit.h"
+#include "runtime.h"
+#include "utils/mk2_utils.h"
 
 // Import RGSlicer engine
 extern "C" {
@@ -43,11 +46,10 @@ enum {
   PARAM_TIME_ALGO
 };
 
-class Synth {
+class RGSlicer {
 public:
-  Synth(void)
+  RGSlicer(void)
     : slicer_(nullptr)
-    , runtime_desc_(nullptr)
     , volume_(1.0f)
     , pitch_(0.0f)
     , time_(1.0f)
@@ -61,7 +63,7 @@ public:
     , current_preset_(0)
   {}
 
-  ~Synth(void) {
+  ~RGSlicer(void) {
     if (slicer_) rgslicer_destroy(slicer_);
   }
 
@@ -71,9 +73,6 @@ public:
 
     if (desc->output_channels != 2)
       return k_unit_err_geometry;
-
-    // Store runtime descriptor for sample API access
-    runtime_desc_ = desc;
 
     // Create RGSlicer instance
     slicer_ = rgslicer_create(48000);
@@ -112,7 +111,7 @@ public:
   inline void Resume() {}
   inline void Suspend() {}
 
-  inline void Render(float *out, uint32_t frames) {
+  fast_inline void Process(float *out, size_t frames) {
     if (!slicer_ || !sample_loaded_) {
       // No sample loaded, output silence
       for (uint32_t i = 0; i < frames * 2; i++) {
@@ -143,50 +142,24 @@ public:
     }
   }
 
-  inline void PitchBend(uint16_t bend) {
-    // Not implemented yet
-    (void)bend;
-  }
-
-  inline void ChannelPressure(uint8_t pressure) {
-    (void)pressure;
-  }
-
-  inline void Aftertouch(uint8_t note, uint8_t aftertouch) {
-    (void)note;
-    (void)aftertouch;
-  }
-
   inline void LoadPreset(uint8_t idx) {
     if (!slicer_ || idx >= 8) return;
 
     current_preset_ = idx;
     sample_loaded_ = false;
 
-    // Check if .rgslicer_presets marker file exists
-    char marker_path[256];
-    snprintf(marker_path, sizeof(marker_path), "%s/.rgslicer_presets", REGROOVE_RESOURCE_PATH);
-    FILE* marker = fopen(marker_path, "r");
-    bool use_file_loading = (marker != nullptr);
-    if (marker) fclose(marker);
+    // MicroKorg2 doesn't have Sample API - always use file loading with config
+    char sample_path[256];
+    snprintf(sample_path, sizeof(sample_path), "%s/%s", REGROOVE_RESOURCE_PATH, s_preset_files[idx]);
 
-    if (use_file_loading) {
-      // Marker file exists: Load from files using config
-      char sample_path[256];
-      snprintf(sample_path, sizeof(sample_path), "%s/%s", REGROOVE_RESOURCE_PATH, s_preset_files[idx]);
-
-      if (rgslicer_load_sample(slicer_, sample_path)) {
-        SliceMode mode = (SliceMode)slice_mode_;
-        uint8_t slices = rgslicer_auto_slice(slicer_, mode, num_slices_, sensitivity_);
-        sample_loaded_ = (slices > 0);
-      }
-    } else {
-      // No marker file: Use Sample API (official DrumLogue way)
-      sample_loaded_ = LoadFromSampleAPI(idx);
+    if (rgslicer_load_sample(slicer_, sample_path)) {
+      SliceMode mode = (SliceMode)slice_mode_;
+      uint8_t slices = rgslicer_auto_slice(slicer_, mode, num_slices_, sensitivity_);
+      sample_loaded_ = (slices > 0);
     }
   }
 
-  inline uint8_t getPresetIndex() {
+  inline uint8_t getPresetIndex() const {
     return current_preset_;
   }
 
@@ -254,7 +227,7 @@ public:
     }
   }
 
-  inline int32_t getParameterValue(uint8_t id) {
+  inline int32_t getParameterValue(uint8_t id) const {
     switch (id) {
       case PARAM_VOLUME:        return (int32_t)(volume_ * 100.0f);
       case PARAM_PITCH:         return (int32_t)pitch_;
@@ -269,45 +242,14 @@ public:
     }
   }
 
-  inline const char* getParameterStrValue(uint8_t id, int32_t value) {
-    static char buf[16];
-
-    switch (id) {
-      case PARAM_MODE:
-        switch (value) {
-          case 0: return "TRANS";
-          case 1: return "ZERO";
-          case 2: return "GRID";
-          case 3: return "BPM";
-          default: return "";
-        }
-
-      case PARAM_NOTE_DIVISION:
-        switch (value) {
-          case 1: return "1/4";
-          case 2: return "1/8";
-          case 4: return "1/16";
-          case 8: return "1/32";
-          default: return "";
-        }
-
-      case PARAM_PITCH_ALGO:
-        return (value == 0) ? "RATE" : "TPRES";
-
-      case PARAM_TIME_ALGO:
-        return (value == 0) ? "GRAN" : "AKAI";
-
-      case PARAM_PITCH:
-        snprintf(buf, sizeof(buf), "%+d", (int)value);
-        return buf;
-
-      default:
-        return nullptr;
-    }
+  inline const char* getParameterStrValue(uint8_t id, int32_t value) const {
+    (void)id;
+    (void)value;
+    return nullptr;
   }
 
-  inline const uint8_t* getParameterBmpValue(uint8_t id, int32_t value) {
-    (void)id;
+  inline const uint8_t* getParameterBmpValue(uint8_t index, int32_t value) const {
+    (void)index;
     (void)value;
     return nullptr;
   }
@@ -320,51 +262,14 @@ public:
     rgslicer_set_bpm(slicer_, bpm);
   }
 
-private:
-  inline bool LoadFromSampleAPI(uint8_t preset_idx) {
-    if (!runtime_desc_ || !runtime_desc_->get_num_sample_banks) {
-      return false;  // Sample API not available
-    }
-
-    uint8_t num_banks = runtime_desc_->get_num_sample_banks();
-    if (num_banks == 0) {
-      return false;  // No sample banks available
-    }
-
-    // Use bank 0, sample index = preset_idx
-    uint8_t bank = 0;
-    if (!runtime_desc_->get_num_samples_for_bank) {
-      return false;
-    }
-
-    uint8_t num_samples = runtime_desc_->get_num_samples_for_bank(bank);
-    if (preset_idx >= num_samples) {
-      return false;  // Sample index out of range
-    }
-
-    if (!runtime_desc_->get_sample) {
-      return false;
-    }
-
-    const sample_wrapper_t* sample = runtime_desc_->get_sample(bank, preset_idx);
-    if (!sample || !sample->sample_data) {
-      return false;  // Sample not available
-    }
-
-    // Load sample data into RGSlicer
-    if (!rgslicer_load_sample_data(slicer_, sample->sample_data, sample->num_samples, sample->sample_rate)) {
-      return false;
-    }
-
-    // Auto-slice the sample
-    SliceMode mode = (SliceMode)slice_mode_;
-    uint8_t slices = rgslicer_auto_slice(slicer_, mode, num_slices_, sensitivity_);
-
-    return (slices > 0);
+  void unit_platform_exclusive(uint8_t messageId, void * data, uint32_t dataSize) {
+    (void)messageId;
+    (void)data;
+    (void)dataSize;
   }
 
+private:
   RGSlicer* slicer_;
-  const unit_runtime_desc_t* runtime_desc_;
   float volume_;
   float pitch_;
   float time_;

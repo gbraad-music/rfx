@@ -12,6 +12,11 @@
 #include "unit.h"   // Note: Include common definitions for all units
 #include "synth.h"  // Note: Include custom master fx code
 
+// Static member definitions for preset configuration
+char Synth::s_preset_names[8][32];
+char Synth::s_preset_files[8][64];
+uint8_t Synth::s_num_presets = 8;
+
 static Synth s_synth_instance;              // Note: In this case, actual instance of custom master fx object.
 static unit_runtime_desc_t s_runtime_desc;  // Note: used to cache runtime descriptor obtained via init callback
 
@@ -69,7 +74,7 @@ __unit_callback const uint8_t * unit_get_param_bmp_value(uint8_t id, int32_t val
 }
 
 __unit_callback void unit_set_tempo(uint32_t tempo) {
-  (void)tempo;
+  s_synth_instance.SetTempo(tempo);
 }
 
 __unit_callback void unit_note_on(uint8_t note, uint8_t velocity) {

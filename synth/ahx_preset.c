@@ -82,21 +82,206 @@ bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
     return true;
 }
 
-// Import from AHX file (requires ahx_player parsing)
+// Import from AHX file
 bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uint8_t instrument_index) {
     if (!preset || !ahx_filepath) return false;
 
-    // TODO: This requires parsing the AHX file format
-    // For now, return a default preset
-    // Implementation would need to:
-    // 1. Open and parse AHX file header
-    // 2. Find instrument at index
-    // 3. Extract parameters and convert to AhxInstrumentParams
+    FILE* f = fopen(ahx_filepath, "rb");
+    if (!f) return false;
 
-    // Placeholder implementation
-    *preset = ahx_preset_create_default();
-    snprintf(preset->name, 64, "Imported from AHX (Inst %d)", instrument_index);
-    return false;  // Not implemented yet
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (file_size < 14) {
+        fclose(f);
+        return false;
+    }
+
+    // Read file into buffer
+    uint8_t* buffer = (uint8_t*)malloc(file_size);
+    if (!buffer) {
+        fclose(f);
+        return false;
+    }
+
+    if (fread(buffer, 1, file_size, f) != (size_t)file_size) {
+        free(buffer);
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+
+    // Verify AHX signature
+    if (buffer[0] != 'T' || buffer[1] != 'H' || buffer[2] != 'X') {
+        free(buffer);
+        return false;
+    }
+
+    uint8_t revision = buffer[3];
+    if (revision > 1) {
+        free(buffer);
+        return false;
+    }
+
+    // Parse header
+    uint16_t name_offset = (buffer[4] << 8) | buffer[5];
+    uint8_t position_nr = ((buffer[6] & 0xf) << 8) | buffer[7];
+    uint8_t track_length = buffer[10];
+    uint8_t track_nr = buffer[11];
+    uint8_t instrument_nr = buffer[12];
+    uint8_t subsong_nr = buffer[13];
+
+    // Validate instrument index
+    if (instrument_index == 0 || instrument_index > instrument_nr) {
+        free(buffer);
+        return false;
+    }
+
+    // Skip to instrument data
+    const uint8_t* ptr = &buffer[14];
+
+    // Skip subsongs
+    ptr += subsong_nr * 2;
+
+    // Skip positions
+    ptr += position_nr * 8;  // 4 channels * 2 bytes
+
+    // Skip tracks
+    for (int i = 0; i <= track_nr; i++) {
+        if ((buffer[6] & 0x80) == 0x80 && i == 0) {
+            continue;  // Empty track
+        }
+        ptr += track_length * 3;  // 3 bytes per step
+    }
+
+    // Read instrument names
+    const char* name_ptr = (const char*)&buffer[name_offset];
+    name_ptr += strlen(name_ptr) + 1;  // Skip song name
+
+    // Skip to target instrument
+    for (int i = 1; i < instrument_index; i++) {
+        if (ptr - buffer > file_size) {
+            free(buffer);
+            return false;
+        }
+
+        // Skip instrument name
+        name_ptr += strlen(name_ptr) + 1;
+
+        // Skip instrument data (22 bytes header)
+        uint8_t plist_length = ptr[21];
+        ptr += 22 + (plist_length * 4);  // Header + PList entries
+    }
+
+    // Read target instrument name
+    strncpy(preset->name, name_ptr, 63);
+    preset->name[63] = '\0';
+    snprintf(preset->author, 64, "Imported from AHX");
+    snprintf(preset->description, 256, "Instrument %d from %s", instrument_index, ahx_filepath);
+
+    // Parse instrument parameters
+    if (ptr + 22 - buffer > file_size) {
+        free(buffer);
+        return false;
+    }
+
+    preset->params.volume = ptr[0];
+    preset->params.wave_length = ptr[1] & 0x7;
+
+    // Envelope
+    preset->params.envelope.attack_frames = ptr[2];
+    preset->params.envelope.attack_volume = ptr[3];
+    preset->params.envelope.decay_frames = ptr[4];
+    preset->params.envelope.decay_volume = ptr[5];
+    preset->params.envelope.sustain_frames = ptr[6];
+    preset->params.envelope.release_frames = ptr[7];
+    preset->params.envelope.release_volume = ptr[8];
+
+    // Filter
+    uint8_t filter_speed = ((ptr[1] >> 3) & 0x1f) | ((ptr[12] >> 2) & 0x20);
+    uint8_t filter_lower = ptr[12] & 0x7f;
+    uint8_t filter_upper = ptr[19] & 0x3f;
+    preset->params.filter_enabled = (filter_speed > 0 || filter_lower > 0 || filter_upper > 0);
+    preset->params.filter_speed = filter_speed;
+    preset->params.filter_lower = filter_lower;
+    preset->params.filter_upper = filter_upper;
+
+    // Vibrato
+    preset->params.vibrato_delay = ptr[13];
+    preset->params.vibrato_depth = ptr[14] & 0xf;
+    preset->params.vibrato_speed = ptr[15];
+
+    // Square modulation (PWM)
+    preset->params.square_lower = ptr[16];
+    preset->params.square_upper = ptr[17];
+    preset->params.square_speed = ptr[18];
+    preset->params.square_enabled = (preset->params.square_speed > 0 ||
+                                     preset->params.square_lower != preset->params.square_upper);
+
+    // Hard cut
+    preset->params.hard_cut_frames = (ptr[14] >> 4) & 7;
+    preset->params.hard_cut_release = (ptr[14] & 0x80) ? true : false;
+
+    // Default waveform (will be overridden by PList if used)
+    preset->params.waveform = AHX_WAVE_SAWTOOTH;
+
+    // Parse PList
+    uint8_t plist_speed = ptr[20];
+    uint8_t plist_length = ptr[21];
+    ptr += 22;
+
+    if (plist_length > 0) {
+        // Allocate PList
+        preset->params.plist = (AhxPList*)malloc(sizeof(AhxPList));
+        if (!preset->params.plist) {
+            free(buffer);
+            return false;
+        }
+
+        preset->params.plist->speed = plist_speed;
+        preset->params.plist->length = plist_length;
+        preset->params.plist->entries = (AhxPListEntry*)malloc(plist_length * sizeof(AhxPListEntry));
+
+        if (!preset->params.plist->entries) {
+            free(preset->params.plist);
+            preset->params.plist = NULL;
+            free(buffer);
+            return false;
+        }
+
+        // Parse PList entries
+        for (int j = 0; j < plist_length; j++) {
+            if (ptr + 4 - buffer > file_size) {
+                free(preset->params.plist->entries);
+                free(preset->params.plist);
+                preset->params.plist = NULL;
+                free(buffer);
+                return false;
+            }
+
+            preset->params.plist->entries[j].fx[1] = (ptr[0] >> 5) & 7;
+            preset->params.plist->entries[j].fx[0] = (ptr[0] >> 2) & 7;
+            preset->params.plist->entries[j].waveform = ((ptr[0] << 1) & 6) | (ptr[1] >> 7);
+            preset->params.plist->entries[j].fixed = (ptr[1] >> 6) & 1;
+            preset->params.plist->entries[j].note = ptr[1] & 0x3f;
+            preset->params.plist->entries[j].fx_param[0] = ptr[2];
+            preset->params.plist->entries[j].fx_param[1] = ptr[3];
+
+            ptr += 4;
+
+            // If first entry has a waveform, use it as default
+            if (j == 0 && preset->params.plist->entries[j].waveform > 0) {
+                preset->params.waveform = preset->params.plist->entries[j].waveform - 1;
+            }
+        }
+    } else {
+        preset->params.plist = NULL;
+    }
+
+    free(buffer);
+    return true;
 }
 
 // Get instrument count from AHX file
@@ -106,32 +291,94 @@ uint8_t ahx_preset_get_ahx_instrument_count(const char* ahx_filepath) {
     FILE* f = fopen(ahx_filepath, "rb");
     if (!f) return 0;
 
-    // Read AHX header to get instrument count
-    // AHX format: "THX" signature at offset 0
-    char sig[4];
-    if (fread(sig, 1, 4, f) != 4) {
+    // Read AHX header
+    uint8_t header[14];
+    if (fread(header, 1, 14, f) != 14) {
         fclose(f);
         return 0;
     }
 
-    if (memcmp(sig, "THX", 3) != 0) {
+    // Verify signature
+    if (header[0] != 'T' || header[1] != 'H' || header[2] != 'X') {
         fclose(f);
         return 0;
     }
 
-    // Skip to instrument count (offset varies)
-    // For now, return 64 (max)
+    // Instrument count at offset 12
+    uint8_t instrument_nr = header[12];
+
     fclose(f);
-    return 64;
+    return instrument_nr;
 }
 
 // Get instrument name from AHX file
 bool ahx_preset_get_ahx_instrument_name(const char* ahx_filepath, uint8_t instrument_index, char* name_out) {
     if (!ahx_filepath || !name_out) return false;
 
-    // TODO: Parse AHX file and extract instrument name
-    snprintf(name_out, 64, "Instrument %d", instrument_index);
-    return false;  // Not implemented yet
+    FILE* f = fopen(ahx_filepath, "rb");
+    if (!f) return false;
+
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (file_size < 14) {
+        fclose(f);
+        return false;
+    }
+
+    // Read header
+    uint8_t header[14];
+    if (fread(header, 1, 14, f) != 14) {
+        fclose(f);
+        return false;
+    }
+
+    // Verify signature
+    if (header[0] != 'T' || header[1] != 'H' || header[2] != 'X') {
+        fclose(f);
+        return false;
+    }
+
+    // Get name offset
+    uint16_t name_offset = (header[4] << 8) | header[5];
+    uint8_t instrument_nr = header[12];
+
+    // Validate instrument index
+    if (instrument_index == 0 || instrument_index > instrument_nr) {
+        fclose(f);
+        return false;
+    }
+
+    // Seek to names section
+    fseek(f, name_offset, SEEK_SET);
+
+    // Read names (null-terminated strings)
+    char name_buffer[128];
+
+    // Skip song name
+    int c;
+    while ((c = fgetc(f)) != EOF && c != '\0');
+
+    // Read instrument names
+    for (int i = 1; i <= instrument_index; i++) {
+        int idx = 0;
+        while ((c = fgetc(f)) != EOF && c != '\0' && idx < 127) {
+            name_buffer[idx++] = c;
+        }
+        name_buffer[idx] = '\0';
+
+        if (i == instrument_index) {
+            strncpy(name_out, name_buffer, 63);
+            name_out[63] = '\0';
+            fclose(f);
+            return true;
+        }
+    }
+
+    fclose(f);
+    return false;
 }
 
 // Create default preset
@@ -269,4 +516,19 @@ AhxPreset ahx_preset_get_builtin(uint8_t index) {
 // Get number of built-in presets
 uint8_t ahx_preset_get_builtin_count(void) {
     return 6;
+}
+
+// Free preset resources
+void ahx_preset_free(AhxPreset* preset) {
+    if (!preset) return;
+
+    // Free PList if allocated
+    if (preset->params.plist) {
+        if (preset->params.plist->entries) {
+            free(preset->params.plist->entries);
+            preset->params.plist->entries = NULL;
+        }
+        free(preset->params.plist);
+        preset->params.plist = NULL;
+    }
 }

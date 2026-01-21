@@ -82,6 +82,12 @@ AhxPreset ahx_preset_get_builtin(uint8_t index);
  */
 uint8_t ahx_preset_get_builtin_count(void);
 
+/**
+ * Free preset resources (PList memory)
+ * @param preset Preset to clean up
+ */
+void ahx_preset_free(AhxPreset* preset);
+
 #ifdef __cplusplus
 }
 #endif

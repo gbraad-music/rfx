@@ -116,12 +116,12 @@ typedef struct {
     bool released;              // Has note been released?
 
     // PList execution state
-    uint8_t perf_current;       // Current PList position
-    uint8_t perf_speed;         // Current speed (frames per entry)
-    uint8_t perf_wait;          // Frames until next entry
-    int16_t perf_sub_volume;    // PList sub-volume (0-64)
-    int16_t period_perf_slide_speed;   // Portamento speed from PList
-    int16_t period_perf_slide_period;  // Portamento accumulator
+    int perf_current;           // Current PList position
+    int perf_speed;             // Current speed (frames per entry)
+    int perf_wait;              // Frames until next entry
+    int perf_sub_volume;        // PList sub-volume (0-64)
+    int period_perf_slide_speed;       // Portamento speed from PList
+    int period_perf_slide_period;      // Portamento accumulator
     bool period_perf_slide_on;         // Portamento active flag
 } AhxInstrument;
 

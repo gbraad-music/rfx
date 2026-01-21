@@ -45,6 +45,7 @@ set(DECKPLAYER_SOURCES
     ../../synth/ahx_synth_core.c
     ../../synth/ahx_instrument.c
     ../../synth/ahx_preset.c
+    ../../synth/ahx_plist.c
     # CPU emulator for SID
     ../../common/cpu_6502.c
 )

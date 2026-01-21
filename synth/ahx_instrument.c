@@ -7,6 +7,7 @@
 
 #include "ahx_instrument.h"
 #include "ahx_synth_core.h"
+#include "ahx_plist.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -81,6 +82,15 @@ void ahx_instrument_init(AhxInstrument* inst) {
     // Store core instrument
     memcpy(&inst->core_inst, &core_inst, sizeof(AhxCoreInstrument));
     inst->voice.Instrument = &inst->core_inst;
+
+    // Initialize PList state
+    inst->perf_current = 0;
+    inst->perf_speed = 1;
+    inst->perf_wait = 1;
+    inst->perf_sub_volume = 64;  // Max volume
+    inst->period_perf_slide_speed = 0;
+    inst->period_perf_slide_period = 0;
+    inst->period_perf_slide_on = false;
 }
 
 // Set instrument parameters
@@ -160,6 +170,20 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
     inst->velocity = velocity;
     inst->active = true;
     inst->released = false;
+
+    // Reset PList playback to start
+    inst->perf_current = 0;
+    if (inst->params.plist && inst->params.plist->speed > 0) {
+        inst->perf_speed = inst->params.plist->speed;
+        inst->perf_wait = inst->params.plist->speed;
+    } else {
+        inst->perf_speed = 1;
+        inst->perf_wait = 1;
+    }
+    inst->perf_sub_volume = 64;
+    inst->period_perf_slide_speed = 0;
+    inst->period_perf_slide_period = 0;
+    inst->period_perf_slide_on = false;
 }
 
 // Trigger note off
@@ -209,8 +233,116 @@ void ahx_instrument_reset(AhxInstrument* inst) {
     inst->velocity = 0;
 }
 
+// PList command wrapper - calls shared implementation
+static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8_t fx, uint8_t fx_param) {
+    if (!inst || !voice) return;
+
+    // Map modulator fields to individual variables for PList execution
+    int square_init = voice->square_mod.init_pending ? 1 : 0;
+    int square_on = voice->square_mod.active ? 1 : 0;
+    int square_sign = voice->square_mod.sign;
+    int filter_init = voice->filter_mod.init_pending ? 1 : 0;
+    int filter_on = voice->filter_mod.active ? 1 : 0;
+    int filter_sign = voice->filter_mod.sign;
+    int square_pos = voice->square_mod.position;
+    int filter_pos = voice->filter_mod.position;
+    int period_perf_slide_on = inst->period_perf_slide_on ? 1 : 0;
+
+    // Use shared PList command executor
+    ahx_plist_execute_command(
+        fx,
+        fx_param,
+        0,  // song_revision = 0 for synth mode (always apply filter pos)
+        // Filter control
+        &filter_pos,
+        &voice->IgnoreFilter,
+        &voice->NewWaveform,
+        // Square modulation
+        &square_pos,
+        &voice->IgnoreSquare,
+        &voice->WaveLength,
+        &square_init,
+        &square_on,
+        &square_sign,
+        // Filter modulation
+        &filter_init,
+        &filter_on,
+        &filter_sign,
+        // Volume control
+        &voice->NoteMaxVolume,
+        &voice->PerfSubVolume,
+        &voice->TrackMasterVolume,
+        // PList control
+        &inst->perf_current,
+        &inst->perf_speed,
+        &inst->perf_wait,
+        // Portamento
+        &inst->period_perf_slide_speed,
+        &period_perf_slide_on
+    );
+
+    // Map results back to modulator fields
+    voice->square_mod.init_pending = square_init != 0;
+    voice->square_mod.active = square_on != 0;
+    voice->square_mod.sign = square_sign;
+    voice->filter_mod.init_pending = filter_init != 0;
+    voice->filter_mod.active = filter_on != 0;
+    voice->filter_mod.sign = filter_sign;
+    voice->square_mod.position = square_pos;
+    voice->filter_mod.position = filter_pos;
+    inst->period_perf_slide_on = period_perf_slide_on != 0;
+}
+
 // Process frame (deprecated - now handled by ahx_synth_core)
 void ahx_instrument_process_frame(AhxInstrument* inst) {
     if (!inst) return;
+
+    // Process PList if active
+    if (inst->params.plist && inst->perf_current < inst->params.plist->length) {
+        if (--inst->perf_wait <= 0) {
+            uint8_t cur = inst->perf_current++;
+            AhxPListEntry* entry = &inst->params.plist->entries[cur];
+            inst->perf_wait = inst->perf_speed;
+
+            // Apply waveform change
+            if (entry->waveform > 0) {
+                inst->voice.Waveform = entry->waveform - 1;  // 1-4 maps to 0-3
+                inst->voice.NewWaveform = 1;
+                inst->period_perf_slide_speed = inst->period_perf_slide_period = 0;
+            }
+
+            // Reset portamento flag (will be set by commands if needed)
+            inst->period_perf_slide_on = false;
+
+            // Execute FX commands
+            for (int i = 0; i < 2; i++) {
+                plist_command_parse(inst, &inst->voice, entry->fx[i], entry->fx_param[i]);
+            }
+
+            // Apply note change
+            if (entry->note > 0) {
+                inst->voice.InstrPeriod = entry->note;
+                inst->voice.PlantPeriod = 1;
+                inst->voice.FixedNote = entry->fixed;
+            }
+        }
+    } else {
+        // PList finished - decay portamento
+        if (inst->perf_wait) {
+            inst->perf_wait--;
+        } else {
+            inst->period_perf_slide_speed = 0;
+        }
+    }
+
+    // Apply PList portamento
+    if (inst->period_perf_slide_on) {
+        inst->period_perf_slide_period -= inst->period_perf_slide_speed;
+        if (inst->period_perf_slide_period) {
+            inst->voice.PlantPeriod = 1;
+        }
+    }
+
+    // Process core synthesis frame
     ahx_synth_voice_process_frame(&inst->voice);
 }

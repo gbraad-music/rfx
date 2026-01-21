@@ -25,6 +25,7 @@ FILES_DSP = \
 	../../synth/ahx_synth_core.c \
 	../../synth/ahx_instrument.c \
 	../../synth/ahx_preset.c \
+	../../synth/ahx_plist.c \
 	../../synth/synth_sample_player.c \
 	../../synth/synth_sid.c \
 	../../common/cpu_6502.c

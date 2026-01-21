@@ -15,6 +15,7 @@ FILES_DSP = \
 	../../synth/ahx_synth_core.c \
 	../../synth/ahx_instrument.c \
 	../../synth/ahx_preset.c \
+	../../synth/ahx_plist.c \
 	../../synth/tracker_voice.c \
 	../../synth/tracker_modulator.c \
 	../../synth/tracker_sequence.c \
@@ -61,6 +62,7 @@ WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
 # WebAssembly source files
 WASM_SOURCES = ../../synth/ahx_synth_core.c \
                ../../synth/ahx_instrument.c \
+               ../../synth/ahx_plist.c \
                ../../synth/tracker_voice.c \
                ../../synth/tracker_modulator.c \
                ../../synth/tracker_sequence.c \

@@ -31,8 +31,20 @@
 extern "C" {
 #endif
 
-// Forward declarations
-typedef struct TrackerSequence TrackerSequence;
+// PList (Performance List) - sequence of commands executed per note
+typedef struct {
+    int16_t note;           // Note to play (0 = no change, 1-60 = note)
+    uint8_t fixed;          // If true, note doesn't transpose
+    uint8_t waveform;       // Waveform (0 = no change, 1-4 = triangle/saw/square/noise)
+    uint8_t fx[2];          // Two effect commands (0-7)
+    uint8_t fx_param[2];    // Parameters for the two effects
+} AhxPListEntry;
+
+typedef struct {
+    uint8_t speed;          // Frames per entry (ticks between steps)
+    uint8_t length;         // Number of entries
+    AhxPListEntry* entries; // Array of entries [length]
+} AhxPList;
 
 // AHX waveform types
 typedef enum {
@@ -85,7 +97,7 @@ typedef struct {
     uint8_t hard_cut_frames;    // Frames for hard cut (0-7)
 
     // PList (optional - set to NULL if not used)
-    TrackerSequence* plist;     // Optional PList sequence
+    AhxPList* plist;            // Optional PList sequence
 } AhxInstrumentParams;
 
 // AHX Instrument voice state (uses authentic AHX synthesis core)
@@ -102,6 +114,15 @@ typedef struct {
     uint8_t velocity;           // MIDI velocity (0-127)
     bool active;                // Is voice active?
     bool released;              // Has note been released?
+
+    // PList execution state
+    uint8_t perf_current;       // Current PList position
+    uint8_t perf_speed;         // Current speed (frames per entry)
+    uint8_t perf_wait;          // Frames until next entry
+    int16_t perf_sub_volume;    // PList sub-volume (0-64)
+    int16_t period_perf_slide_speed;   // Portamento speed from PList
+    int16_t period_perf_slide_period;  // Portamento accumulator
+    bool period_perf_slide_on;         // Portamento active flag
 } AhxInstrument;
 
 /**

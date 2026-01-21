@@ -11,6 +11,7 @@
 
 #include "ahx_player.h"
 #include "../synth/ahx_synth_core.h"
+#include "../synth/ahx_plist.h"
 #include "tracker_modulator.h"
 #include "tracker_sequence.h"
 #include "tracker_voice.h"
@@ -1285,92 +1286,62 @@ static void player_set_audio(AhxPlayer* player, int v) {
 
 // PListCommandParse - from AHX.cpp line 831
 static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_param) {
-    switch (fx) {
-        case 0:
-            if (player->Song.Revision > 0 && fx_param != 0) {
-                if (player->Voices[v].IgnoreFilter) {
-                    player->Voices[v].FilterPos = player->Voices[v].IgnoreFilter;
-                    player->Voices[v].IgnoreFilter = 0;
-                } else {
-                    player->Voices[v].FilterPos = fx_param;
-                }
-                player->Voices[v].NewWaveform = 1;
+    // Use shared PList command executor (eliminates code duplication with ahx_instrument.c)
+    ahx_plist_execute_command(
+        fx,
+        fx_param,
+        player->Song.Revision,
+        // Filter control
+        &player->Voices[v].FilterPos,
+        &player->Voices[v].IgnoreFilter,
+        &player->Voices[v].NewWaveform,
+        // Square modulation
+        &player->Voices[v].SquarePos,
+        &player->Voices[v].IgnoreSquare,
+        &player->Voices[v].WaveLength,
+        &player->Voices[v].SquareInit,
+        &player->Voices[v].SquareOn,
+        &player->Voices[v].SquareSign,
+        // Filter modulation
+        &player->Voices[v].FilterInit,
+        &player->Voices[v].FilterOn,
+        &player->Voices[v].FilterSign,
+        // Volume control
+        &player->Voices[v].NoteMaxVolume,
+        &player->Voices[v].PerfSubVolume,
+        &player->Voices[v].TrackMasterVolume,
+        // PList control
+        &player->Voices[v].PerfCurrent,
+        &player->Voices[v].PerfSpeed,
+        &player->Voices[v].PerfWait,
+        // Portamento
+        &player->Voices[v].PeriodPerfSlideSpeed,
+        &player->Voices[v].PeriodPerfSlideOn
+    );
 
-                // Sync position to generic filter modulator
-                tracker_modulator_set_position(&player->Voices[v].filter_mod, player->Voices[v].FilterPos);
-            }
-            break;
-        case 1:
-            player->Voices[v].PeriodPerfSlideSpeed = fx_param;
-            player->Voices[v].PeriodPerfSlideOn = 1;
-            break;
-        case 2:
-            player->Voices[v].PeriodPerfSlideSpeed = -fx_param;
-            player->Voices[v].PeriodPerfSlideOn = 1;
-            break;
-        case 3: // Init Square Modulation
-            if (!player->Voices[v].IgnoreSquare) {
-                player->Voices[v].SquarePos = fx_param >> (5 - player->Voices[v].WaveLength);
-
-                // Sync position to generic square modulator
-                tracker_modulator_set_position(&player->Voices[v].square_mod, player->Voices[v].SquarePos);
-            } else {
-                player->Voices[v].IgnoreSquare = 0;
-            }
-            break;
-        case 4: // Start/Stop Modulation
-            if (player->Song.Revision == 0 || fx_param == 0) {
-                player->Voices[v].SquareInit = (player->Voices[v].SquareOn ^= 1);
-                player->Voices[v].SquareSign = 1;
-
-                // Activate generic square modulator (direction determined automatically by init)
-                tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
-            } else {
-                if (fx_param & 0x0f) {
-                    player->Voices[v].SquareInit = (player->Voices[v].SquareOn ^= 1);
-                    player->Voices[v].SquareSign = 1;
-                    if ((fx_param & 0x0f) == 0x0f)
-                        player->Voices[v].SquareSign = -1;
-
-                    // Activate generic square modulator (direction determined automatically by init)
-                    tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
-                }
-                if (fx_param & 0xf0) {
-                    player->Voices[v].FilterInit = (player->Voices[v].FilterOn ^= 1);
-                    player->Voices[v].FilterSign = 1;
-                    if ((fx_param & 0xf0) == 0xf0)
-                        player->Voices[v].FilterSign = -1;
-
-                    // Activate/configure generic filter modulator
-                    tracker_modulator_set_active(&player->Voices[v].filter_mod, player->Voices[v].FilterOn);
-                    tracker_modulator_set_direction(&player->Voices[v].filter_mod, player->Voices[v].FilterSign);
-                }
-            }
-            break;
-        case 5: // Jump to Step
-            player->Voices[v].PerfCurrent = fx_param;
-            tracker_sequence_jump(&player->Voices[v].plist_seq, fx_param);
-            break;
-        case 6: // Set Volume
-            if (fx_param > 0x40) {
-                if ((fx_param -= 0x50) >= 0) {
-                    if (fx_param <= 0x40) {
-                        player->Voices[v].PerfSubVolume = fx_param;
-                    } else {
-                        if ((fx_param -= 0xa0-0x50) >= 0) {
-                            if (fx_param <= 0x40)
-                                player->Voices[v].TrackMasterVolume = fx_param;
-                        }
-                    }
-                }
-            } else {
-                player->Voices[v].NoteMaxVolume = fx_param;
-            }
-            break;
-        case 7: // Set speed
-            player->Voices[v].PerfSpeed = player->Voices[v].PerfWait = fx_param;
-            tracker_sequence_set_speed(&player->Voices[v].plist_seq, fx_param);
-            break;
+    // Sync specific changes to generic tracker components
+    // (these were previously done inline in each case)
+    if (fx == 0 && player->Song.Revision > 0 && fx_param != 0) {
+        // Sync filter position to generic filter modulator
+        tracker_modulator_set_position(&player->Voices[v].filter_mod, player->Voices[v].FilterPos);
+    } else if (fx == 3) {
+        // Sync square position to generic square modulator
+        tracker_modulator_set_position(&player->Voices[v].square_mod, player->Voices[v].SquarePos);
+    } else if (fx == 4) {
+        // Sync modulator activation states
+        if (player->Song.Revision == 0 || fx_param == 0 || (fx_param & 0x0f)) {
+            tracker_modulator_set_active(&player->Voices[v].square_mod, player->Voices[v].SquareOn);
+        }
+        if ((player->Song.Revision > 0) && (fx_param & 0xf0)) {
+            tracker_modulator_set_active(&player->Voices[v].filter_mod, player->Voices[v].FilterOn);
+            tracker_modulator_set_direction(&player->Voices[v].filter_mod, player->Voices[v].FilterSign);
+        }
+    } else if (fx == 5) {
+        // Sync PList jump to sequence
+        tracker_sequence_jump(&player->Voices[v].plist_seq, fx_param);
+    } else if (fx == 7) {
+        // Sync PList speed to sequence
+        tracker_sequence_set_speed(&player->Voices[v].plist_seq, fx_param);
     }
 }
 
@@ -1465,17 +1436,19 @@ static void player_play_irq(AhxPlayer* player) {
             player->PosNr = player->PosJump;
             player->PosJump = 0;
 
-            // Check loop range FIRST (before song-end check)
-            if (player->PosNr > player->loop_end) {
-                player->PosNr = player->loop_start;
-                player->GetNewPosition = 1;
-            } else if (player->PosNr >= player->Song.PositionNr) {
-                // Song end - loop back to restart
+            // Check song end FIRST (before loop range) so disable_looping works
+            if (player->PosNr >= player->Song.PositionNr) {
+                // Song end - check if looping is disabled
                 player->SongEndReached = 1;
-                player->PosNr = player->Song.Restart;
                 if (player->disable_looping) {
                     player->Playing = 0;
+                } else {
+                    player->PosNr = player->Song.Restart;
                 }
+                player->GetNewPosition = 1;
+            } else if (player->PosNr > player->loop_end) {
+                // Loop range wrap (for pattern loop button)
+                player->PosNr = player->loop_start;
                 player->GetNewPosition = 1;
             } else {
                 player->GetNewPosition = 1;

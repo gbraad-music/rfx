@@ -60,12 +60,21 @@ typedef struct {
 
     // Voice state
     int NoteMaxVolume;             // Note volume (0-64)
+    int PerfSubVolume;             // Performance sub-volume (0-64)
+    int TrackMasterVolume;         // Track master volume (0-64)
     int VoiceVolume;               // Final output volume
     int VoicePeriod;               // Current period (Amiga-style)
     int InstrPeriod;               // Base instrument period
     int VibratoPeriod;             // Vibrato offset
     int Waveform;                  // Current waveform (0-3)
     int WaveLength;                // Wave length (0-7)
+    int NewWaveform;               // Waveform change pending
+    int IgnoreFilter;              // Ignore next filter command
+    int IgnoreSquare;              // Ignore next square command
+    int FilterPos;                 // Current filter position
+    int SquarePos;                 // Current square position
+    int PlantPeriod;               // Period update pending
+    int FixedNote;                 // Fixed note (no transpose)
 
     // Vibrato state
     int VibratoDelay;              // Frames until vibrato starts

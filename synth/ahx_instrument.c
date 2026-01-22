@@ -165,27 +165,61 @@ AhxInstrumentParams ahx_instrument_default_params(void) {
 void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity, uint32_t sample_rate) {
     if (!inst) return;
 
-    // Use authentic AHX synthesis core
-    ahx_synth_voice_note_on(&inst->voice, note, velocity, sample_rate);
-
-    inst->note = note;
-    inst->velocity = velocity;
-    inst->active = true;
-    inst->released = false;
-
     // Reset PList playback to start
     inst->perf_current = 0;
+    inst->voice.debug_frame_count = 0;
+
     if (inst->params.plist && inst->params.plist->speed > 0) {
         inst->perf_speed = inst->params.plist->speed;
-        inst->perf_wait = 1;  // Execute first entry on first frame (not after waiting)
+        inst->perf_wait = 0;  // Apply entry 0 immediately, then wait for entry 1
     } else {
         inst->perf_speed = 1;
-        inst->perf_wait = 1;
+        inst->perf_wait = 0;
     }
     inst->perf_sub_volume = 64;
     inst->period_perf_slide_speed = 0;
     inst->period_perf_slide_period = 0;
     inst->period_perf_slide_on = false;
+
+    // Use authentic AHX synthesis core with MIDI note (will be overridden by PList)
+    ahx_synth_voice_note_on(&inst->voice, note, velocity, sample_rate);
+
+#ifdef EMSCRIPTEN
+    emscripten_log(EM_LOG_CONSOLE, "[PList Check] plist=%p, length=%d",
+        inst->params.plist, inst->params.plist ? inst->params.plist->length : 0);
+#endif
+
+    // If PList exists, override the period immediately with PList note
+    if (inst->params.plist && inst->params.plist->length > 0) {
+        AhxPListEntry* first_entry = &inst->params.plist->entries[0];
+#ifdef EMSCRIPTEN
+        emscripten_log(EM_LOG_CONSOLE, "[PList Check] first_entry: note=%d, fixed=%d, waveform=%d",
+            first_entry->note, first_entry->fixed, first_entry->waveform);
+#endif
+        if (first_entry->note > 0) {
+            // PList note is already an AHX note index (1-60), not MIDI
+            inst->voice.InstrPeriod = first_entry->note;
+            inst->voice.FixedNote = first_entry->fixed;
+
+            // Recalculate period immediately and reapply to voice playback
+            inst->voice.VoicePeriod = ahx_synth_get_period_for_note(first_entry->note);
+
+#ifdef EMSCRIPTEN
+            emscripten_log(EM_LOG_CONSOLE, "[PList Override] MIDI note=%d -> PList note=%d (fixed=%d), Period=%d",
+                note, first_entry->note, first_entry->fixed, inst->voice.VoicePeriod);
+#endif
+
+            tracker_voice_set_period(&inst->voice.voice_playback, inst->voice.VoicePeriod,
+                                    AMIGA_PAULA_PAL_CLK, sample_rate);
+        }
+    }
+
+    inst->note = note;  // Store original MIDI note for reference
+    inst->velocity = velocity;
+    inst->active = true;
+    inst->released = false;
+
+    // PList entry 0 will be applied on the first process_frame call (no manual application)
 }
 
 // Trigger note off
@@ -315,7 +349,9 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
         &inst->perf_wait,
         // Portamento
         &inst->period_perf_slide_speed,
-        &period_perf_slide_on
+        &period_perf_slide_on,
+        // Note state
+        inst->released ? 1 : 0  // Prevent PList jumps after note-off
     );
 
     // Map results back to modulator fields
@@ -334,12 +370,25 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
 void ahx_instrument_process_frame(AhxInstrument* inst) {
     if (!inst) return;
 
+#ifdef EMSCRIPTEN
+    if (inst->voice.debug_frame_count < 30) {  // Log first 30 frames
+        emscripten_log(EM_LOG_CONSOLE, "[Frame %d] perf_current=%d, perf_wait=%d",
+            inst->voice.debug_frame_count, inst->perf_current, inst->perf_wait);
+    }
+    inst->voice.debug_frame_count++;
+#endif
+
     // Process PList if active
     if (inst->params.plist && inst->perf_current < inst->params.plist->length) {
         if (--inst->perf_wait <= 0) {
             uint8_t cur = inst->perf_current++;
             AhxPListEntry* entry = &inst->params.plist->entries[cur];
             inst->perf_wait = inst->perf_speed;
+
+#ifdef EMSCRIPTEN
+            emscripten_log(EM_LOG_CONSOLE, "[PList Advance] Entry %d: waveform=%d, note=%d",
+                cur, entry->waveform, entry->note);
+#endif
 
             // Apply waveform change
             if (entry->waveform > 0) {

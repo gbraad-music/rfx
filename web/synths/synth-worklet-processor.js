@@ -47,6 +47,8 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
             this.reset();
         } else if (type === 'plist_import') {
             this.importPreset(data.buffer);
+        } else if (type === 'plist_export') {
+            this.exportPreset(data.presetName || 'MyPreset');
         }
     }
 
@@ -81,6 +83,60 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
         } catch (error) {
             console.error('[SynthWorklet] Import error:', error);
             this.port.postMessage({ type: 'preset_imported', data: { success: false, error: error.message } });
+        }
+    }
+
+    exportPreset(presetName) {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot export preset: WASM not initialized');
+            return;
+        }
+
+        try {
+            // Allocate size output parameter
+            const sizePtr = this.wasmModule._malloc(4);
+            const heapU32 = new Uint32Array(this.wasmMemory.buffer, sizePtr, 1);
+
+            // Call C export function (writes preset + PList data to buffer)
+            const namePtr = this.wasmModule._malloc(presetName.length + 1);
+            const heapU8Name = new Uint8Array(this.wasmMemory.buffer, namePtr, presetName.length + 1);
+            for (let i = 0; i < presetName.length; i++) {
+                heapU8Name[i] = presetName.charCodeAt(i);
+            }
+            heapU8Name[presetName.length] = 0;
+
+            const bufferPtr = this.wasmModule._regroove_synth_export_preset(this.synthPtr, namePtr, sizePtr);
+            const size = heapU32[0];
+
+            this.wasmModule._free(namePtr);
+            this.wasmModule._free(sizePtr);
+
+            if (!bufferPtr || size === 0) {
+                console.error('[SynthWorklet] Export failed - no data');
+                return;
+            }
+
+            // Copy buffer to JavaScript
+            const buffer = new Uint8Array(size);
+            const heapU8 = new Uint8Array(this.wasmMemory.buffer, bufferPtr, size);
+            buffer.set(heapU8);
+
+            // Free C buffer
+            this.wasmModule._regroove_synth_free_preset_buffer(bufferPtr);
+
+            console.log(`[SynthWorklet] Exported preset (${size} bytes)`);
+
+            // Send to main thread
+            this.port.postMessage({
+                type: 'preset_exported',
+                data: {
+                    name: presetName,
+                    buffer: buffer,
+                    format: 'binary'
+                }
+            });
+        } catch (error) {
+            console.error('[SynthWorklet] Export error:', error);
         }
     }
 

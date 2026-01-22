@@ -95,7 +95,7 @@ class RGAHXSynth {
             console.log('[RGAHXSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=184');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=211');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -122,6 +122,16 @@ class RGAHXSynth {
                     this.pendingNotes = [];
                 } else if (type === 'error') {
                     console.error('[RGAHXSynth] WASM error:', data);
+                } else if (type === 'plist_state') {
+                    // Forward PList state to UI
+                    this.handlePListStateUpdate(data);
+                } else if (type === 'preset_exported') {
+                    // Handle preset export
+                    this.handlePresetExport(data);
+                } else if (type === 'preset_imported') {
+                    // Handle preset import result
+                    const event = new CustomEvent('preset_imported', { detail: data });
+                    window.dispatchEvent(event);
                 }
             };
 
@@ -141,8 +151,8 @@ class RGAHXSynth {
 
             // Fetch both JS glue code and WASM binary
             const [jsResponse, wasmResponse] = await Promise.all([
-                fetch('synths/rgahxsynth.js'),
-                fetch('synths/rgahxsynth.wasm')
+                fetch('synths/rgahxsynth.js?v=211'),
+                fetch('synths/rgahxsynth.wasm?v=211')
             ]);
 
             const jsCode = await jsResponse.text();
@@ -325,6 +335,44 @@ class RGAHXSynth {
         this.speakerGain.gain.linearRampToValueAtTime(enabled ? 1.0 : 0.0, currentTime + 0.05);
 
         console.log(`[RGAHXSynth] ✅ ${enabled ? 'AUDIBLE' : 'MUTED'}`);
+    }
+
+    /**
+     * Handle PList state update from worklet
+     */
+    handlePListStateUpdate(data) {
+        // Dispatch custom event that the UI can listen to
+        const event = new CustomEvent('plist_state', { detail: data });
+        window.dispatchEvent(event);
+    }
+
+    /**
+     * Handle preset export from worklet
+     */
+    handlePresetExport(data) {
+        const { name, buffer, text, format } = data;
+
+        if (format === 'binary' && buffer) {
+            // Download binary .ahxp file
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}.ahxp`;
+            a.click();
+            URL.revokeObjectURL(url);
+            console.log(`[RGAHXSynth] Exported binary preset: ${name}.ahxp`);
+        } else if (format === 'text' && text) {
+            // Download text file
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+            console.log(`[RGAHXSynth] Exported text preset: ${name}.txt`);
+        }
     }
 
     destroy() {

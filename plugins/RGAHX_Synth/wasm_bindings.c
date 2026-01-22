@@ -539,14 +539,49 @@ uint8_t* regroove_synth_export_preset(AhxSynthInstance* synth, const char* name,
     strcpy(preset.description, "Exported from web synth");
     memcpy(&preset.params, &synth->voices[0].params, sizeof(AhxInstrumentParams));
 
-    // Serialize to memory buffer
-    // For now, return a simple binary format
-    // TODO: Implement proper binary serialization or use JSON
-    *out_size = sizeof(AhxPreset);
-    uint8_t* buffer = (uint8_t*)malloc(*out_size);
-    if (buffer) {
-        memcpy(buffer, &preset, *out_size);
+    // Calculate total size: AhxPreset + PList data (if present)
+    size_t total_size = sizeof(AhxPreset);
+    AhxPList* plist = synth->voices[0].params.plist;
+
+    if (plist && plist->length > 0) {
+        // PList format: speed (1 byte) + length (1 byte) + entries (7 bytes each)
+        total_size += 2 + (plist->length * 7);
     }
+
+    // Allocate buffer
+    *out_size = total_size;
+    uint8_t* buffer = (uint8_t*)malloc(total_size);
+    if (!buffer) return NULL;
+
+    // Write AhxPreset struct
+    memcpy(buffer, &preset, sizeof(AhxPreset));
+    size_t offset = sizeof(AhxPreset);
+
+    // Write PList data if present
+    if (plist && plist->length > 0) {
+        emscripten_log(EM_LOG_CONSOLE, "[Export] Writing PList: %d entries at speed %d",
+            plist->length, plist->speed);
+
+        buffer[offset++] = plist->speed;
+        buffer[offset++] = plist->length;
+
+        for (int i = 0; i < plist->length; i++) {
+            AhxPListEntry* e = &plist->entries[i];
+            buffer[offset++] = e->note;
+            buffer[offset++] = e->fixed ? 1 : 0;
+            buffer[offset++] = e->waveform;
+            buffer[offset++] = e->fx[0];
+            buffer[offset++] = e->fx_param[0];
+            buffer[offset++] = e->fx[1];
+            buffer[offset++] = e->fx_param[1];
+
+            emscripten_log(EM_LOG_CONSOLE, "[Export] PList[%d]: note=%d, fixed=%d, waveform=%d, fx0=%d(0x%02x), fx1=%d(0x%02x)",
+                i, e->note, e->fixed, e->waveform, e->fx[0], e->fx_param[0], e->fx[1], e->fx_param[1]);
+        }
+    }
+
+    emscripten_log(EM_LOG_CONSOLE, "[Export] Total size: %zu bytes (AhxPreset=%zu, PList=%zu)",
+        total_size, sizeof(AhxPreset), total_size - sizeof(AhxPreset));
 
     return buffer;
 }
@@ -570,9 +605,49 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
         return 0;
     }
 
-    // Skip 16-byte header and read preset from offset 16
+    // Skip 16-byte header and read preset fields (fixed format: name+author+desc+params = 64+64+256+32 = 416 bytes)
     AhxPreset preset;
-    memcpy(&preset, buffer + 16, sizeof(AhxPreset));
+    size_t offset = 16;
+
+    // Read name (64 bytes)
+    memcpy(preset.name, buffer + offset, 64);
+    offset += 64;
+
+    // Read author (64 bytes)
+    memcpy(preset.author, buffer + offset, 64);
+    offset += 64;
+
+    // Read description (256 bytes)
+    memcpy(preset.description, buffer + offset, 256);
+    offset += 256;
+
+    // Read packed parameters (32 bytes)
+    const uint8_t* params = buffer + offset;
+    preset.params.waveform = (AhxWaveform)params[0];
+    preset.params.wave_length = params[1];
+    preset.params.volume = params[2];
+    preset.params.envelope.attack_frames = params[3];
+    preset.params.envelope.attack_volume = params[4];
+    preset.params.envelope.decay_frames = params[5];
+    preset.params.envelope.decay_volume = params[6];
+    preset.params.envelope.sustain_frames = params[7];
+    preset.params.envelope.release_frames = params[8];
+    preset.params.envelope.release_volume = params[9];
+    preset.params.filter_lower = params[10];
+    preset.params.filter_upper = params[11];
+    preset.params.filter_speed = params[12];
+    preset.params.filter_enabled = params[13] != 0;
+    preset.params.square_lower = params[14];
+    preset.params.square_upper = params[15];
+    preset.params.square_speed = params[16];
+    preset.params.square_enabled = params[17] != 0;
+    preset.params.vibrato_delay = params[18];
+    preset.params.vibrato_depth = params[19];
+    preset.params.vibrato_speed = params[20];
+    preset.params.hard_cut_release = params[21] != 0;
+    preset.params.hard_cut_frames = params[22];
+    preset.params.plist = NULL;
+    offset += 32;
 
     // Apply to all voices
     for (int v = 0; v < MAX_VOICES; v++) {
@@ -628,7 +703,17 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
         synth->voices[v].core_inst.Envelope.rFrames = preset.params.envelope.release_frames;
         synth->voices[v].core_inst.Envelope.rVolume = preset.params.envelope.release_volume;
 
+        emscripten_log(EM_LOG_CONSOLE, "[Import] Envelope set: a=%d(%d) d=%d(%d) s=%d r=%d(%d)",
+            synth->voices[v].core_inst.Envelope.aFrames, synth->voices[v].core_inst.Envelope.aVolume,
+            synth->voices[v].core_inst.Envelope.dFrames, synth->voices[v].core_inst.Envelope.dVolume,
+            synth->voices[v].core_inst.Envelope.sFrames,
+            synth->voices[v].core_inst.Envelope.rFrames, synth->voices[v].core_inst.Envelope.rVolume);
+
         ahx_synth_voice_calc_adsr(&synth->voices[v].voice, &synth->voices[v].core_inst);
+
+        emscripten_log(EM_LOG_CONSOLE, "[Import] ADSR calculated: a=%d d=%d s=%d r=%d",
+            synth->voices[v].voice.ADSR.aFrames, synth->voices[v].voice.ADSR.dFrames,
+            synth->voices[v].voice.ADSR.sFrames, synth->voices[v].voice.ADSR.rFrames);
 
         // If voice is active, regenerate waveform immediately
         // Otherwise it will use old waveform buffer until next note_on
@@ -639,23 +724,27 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
         }
     }
 
-    // Parse PList data if present (comes after the AhxPreset struct)
-    size_t preset_offset = 16 + sizeof(AhxPreset);
-    if (size > preset_offset + 2) {
-        uint8_t plist_speed = buffer[preset_offset];
-        uint8_t plist_length = buffer[preset_offset + 1];
+    // Parse PList data if present (comes after fixed-size preset data at offset 432)
+    size_t plist_offset = 432;  // 16 (header) + 416 (name+author+desc+params)
+    emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] Buffer size=%d, plist_offset=%zu",
+        size, plist_offset);
 
-        if (plist_length > 0 && size >= preset_offset + 2 + (plist_length * 7)) {
+    if (size > plist_offset + 2) {
+        uint8_t plist_speed = buffer[plist_offset];
+        uint8_t plist_length = buffer[plist_offset + 1];
+        emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] Found PList header: speed=%d, length=%d, required_size=%zu",
+            plist_speed, plist_length, plist_offset + 2 + (plist_length * 7));
+
+        if (plist_length > 0 && size >= plist_offset + 2 + (plist_length * 7)) {
             emscripten_log(EM_LOG_CONSOLE, "[Import] PList data found: %d entries at speed %d", plist_length, plist_speed);
 
             // Apply PList to all voices
             for (int v = 0; v < MAX_VOICES; v++) {
                 // Clear existing PList
                 regroove_synth_clear_plist(synth);
-                regroove_synth_set_plist_speed(synth, plist_speed);
 
                 // Parse entries
-                size_t entry_offset = preset_offset + 2;
+                size_t entry_offset = plist_offset + 2;
                 for (int i = 0; i < plist_length; i++) {
                     regroove_synth_add_plist_entry(synth);
 
@@ -668,11 +757,22 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
                     uint8_t fx1_param = buffer[entry_offset++];
 
                     regroove_synth_set_plist_entry(synth, i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
+
+                    emscripten_log(EM_LOG_CONSOLE, "[Import] PList[%d]: note=%d, fixed=%d, waveform=%d, fx0=%d(0x%02x), fx1=%d(0x%02x)",
+                        i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
                 }
+
+                // Set speed AFTER all entries are added (otherwise add_entry creates PList with default speed=6)
+                regroove_synth_set_plist_speed(synth, plist_speed);
+                emscripten_log(EM_LOG_CONSOLE, "[Import] Set PList speed to %d", plist_speed);
 
                 break; // Only set PList once for all voices
             }
+        } else {
+            emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] PList data incomplete: length=%d but buffer too small", plist_length);
         }
+    } else {
+        emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] No PList data - buffer too small (size=%d, needed=%zu)", size, plist_offset + 2);
     }
 
     return 1; // Success

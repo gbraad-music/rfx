@@ -388,6 +388,15 @@ int ahx_synth_note_to_period(uint8_t note) {
     return ahx_note;  // Return AHX note INDEX (not period!)
 }
 
+// Get Amiga period for AHX note index
+int ahx_synth_get_period_for_note(int ahx_note) {
+    // Clamp to valid range
+    if (ahx_note < 1) ahx_note = 1;
+    if (ahx_note > 60) ahx_note = 60;
+
+    return AhxPeriodTable[ahx_note];
+}
+
 // Trigger note on
 void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocity, uint32_t sample_rate) {
     if (!voice || !voice->Instrument) return;
@@ -471,8 +480,8 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->WaveLength = voice->Instrument->WaveLength;
 
 #ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Generating waveform: type=%d, length=%d",
-        voice->Waveform, voice->WaveLength);
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Generating waveform: type=%d, length=%d", voice->Waveform, voice->WaveLength);
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] MIDI note=%d, AHX note=%d, Period=%d", note, voice->InstrPeriod, voice->VoicePeriod);
 #endif
 
     // Generate waveform and populate VoiceBuffer

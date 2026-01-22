@@ -146,6 +146,13 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice);
 void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length);
 
 /**
+ * Get Amiga period for AHX note index
+ * @param ahx_note AHX note index (1-60)
+ * @return Amiga period value
+ */
+int ahx_synth_get_period_for_note(int ahx_note);
+
+/**
  * Process audio samples
  * @param voice Voice to process
  * @param output Output buffer (mono)

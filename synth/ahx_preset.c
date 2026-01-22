@@ -36,8 +36,56 @@ bool ahx_preset_save(const AhxPreset* preset, const char* filepath) {
         return false;
     }
 
-    // Write preset data (struct with pointer - pointer will be ignored on load)
-    if (fwrite(preset, sizeof(AhxPreset), 1, f) != 1) {
+    // Write preset data field-by-field (don't use fwrite of whole struct - padding varies by platform!)
+    // Write name (64 bytes)
+    if (fwrite(preset->name, 64, 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Write author (64 bytes)
+    if (fwrite(preset->author, 64, 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Write description (256 bytes)
+    if (fwrite(preset->description, 256, 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Write AhxInstrumentParams (WITHOUT the plist pointer!)
+    // Pack parameters into fixed-size buffer (32 bytes)
+    uint8_t params[32];
+    memset(params, 0, sizeof(params));
+
+    params[0] = (uint8_t)preset->params.waveform;
+    params[1] = preset->params.wave_length;
+    params[2] = preset->params.volume;
+    params[3] = preset->params.envelope.attack_frames;
+    params[4] = preset->params.envelope.attack_volume;
+    params[5] = preset->params.envelope.decay_frames;
+    params[6] = preset->params.envelope.decay_volume;
+    params[7] = preset->params.envelope.sustain_frames;
+    params[8] = preset->params.envelope.release_frames;
+    params[9] = preset->params.envelope.release_volume;
+    params[10] = preset->params.filter_lower;
+    params[11] = preset->params.filter_upper;
+    params[12] = preset->params.filter_speed;
+    params[13] = preset->params.filter_enabled ? 1 : 0;
+    params[14] = preset->params.square_lower;
+    params[15] = preset->params.square_upper;
+    params[16] = preset->params.square_speed;
+    params[17] = preset->params.square_enabled ? 1 : 0;
+    params[18] = preset->params.vibrato_delay;
+    params[19] = preset->params.vibrato_depth;
+    params[20] = preset->params.vibrato_speed;
+    params[21] = preset->params.hard_cut_release ? 1 : 0;
+    params[22] = preset->params.hard_cut_frames;
+    // params[23-31] = reserved (already zeroed)
+
+    if (fwrite(params, 32, 1, f) != 1) {
         fclose(f);
         return false;
     }
@@ -103,13 +151,58 @@ bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
         return false;
     }
 
-    // Read preset data
-    if (fread(preset, sizeof(AhxPreset), 1, f) != 1) {
+    // Read preset data field-by-field (matches save format)
+    // Read name (64 bytes)
+    if (fread(preset->name, 64, 1, f) != 1) {
         fclose(f);
         return false;
     }
 
-    // Clear PList pointer (it's garbage from file)
+    // Read author (64 bytes)
+    if (fread(preset->author, 64, 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Read description (256 bytes)
+    if (fread(preset->description, 256, 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Read packed parameters (32 bytes)
+    uint8_t params[32];
+    if (fread(params, 32, 1, f) != 1) {
+        fclose(f);
+        return false;
+    }
+
+    // Unpack parameters
+    preset->params.waveform = (AhxWaveform)params[0];
+    preset->params.wave_length = params[1];
+    preset->params.volume = params[2];
+    preset->params.envelope.attack_frames = params[3];
+    preset->params.envelope.attack_volume = params[4];
+    preset->params.envelope.decay_frames = params[5];
+    preset->params.envelope.decay_volume = params[6];
+    preset->params.envelope.sustain_frames = params[7];
+    preset->params.envelope.release_frames = params[8];
+    preset->params.envelope.release_volume = params[9];
+    preset->params.filter_lower = params[10];
+    preset->params.filter_upper = params[11];
+    preset->params.filter_speed = params[12];
+    preset->params.filter_enabled = params[13] != 0;
+    preset->params.square_lower = params[14];
+    preset->params.square_upper = params[15];
+    preset->params.square_speed = params[16];
+    preset->params.square_enabled = params[17] != 0;
+    preset->params.vibrato_delay = params[18];
+    preset->params.vibrato_depth = params[19];
+    preset->params.vibrato_speed = params[20];
+    preset->params.hard_cut_release = params[21] != 0;
+    preset->params.hard_cut_frames = params[22];
+
+    // Clear PList pointer (will be loaded separately if present)
     preset->params.plist = NULL;
 
     // Try to read PList data (if present)

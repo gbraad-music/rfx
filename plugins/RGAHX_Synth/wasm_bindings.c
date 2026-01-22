@@ -147,7 +147,49 @@ int regroove_synth_get_parameter_count(AhxSynthInstance* synth) {
 
 EMSCRIPTEN_KEEPALIVE
 float regroove_synth_get_parameter(AhxSynthInstance* synth, int index) {
-    return 0.0f;  // TODO: Implement parameter get
+    if (!synth) return 0.0f;
+
+    // Read from first voice (all voices have same params)
+    AhxInstrumentParams* params = &synth->voices[0].params;
+
+    switch (index) {
+        // Oscillator
+        case 0: return (float)params->waveform;
+        case 1: return (float)params->wave_length;
+        case 2: return (float)params->volume;
+
+        // Envelope
+        case 3: return (float)params->envelope.attack_frames;
+        case 4: return (float)params->envelope.attack_volume;
+        case 5: return (float)params->envelope.decay_frames;
+        case 6: return (float)params->envelope.decay_volume;
+        case 7: return (float)params->envelope.sustain_frames;
+        case 8: return (float)params->envelope.release_frames;
+        case 9: return (float)params->envelope.release_volume;
+
+        // Filter
+        case 10: return (float)params->filter_lower;
+        case 11: return (float)params->filter_upper;
+        case 12: return (float)params->filter_speed;
+        case 13: return params->filter_enabled ? 1.0f : 0.0f;
+
+        // Square/PWM
+        case 14: return (float)params->square_lower;
+        case 15: return (float)params->square_upper;
+        case 16: return (float)params->square_speed;
+        case 17: return params->square_enabled ? 1.0f : 0.0f;
+
+        // Vibrato
+        case 18: return (float)params->vibrato_delay;
+        case 19: return (float)params->vibrato_depth;
+        case 20: return (float)params->vibrato_speed;
+
+        // Hard cut
+        case 21: return params->hard_cut_release ? 1.0f : 0.0f;
+        case 22: return (float)params->hard_cut_frames;
+
+        default: return 0.0f;
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -159,16 +201,21 @@ void regroove_synth_set_parameter(AhxSynthInstance* synth, int index, float valu
     for (int i = 0; i < MAX_VOICES; i++) {
         AhxInstrumentParams* params = &synth->voices[i].params;
         bool recalc_adsr = false;
+        bool regen_waveform = false;
 
         switch (index) {
             // Oscillator Group
             case 0:  // kParameterWaveform
                 params->waveform = (uint8_t)value;
                 synth->voices[i].core_inst.Waveform = (uint8_t)value;
+                synth->voices[i].voice.Waveform = (uint8_t)value;
+                regen_waveform = true;
                 break;
             case 1:  // kParameterWaveLength
                 params->wave_length = (uint8_t)value;
                 synth->voices[i].core_inst.WaveLength = (uint8_t)value;
+                synth->voices[i].voice.WaveLength = (uint8_t)value;
+                regen_waveform = true;
                 break;
             case 2:  // kParameterOscVolume
                 params->volume = (uint8_t)value;
@@ -277,6 +324,16 @@ void regroove_synth_set_parameter(AhxSynthInstance* synth, int index, float valu
         if (recalc_adsr) {
             ahx_synth_voice_calc_adsr(&synth->voices[i].voice, &synth->voices[i].core_inst);
         }
+
+        // Regenerate waveform if waveform or wave_length changed
+        if (regen_waveform) {
+            ahx_synth_generate_waveform(&synth->voices[i].voice,
+                synth->voices[i].voice.Waveform,
+                synth->voices[i].voice.WaveLength);
+            // Update voice playback with new waveform buffer
+            tracker_voice_set_waveform_16bit(&synth->voices[i].voice.voice_playback,
+                synth->voices[i].voice.VoiceBuffer, 0x280);
+        }
     }
 }
 
@@ -347,4 +404,276 @@ void synth_destroy_audio_buffer(void* buffer) {
 EMSCRIPTEN_KEEPALIVE
 int synth_get_buffer_size_bytes(int frames) {
     return frames * 2 * sizeof(float);  // Stereo interleaved
+}
+
+// ==============================================================================
+// Preset Management Functions
+// ==============================================================================
+
+#include "synth/ahx_preset.h"
+#include <stdio.h>
+
+// Get PList length for current preset
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_get_plist_length(AhxSynthInstance* synth) {
+    if (!synth || !synth->voices[0].params.plist) return 0;
+    return synth->voices[0].params.plist->length;
+}
+
+// Get PList speed for current preset
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_get_plist_speed(AhxSynthInstance* synth) {
+    if (!synth || !synth->voices[0].params.plist) return 6;
+    return synth->voices[0].params.plist->speed;
+}
+
+// Set PList speed
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_set_plist_speed(AhxSynthInstance* synth, int speed) {
+    if (!synth) return;
+
+    // Update all voices
+    for (int i = 0; i < MAX_VOICES; i++) {
+        if (synth->voices[i].params.plist) {
+            synth->voices[i].params.plist->speed = speed;
+        }
+    }
+}
+
+// Get PList entry data (returns pointer to entry for JS to read)
+EMSCRIPTEN_KEEPALIVE
+AhxPListEntry* regroove_synth_get_plist_entry(AhxSynthInstance* synth, int index) {
+    if (!synth || !synth->voices[0].params.plist) return NULL;
+    if (index < 0 || index >= synth->voices[0].params.plist->length) return NULL;
+    return &synth->voices[0].params.plist->entries[index];
+}
+
+// Set PList entry
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_set_plist_entry(AhxSynthInstance* synth, int index,
+                                    uint8_t note, uint8_t fixed, uint8_t waveform,
+                                    uint8_t fx0, uint8_t fx0_param, uint8_t fx1, uint8_t fx1_param) {
+    if (!synth) return;
+
+    // Update all voices
+    for (int v = 0; v < MAX_VOICES; v++) {
+        if (synth->voices[v].params.plist && index >= 0 && index < synth->voices[v].params.plist->length) {
+            AhxPListEntry* e = &synth->voices[v].params.plist->entries[index];
+            e->note = note;
+            e->fixed = fixed != 0;
+            e->waveform = waveform;
+            e->fx[0] = fx0;
+            e->fx_param[0] = fx0_param;
+            e->fx[1] = fx1;
+            e->fx_param[1] = fx1_param;
+        }
+    }
+}
+
+// Add PList entry
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_add_plist_entry(AhxSynthInstance* synth) {
+    if (!synth) return;
+
+    for (int v = 0; v < MAX_VOICES; v++) {
+        AhxInstrumentParams* params = &synth->voices[v].params;
+
+        // Create PList if it doesn't exist
+        if (!params->plist) {
+            params->plist = (AhxPList*)malloc(sizeof(AhxPList));
+            params->plist->speed = 6;
+            params->plist->length = 0;
+            params->plist->entries = NULL;
+        }
+
+        // Reallocate entries array
+        int new_length = params->plist->length + 1;
+        AhxPListEntry* new_entries = (AhxPListEntry*)realloc(params->plist->entries,
+                                                              new_length * sizeof(AhxPListEntry));
+        if (new_entries) {
+            params->plist->entries = new_entries;
+            // Initialize new entry
+            memset(&params->plist->entries[params->plist->length], 0, sizeof(AhxPListEntry));
+            params->plist->length = new_length;
+        }
+    }
+}
+
+// Remove last PList entry
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_remove_plist_entry(AhxSynthInstance* synth) {
+    if (!synth) return;
+
+    for (int v = 0; v < MAX_VOICES; v++) {
+        if (synth->voices[v].params.plist && synth->voices[v].params.plist->length > 0) {
+            synth->voices[v].params.plist->length--;
+        }
+    }
+}
+
+// Clear all PList entries
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_clear_plist(AhxSynthInstance* synth) {
+    if (!synth) return;
+
+    for (int v = 0; v < MAX_VOICES; v++) {
+        if (synth->voices[v].params.plist) {
+            if (synth->voices[v].params.plist->entries) {
+                free(synth->voices[v].params.plist->entries);
+            }
+            free(synth->voices[v].params.plist);
+            synth->voices[v].params.plist = NULL;
+        }
+    }
+}
+
+// Export current preset to .ahxp format in memory (returns malloc'd buffer)
+EMSCRIPTEN_KEEPALIVE
+uint8_t* regroove_synth_export_preset(AhxSynthInstance* synth, const char* name, int* out_size) {
+    if (!synth || !out_size) return NULL;
+
+    // Create preset from first voice
+    AhxPreset preset;
+    strncpy(preset.name, name, 63);
+    preset.name[63] = '\0';
+    strcpy(preset.description, "Exported from web synth");
+    memcpy(&preset.params, &synth->voices[0].params, sizeof(AhxInstrumentParams));
+
+    // Serialize to memory buffer
+    // For now, return a simple binary format
+    // TODO: Implement proper binary serialization or use JSON
+    *out_size = sizeof(AhxPreset);
+    uint8_t* buffer = (uint8_t*)malloc(*out_size);
+    if (buffer) {
+        memcpy(buffer, &preset, *out_size);
+    }
+
+    return buffer;
+}
+
+// Free exported preset buffer
+EMSCRIPTEN_KEEPALIVE
+void regroove_synth_free_preset_buffer(uint8_t* buffer) {
+    free(buffer);
+}
+
+// Import preset from binary buffer (.ahxp file format with 16-byte header)
+EMSCRIPTEN_KEEPALIVE
+int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer, int size) {
+    if (!synth || !buffer || size < 16 + sizeof(AhxPreset)) {
+        return 0; // Fail
+    }
+
+    // Verify magic header "AHXP"
+    if (buffer[0] != 'A' || buffer[1] != 'H' || buffer[2] != 'X' || buffer[3] != 'P') {
+        emscripten_log(EM_LOG_ERROR, "[Import] Invalid .ahxp file - wrong magic");
+        return 0;
+    }
+
+    // Skip 16-byte header and read preset from offset 16
+    AhxPreset preset;
+    memcpy(&preset, buffer + 16, sizeof(AhxPreset));
+
+    // Apply to all voices
+    for (int v = 0; v < MAX_VOICES; v++) {
+        // Copy parameters (this does a shallow copy, which is okay for most fields)
+        memcpy(&synth->voices[v].params, &preset.params, sizeof(AhxInstrumentParams));
+
+        // Deep copy PList if present
+        if (preset.params.plist) {
+            if (synth->voices[v].params.plist) {
+                if (synth->voices[v].params.plist->entries) {
+                    free(synth->voices[v].params.plist->entries);
+                }
+                free(synth->voices[v].params.plist);
+            }
+
+            synth->voices[v].params.plist = (AhxPList*)malloc(sizeof(AhxPList));
+            synth->voices[v].params.plist->speed = preset.params.plist->speed;
+            synth->voices[v].params.plist->length = preset.params.plist->length;
+
+            if (preset.params.plist->length > 0 && preset.params.plist->entries) {
+                size_t entries_size = preset.params.plist->length * sizeof(AhxPListEntry);
+                synth->voices[v].params.plist->entries = (AhxPListEntry*)malloc(entries_size);
+                memcpy(synth->voices[v].params.plist->entries, preset.params.plist->entries, entries_size);
+            } else {
+                synth->voices[v].params.plist->entries = NULL;
+            }
+        } else {
+            synth->voices[v].params.plist = NULL;
+        }
+
+        // Update core instrument parameters
+        synth->voices[v].core_inst.Waveform = preset.params.waveform;
+        synth->voices[v].core_inst.WaveLength = preset.params.wave_length;
+        synth->voices[v].core_inst.Volume = preset.params.volume;
+        synth->voices[v].core_inst.FilterLowerLimit = preset.params.filter_lower;
+        synth->voices[v].core_inst.FilterUpperLimit = preset.params.filter_upper;
+        synth->voices[v].core_inst.FilterSpeed = preset.params.filter_speed;
+        synth->voices[v].core_inst.SquareLowerLimit = preset.params.square_lower;
+        synth->voices[v].core_inst.SquareUpperLimit = preset.params.square_upper;
+        synth->voices[v].core_inst.SquareSpeed = preset.params.square_speed;
+        synth->voices[v].core_inst.VibratoDelay = preset.params.vibrato_delay;
+        synth->voices[v].core_inst.VibratoDepth = preset.params.vibrato_depth;
+        synth->voices[v].core_inst.VibratoSpeed = preset.params.vibrato_speed;
+        synth->voices[v].core_inst.HardCutRelease = preset.params.hard_cut_release ? 1 : 0;
+        synth->voices[v].core_inst.HardCutReleaseFrames = preset.params.hard_cut_frames;
+
+        // Recalculate ADSR
+        synth->voices[v].core_inst.Envelope.aFrames = preset.params.envelope.attack_frames;
+        synth->voices[v].core_inst.Envelope.aVolume = preset.params.envelope.attack_volume;
+        synth->voices[v].core_inst.Envelope.dFrames = preset.params.envelope.decay_frames;
+        synth->voices[v].core_inst.Envelope.dVolume = preset.params.envelope.decay_volume;
+        synth->voices[v].core_inst.Envelope.sFrames = preset.params.envelope.sustain_frames;
+        synth->voices[v].core_inst.Envelope.rFrames = preset.params.envelope.release_frames;
+        synth->voices[v].core_inst.Envelope.rVolume = preset.params.envelope.release_volume;
+
+        ahx_synth_voice_calc_adsr(&synth->voices[v].voice, &synth->voices[v].core_inst);
+
+        // If voice is active, regenerate waveform immediately
+        // Otherwise it will use old waveform buffer until next note_on
+        if (synth->voices[v].voice.TrackOn) {
+            synth->voices[v].voice.Waveform = preset.params.waveform;
+            synth->voices[v].voice.WaveLength = preset.params.wave_length;
+            synth->voices[v].voice.NewWaveform = 1;
+        }
+    }
+
+    // Parse PList data if present (comes after the AhxPreset struct)
+    size_t preset_offset = 16 + sizeof(AhxPreset);
+    if (size > preset_offset + 2) {
+        uint8_t plist_speed = buffer[preset_offset];
+        uint8_t plist_length = buffer[preset_offset + 1];
+
+        if (plist_length > 0 && size >= preset_offset + 2 + (plist_length * 7)) {
+            emscripten_log(EM_LOG_CONSOLE, "[Import] PList data found: %d entries at speed %d", plist_length, plist_speed);
+
+            // Apply PList to all voices
+            for (int v = 0; v < MAX_VOICES; v++) {
+                // Clear existing PList
+                regroove_synth_clear_plist(synth);
+                regroove_synth_set_plist_speed(synth, plist_speed);
+
+                // Parse entries
+                size_t entry_offset = preset_offset + 2;
+                for (int i = 0; i < plist_length; i++) {
+                    regroove_synth_add_plist_entry(synth);
+
+                    uint8_t note = buffer[entry_offset++];
+                    uint8_t fixed = buffer[entry_offset++];
+                    uint8_t waveform = buffer[entry_offset++];
+                    uint8_t fx0 = buffer[entry_offset++];
+                    uint8_t fx0_param = buffer[entry_offset++];
+                    uint8_t fx1 = buffer[entry_offset++];
+                    uint8_t fx1_param = buffer[entry_offset++];
+
+                    regroove_synth_set_plist_entry(synth, i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
+                }
+
+                break; // Only set PList once for all voices
+            }
+        }
+    }
+
+    return 1; // Success
 }

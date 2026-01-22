@@ -20,6 +20,19 @@
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 #define CLAMP(x, low, high) (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
 
+// AHX Period Table (from ahx_player.c:211) - converts note index to Amiga period
+// Index 1 = lowest note (longest period), Index 60 = highest note (shortest period)
+static const int AhxPeriodTable[61] = {
+    0x0000, 0x0D60, 0x0CA0, 0x0BE8, 0x0B40, 0x0A98, 0x0A00, 0x0970,
+    0x08E8, 0x0868, 0x07F0, 0x0780, 0x0714, 0x06B0, 0x0650, 0x05F4,
+    0x05A0, 0x054C, 0x0500, 0x04B8, 0x0474, 0x0434, 0x03F8, 0x03C0,
+    0x038A, 0x0358, 0x0328, 0x02FA, 0x02D0, 0x02A6, 0x0280, 0x025C,
+    0x023A, 0x021A, 0x01FC, 0x01E0, 0x01C5, 0x01AC, 0x0194, 0x017D,
+    0x0168, 0x0153, 0x0140, 0x012E, 0x011D, 0x010D, 0x00FE, 0x00F0,
+    0x00E2, 0x00D6, 0x00CA, 0x00BE, 0x00B4, 0x00AA, 0x00A0, 0x0097,
+    0x008F, 0x0087, 0x007F, 0x0078, 0x0071
+};
+
 // White noise table (from AHX player - 1920 bytes)
 static const unsigned char WhiteNoiseBig[] = {
     0x7f,0x7f,0xa8,0xe2,0x78,0x3e,0x2c,0x92,0x52,0xd5,0x80,0x80,0xab,0x80,0x7f,0x37,
@@ -240,7 +253,7 @@ static void waves_generate_white_noise(int16_t* buffer, int len) {
 }
 
 // Generate waveform and populate VoiceBuffer based on waveform type and wave_length
-static void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length) {
+void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length) {
     int16_t temp_buffer[0x281];
 
     // Generate base waveform at different lengths (matching AHX waves structure)
@@ -361,10 +374,18 @@ void ahx_synth_voice_calc_adsr(AhxSynthVoice* voice, const AhxCoreInstrument* in
     }
 }
 
-// Convert MIDI note to Amiga period
+// Convert MIDI note to AHX note index (1-60 range for PeriodTable)
 int ahx_synth_note_to_period(uint8_t note) {
-    if (note >= 128) note = 127;
-    return note_to_period_table[note];
+    // Map MIDI notes to AHX note range (1-60)
+    // MIDI 24 (C1) -> AHX 1 (lowest)
+    // MIDI 83 (B5) -> AHX 60 (highest)
+    int ahx_note = (int)note - 23;  // Offset to align with AHX range
+
+    // Clamp to valid AHX note range
+    if (ahx_note < 1) ahx_note = 1;
+    if (ahx_note > 60) ahx_note = 60;
+
+    return ahx_note;  // Return AHX note INDEX (not period!)
 }
 
 // Trigger note on
@@ -376,9 +397,27 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->samples_per_frame = sample_rate / AHX_FRAME_RATE;
     voice->samples_in_frame = 0;
 
-    // Convert MIDI note to Amiga period
-    voice->InstrPeriod = ahx_synth_note_to_period(note);
-    voice->VoicePeriod = voice->InstrPeriod;
+#ifdef EMSCRIPTEN
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Note on: sample_rate=%d, samples_per_frame=%d",
+        sample_rate, voice->samples_per_frame);
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Instrument envelope: a=%d(%d) d=%d(%d) s=%d r=%d(%d)",
+        voice->Instrument->Envelope.aFrames, voice->Instrument->Envelope.aVolume,
+        voice->Instrument->Envelope.dFrames, voice->Instrument->Envelope.dVolume,
+        voice->Instrument->Envelope.sFrames,
+        voice->Instrument->Envelope.rFrames, voice->Instrument->Envelope.rVolume);
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Calculated ADSR runtime: a=%d d=%d s=%d r=%d",
+        voice->ADSR.aFrames, voice->ADSR.dFrames, voice->ADSR.sFrames, voice->ADSR.rFrames);
+#endif
+
+    // Reset frame counter for debugging
+    voice->debug_frame_count = 0;
+
+    // Convert MIDI note to AHX note index (1-60) - NOT period!
+    voice->InstrPeriod = ahx_synth_note_to_period(note);  // Stores AHX note INDEX
+    voice->PlantPeriod = 1;  // Signal that period needs calculation
+
+    // VoicePeriod will be calculated in first process_frame() from PeriodTable lookup
+    voice->VoicePeriod = AhxPeriodTable[voice->InstrPeriod];
 
     // Set velocity as volume
     voice->NoteMaxVolume = (velocity * 64) / 127;
@@ -431,6 +470,11 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->Waveform = voice->Instrument->Waveform;
     voice->WaveLength = voice->Instrument->WaveLength;
 
+#ifdef EMSCRIPTEN
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Generating waveform: type=%d, length=%d",
+        voice->Waveform, voice->WaveLength);
+#endif
+
     // Generate waveform and populate VoiceBuffer
     ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength);
 
@@ -463,6 +507,15 @@ void ahx_synth_voice_note_off(AhxSynthVoice* voice) {
 void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     if (!voice || !voice->TrackOn || !voice->Instrument) return;
 
+    static int frame_count = 0;
+    if (frame_count < 50) {  // Log first 50 frames
+#ifdef EMSCRIPTEN
+        emscripten_log(EM_LOG_CONSOLE, "[Frame %d] ADSR: a=%d d=%d s=%d r=%d, vol=%d, TrackOn=%d",
+            frame_count++, voice->ADSR.aFrames, voice->ADSR.dFrames, voice->ADSR.sFrames, voice->ADSR.rFrames,
+            voice->ADSRVolume >> 8, voice->TrackOn);
+#endif
+    }
+
     // Hard cut release processing
     if (voice->HardCutRelease && voice->NoteCutOn) {
         if (voice->NoteCutWait <= 0) {
@@ -489,25 +542,46 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
             voice->ADSRVolume = voice->Instrument->Envelope.aVolume << 8;
     } else if (voice->ADSR.dFrames) {
         voice->ADSRVolume += voice->ADSR.dVolume;
-        if (--voice->ADSR.dFrames <= 0)
+        if (--voice->ADSR.dFrames <= 0) {
             voice->ADSRVolume = voice->Instrument->Envelope.dVolume << 8;
+            // If sustain_frames=0, skip to release immediately (for percussion)
+            if (voice->Instrument->Envelope.sFrames == 0) {
+                // Recalculate release from decay volume to release volume
+                if (voice->Instrument->Envelope.rFrames > 0) {
+                    voice->ADSR.rFrames = voice->Instrument->Envelope.rFrames;
+                    voice->ADSR.rVolume = (voice->Instrument->Envelope.rVolume - voice->Instrument->Envelope.dVolume) * 256 / voice->ADSR.rFrames;
+                } else {
+                    voice->ADSR.rFrames = 1;
+                    voice->ADSR.rVolume = (voice->Instrument->Envelope.rVolume - voice->Instrument->Envelope.dVolume) * 256;
+                }
+            }
+        }
     } else if (voice->ADSR.sFrames) {
-        voice->ADSR.sFrames--;
-        // After sustain, go to release if note was released
-        if (voice->ADSR.sFrames == 0 && voice->Released) {
-            // Transition to release
+        // Sustain phase - count down frames
+        if (--voice->ADSR.sFrames <= 0) {
+            // Sustain finished - reset release phase from instrument
+            voice->ADSR.sFrames = 0;
+
+            // Recalculate release from current decay volume to release volume
+            if (voice->Instrument->Envelope.rFrames > 0) {
+                voice->ADSR.rFrames = voice->Instrument->Envelope.rFrames;
+                voice->ADSR.rVolume = (voice->Instrument->Envelope.rVolume - voice->Instrument->Envelope.dVolume) * 256 / voice->ADSR.rFrames;
+            } else {
+                voice->ADSR.rFrames = 1;
+                voice->ADSR.rVolume = (voice->Instrument->Envelope.rVolume - voice->Instrument->Envelope.dVolume) * 256;
+            }
         }
     } else if (voice->ADSR.rFrames) {
         voice->ADSRVolume += voice->ADSR.rVolume;
         if (--voice->ADSR.rFrames <= 0) {
             voice->ADSRVolume = voice->Instrument->Envelope.rVolume << 8;
-            // Voice finished
-            if (voice->Instrument->Envelope.rVolume == 0) {
-                voice->TrackOn = false;
-            }
+            // Release finished - ALWAYS stop voice
+            // Even if release volume > 0, we've completed the envelope
+            voice->TrackOn = false;
         }
-    } else if (voice->Released) {
-        // Released but no release frames - go to release immediately
+    } else {
+        // All ADSR stages complete - voice should be off
+        // This shouldn't be reached, but safety stop
         voice->TrackOn = false;
     }
 
@@ -531,16 +605,46 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         tracker_modulator_update(&voice->square_mod);
     }
 
+    // Process waveform changes (AUTHENTIC AHX ALGORITHM from ahx_player.c:1204)
+    if (voice->NewWaveform) {
+        ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength);
+
+        // Update voice playback with new waveform buffer (16-bit)
+        tracker_voice_set_waveform_16bit(&voice->voice_playback, voice->VoiceBuffer, 0x280);
+
+        voice->NewWaveform = 0;
+    }
+
     // Calculate final voice volume
     int adsr_vol = voice->ADSRVolume >> 8;  // Convert from fixed point (8-bit)
     voice->VoiceVolume = (voice->NoteMaxVolume * adsr_vol * voice->Instrument->Volume) >> 12;
     if (voice->VoiceVolume > 64) voice->VoiceVolume = 64;
     if (voice->VoiceVolume < 0) voice->VoiceVolume = 0;
 
-    // Calculate final period with vibrato
-    voice->VoicePeriod = voice->InstrPeriod + voice->VibratoPeriod;
-    if (voice->VoicePeriod < 113) voice->VoicePeriod = 113;  // Min period
-    if (voice->VoicePeriod > 6848) voice->VoicePeriod = 6848;  // Max period
+    // Calculate final period with vibrato (AUTHENTIC AHX from ahx_player.c:1228-1261)
+    if (voice->PlantPeriod) {
+        voice->PlantPeriod = 0;
+
+        // Calculate audio period from instrument note index (ahx_player.c:1228-1233)
+        int audio_period = voice->InstrPeriod;
+
+        // Note: In full AHX player, this would add Transpose + TrackPeriod
+        // For synth mode we skip transpose since we're using MIDI directly
+
+        // Clamp to valid note range
+        if (audio_period > 60) audio_period = 60;
+        if (audio_period < 0) audio_period = 0;
+
+        // Look up actual Amiga period from table
+        audio_period = AhxPeriodTable[audio_period];
+
+        // Add portamento and vibrato
+        voice->VoicePeriod = audio_period + voice->VibratoPeriod;
+
+        // Clamp to valid period range
+        if (voice->VoicePeriod < 113) voice->VoicePeriod = 113;
+        if (voice->VoicePeriod > 6848) voice->VoicePeriod = 6848;
+    }
 }
 
 // Process audio samples

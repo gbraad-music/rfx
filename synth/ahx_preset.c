@@ -36,10 +36,41 @@ bool ahx_preset_save(const AhxPreset* preset, const char* filepath) {
         return false;
     }
 
-    // Write preset data
+    // Write preset data (struct with pointer - pointer will be ignored on load)
     if (fwrite(preset, sizeof(AhxPreset), 1, f) != 1) {
         fclose(f);
         return false;
+    }
+
+    // Write PList data after struct (if present)
+    if (preset->params.plist && preset->params.plist->length > 0) {
+        // Write speed and length
+        if (fputc(preset->params.plist->speed, f) == EOF) {
+            fclose(f);
+            return false;
+        }
+        if (fputc(preset->params.plist->length, f) == EOF) {
+            fclose(f);
+            return false;
+        }
+
+        // Write entries (7 bytes each: note, fixed, waveform, fx[2], fx_param[2])
+        for (int i = 0; i < preset->params.plist->length; i++) {
+            AhxPListEntry* e = &preset->params.plist->entries[i];
+            uint8_t entry[7];
+            entry[0] = (uint8_t)(e->note & 0xFF);
+            entry[1] = e->fixed ? 1 : 0;
+            entry[2] = e->waveform;
+            entry[3] = e->fx[0];
+            entry[4] = e->fx_param[0];
+            entry[5] = e->fx[1];
+            entry[6] = e->fx_param[1];
+
+            if (fwrite(entry, 7, 1, f) != 1) {
+                fclose(f);
+                return false;
+            }
+        }
     }
 
     fclose(f);
@@ -76,6 +107,45 @@ bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
     if (fread(preset, sizeof(AhxPreset), 1, f) != 1) {
         fclose(f);
         return false;
+    }
+
+    // Clear PList pointer (it's garbage from file)
+    preset->params.plist = NULL;
+
+    // Try to read PList data (if present)
+    int c = fgetc(f);
+    if (c != EOF) {
+        uint8_t speed = (uint8_t)c;
+        uint8_t length = (uint8_t)fgetc(f);
+
+        if (length > 0 && length <= 255) {
+            // Allocate PList
+            preset->params.plist = (AhxPList*)malloc(sizeof(AhxPList));
+            if (preset->params.plist) {
+                preset->params.plist->speed = speed;
+                preset->params.plist->length = length;
+                preset->params.plist->entries = (AhxPListEntry*)malloc(length * sizeof(AhxPListEntry));
+
+                if (preset->params.plist->entries) {
+                    // Read entries
+                    for (int i = 0; i < length; i++) {
+                        uint8_t entry[7];
+                        if (fread(entry, 7, 1, f) == 1) {
+                            preset->params.plist->entries[i].note = (int16_t)entry[0];
+                            preset->params.plist->entries[i].fixed = entry[1] != 0;
+                            preset->params.plist->entries[i].waveform = entry[2];
+                            preset->params.plist->entries[i].fx[0] = entry[3];
+                            preset->params.plist->entries[i].fx_param[0] = entry[4];
+                            preset->params.plist->entries[i].fx[1] = entry[5];
+                            preset->params.plist->entries[i].fx_param[1] = entry[6];
+                        }
+                    }
+                } else {
+                    free(preset->params.plist);
+                    preset->params.plist = NULL;
+                }
+            }
+        }
     }
 
     fclose(f);

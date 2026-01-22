@@ -101,6 +101,9 @@ typedef struct {
     // Frame counter for sample-accurate timing
     uint32_t samples_per_frame;
     uint32_t samples_in_frame;
+
+    // Debug frame counter
+    uint32_t debug_frame_count;
 } AhxSynthVoice;
 
 /**
@@ -133,6 +136,14 @@ void ahx_synth_voice_note_off(AhxSynthVoice* voice);
  * Uses authentic AHX ADSR and modulation algorithms
  */
 void ahx_synth_voice_process_frame(AhxSynthVoice* voice);
+
+/**
+ * Generate waveform for voice
+ * @param voice Voice to generate waveform for
+ * @param waveform Waveform type (0-3)
+ * @param wave_length Wave length parameter (0-7)
+ */
+void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length);
 
 /**
  * Process audio samples

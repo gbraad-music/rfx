@@ -11,6 +11,10 @@
 #include <cstring>
 #include <string>
 
+extern "C" {
+#include "../../synth/ahx_preset.h"
+}
+
 START_NAMESPACE_DISTRHO
 USE_NAMESPACE_DGL
 
@@ -82,7 +86,10 @@ private:
     {
     public:
         explicit RGAHX_SynthImGuiWidget(RGAHX_SynthUI* const ui)
-            : ImGuiSubWidget(ui), fUI(ui), showPresetBrowser(false) {}
+            : ImGuiSubWidget(ui), fUI(ui), showPresetBrowser(false), showPListEditor(false), plistSpeed(6), plistLength(0)
+        {
+            memset(plistEntries, 0, sizeof(plistEntries));
+        }
 
     protected:
         void onImGuiDisplay() override
@@ -128,11 +135,31 @@ private:
             if (showPresetBrowser) {
                 drawPresetBrowser();
             }
+
+            // PList editor popup
+            if (showPListEditor) {
+                drawPListEditor();
+            }
         }
 
     private:
         RGAHX_SynthUI* const fUI;
         bool showPresetBrowser;
+        bool showPListEditor;
+
+        // PList data
+        struct PListEntry {
+            uint8_t note;        // 0-60 (0=---, 1=C-1, etc.)
+            bool fixed;          // Fixed note flag
+            uint8_t waveform;    // 0-3
+            uint8_t fx[2];       // Two FX commands (0-7)
+            uint8_t fx_param[2]; // Two FX parameters (0-255)
+        };
+
+        static const int MAX_PLIST_ENTRIES = 256;
+        PListEntry plistEntries[MAX_PLIST_ENTRIES];
+        int plistSpeed;
+        int plistLength;
 
         void drawHeader(float width)
         {
@@ -145,11 +172,17 @@ private:
             ImGui::PopFont();
 
             ImGui::SameLine();
-            ImGui::SetCursorPosX(width - 150);
+            ImGui::SetCursorPosX(width - 310);
 
             // Preset button
             if (ImGui::Button("Presets", ImVec2(140, 0))) {
                 showPresetBrowser = !showPresetBrowser;
+            }
+
+            ImGui::SameLine();
+            // PList Editor button
+            if (ImGui::Button("PList Editor", ImVec2(150, 0))) {
+                showPListEditor = !showPListEditor;
             }
 
             // Subtitle
@@ -553,6 +586,242 @@ private:
                     fUI->setParameterValue(kParameterReleaseFrames, 40.0f);
                     break;
             }
+        }
+
+        void drawPListEditor()
+        {
+            ImGui::SetNextWindowSize(ImVec2(850, 550), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowPos(ImVec2(25, 25), ImGuiCond_FirstUseEver);
+
+            if (ImGui::Begin("Performance List Editor", &showPListEditor))
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                ImGui::Text("PERFORMANCE LIST (PLIST) EDITOR");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // PList controls
+                ImGui::Text("PList Speed:");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(100);
+                ImGui::SliderInt("##plist_speed", &plistSpeed, 1, 255);
+
+                ImGui::SameLine(0, 40);
+                ImGui::Text("Length: %d", plistLength);
+
+                ImGui::SameLine(0, 40);
+                if (ImGui::Button("Add Entry")) {
+                    if (plistLength < MAX_PLIST_ENTRIES) {
+                        plistEntries[plistLength] = {}; // Zero-initialize
+                        plistLength++;
+                    }
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Remove Last")) {
+                    if (plistLength > 0) {
+                        plistLength--;
+                    }
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Clear All")) {
+                    plistLength = 0;
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // PList entries table
+                static const char* noteNames[] = {
+                    "---",
+                    "C-1", "C#1", "D-1", "D#1", "E-1", "F-1", "F#1", "G-1", "G#1", "A-1", "A#1", "B-1",
+                    "C-2", "C#2", "D-2", "D#2", "E-2", "F-2", "F#2", "G-2", "G#2", "A-2", "A#2", "B-2",
+                    "C-3", "C#3", "D-3", "D#3", "E-3", "F-3", "F#3", "G-3", "G#3", "A-3", "A#3", "B-3",
+                    "C-4", "C#4", "D-4", "D#4", "E-4", "F-4", "F#4", "G-4", "G#4", "A-4", "A#4", "B-4",
+                    "C-5", "C#5", "D-5", "D#5", "E-5", "F-5", "F#5", "G-5", "G#5", "A-5", "A#5", "B-5"
+                };
+
+                if (ImGui::BeginTable("plist_table", 8, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 350)))
+                {
+                    ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 35);
+                    ImGui::TableSetupColumn("Note", ImGuiTableColumnFlags_WidthFixed, 80);
+                    ImGui::TableSetupColumn("Fix", ImGuiTableColumnFlags_WidthFixed, 40);
+                    ImGui::TableSetupColumn("Wave", ImGuiTableColumnFlags_WidthFixed, 60);
+                    ImGui::TableSetupColumn("FX1", ImGuiTableColumnFlags_WidthFixed, 60);
+                    ImGui::TableSetupColumn("FX1 Param", ImGuiTableColumnFlags_WidthFixed, 90);
+                    ImGui::TableSetupColumn("FX2", ImGuiTableColumnFlags_WidthFixed, 60);
+                    ImGui::TableSetupColumn("FX2 Param", ImGuiTableColumnFlags_WidthFixed, 90);
+                    ImGui::TableHeadersRow();
+
+                    for (int i = 0; i < plistLength; i++)
+                    {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Text("%d", i);
+
+                        ImGui::TableSetColumnIndex(1);
+                        ImGui::SetNextItemWidth(-1);
+                        int note = (int)plistEntries[i].note;
+                        if (ImGui::Combo(("##note" + std::to_string(i)).c_str(), &note, noteNames, 61)) {
+                            plistEntries[i].note = (uint8_t)note;
+                        }
+
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::Checkbox(("##fixed" + std::to_string(i)).c_str(), &plistEntries[i].fixed);
+
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::SetNextItemWidth(-1);
+                        int wave = (int)plistEntries[i].waveform;
+                        if (ImGui::SliderInt(("##wave" + std::to_string(i)).c_str(), &wave, 0, 3)) {
+                            plistEntries[i].waveform = (uint8_t)wave;
+                        }
+
+                        ImGui::TableSetColumnIndex(4);
+                        ImGui::SetNextItemWidth(-1);
+                        int fx1 = (int)plistEntries[i].fx[0];
+                        if (ImGui::SliderInt(("##fx1" + std::to_string(i)).c_str(), &fx1, 0, 7)) {
+                            plistEntries[i].fx[0] = (uint8_t)fx1;
+                        }
+
+                        ImGui::TableSetColumnIndex(5);
+                        ImGui::SetNextItemWidth(-1);
+                        int fx1p = (int)plistEntries[i].fx_param[0];
+                        if (ImGui::SliderInt(("##fx1p" + std::to_string(i)).c_str(), &fx1p, 0, 255)) {
+                            plistEntries[i].fx_param[0] = (uint8_t)fx1p;
+                        }
+
+                        ImGui::TableSetColumnIndex(6);
+                        ImGui::SetNextItemWidth(-1);
+                        int fx2 = (int)plistEntries[i].fx[1];
+                        if (ImGui::SliderInt(("##fx2" + std::to_string(i)).c_str(), &fx2, 0, 7)) {
+                            plistEntries[i].fx[1] = (uint8_t)fx2;
+                        }
+
+                        ImGui::TableSetColumnIndex(7);
+                        ImGui::SetNextItemWidth(-1);
+                        int fx2p = (int)plistEntries[i].fx_param[1];
+                        if (ImGui::SliderInt(("##fx2p" + std::to_string(i)).c_str(), &fx2p, 0, 255)) {
+                            plistEntries[i].fx_param[1] = (uint8_t)fx2p;
+                        }
+                    }
+
+                    ImGui::EndTable();
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Preset operations
+                ImGui::Text("Preset Name:");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(300);
+                ImGui::InputText("##preset_name", fUI->fPresetName, 64);
+
+                ImGui::SameLine(0, 40);
+                if (ImGui::Button("Save Preset (.ahxp)", ImVec2(150, 0))) {
+                    savePresetToFile();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("New Preset", ImVec2(120, 0))) {
+                    resetToDefaults();
+                }
+
+                ImGui::End();
+            }
+        }
+
+        void savePresetToFile()
+        {
+            // Create preset from current UI state
+            AhxPreset preset;
+            strncpy(preset.name, fUI->fPresetName, 63);
+            preset.name[63] = '\0';
+            strcpy(preset.description, "Created in RGAHX Synth Plugin");
+
+            // Copy parameters from UI
+            preset.params.waveform = (AhxWaveform)(int)fUI->fParameters[kParameterWaveform];
+            preset.params.wave_length = (uint8_t)fUI->fParameters[kParameterWaveLength];
+            preset.params.volume = (uint8_t)fUI->fParameters[kParameterOscVolume];
+
+            preset.params.envelope.attack_frames = (uint8_t)fUI->fParameters[kParameterAttackFrames];
+            preset.params.envelope.attack_volume = (uint8_t)fUI->fParameters[kParameterAttackVolume];
+            preset.params.envelope.decay_frames = (uint8_t)fUI->fParameters[kParameterDecayFrames];
+            preset.params.envelope.decay_volume = (uint8_t)fUI->fParameters[kParameterDecayVolume];
+            preset.params.envelope.sustain_frames = (uint8_t)fUI->fParameters[kParameterSustainFrames];
+            preset.params.envelope.release_frames = (uint8_t)fUI->fParameters[kParameterReleaseFrames];
+            preset.params.envelope.release_volume = (uint8_t)fUI->fParameters[kParameterReleaseVolume];
+
+            preset.params.filter_lower = (uint8_t)fUI->fParameters[kParameterFilterLower];
+            preset.params.filter_upper = (uint8_t)fUI->fParameters[kParameterFilterUpper];
+            preset.params.filter_speed = (uint8_t)fUI->fParameters[kParameterFilterSpeed];
+            preset.params.filter_enabled = fUI->fParameters[kParameterFilterEnable] >= 0.5f;
+
+            preset.params.square_lower = (uint8_t)fUI->fParameters[kParameterSquareLower];
+            preset.params.square_upper = (uint8_t)fUI->fParameters[kParameterSquareUpper];
+            preset.params.square_speed = (uint8_t)fUI->fParameters[kParameterSquareSpeed];
+            preset.params.square_enabled = fUI->fParameters[kParameterSquareEnable] >= 0.5f;
+
+            preset.params.vibrato_delay = (uint8_t)fUI->fParameters[kParameterVibratoDelay];
+            preset.params.vibrato_depth = (uint8_t)fUI->fParameters[kParameterVibratoDepth];
+            preset.params.vibrato_speed = (uint8_t)fUI->fParameters[kParameterVibratoSpeed];
+
+            preset.params.hard_cut_release = fUI->fParameters[kParameterHardCutRelease] >= 0.5f;
+            preset.params.hard_cut_frames = (uint8_t)fUI->fParameters[kParameterHardCutFrames];
+
+            // Copy PList if present
+            if (plistLength > 0) {
+                preset.params.plist = (AhxPList*)malloc(sizeof(AhxPList));
+                preset.params.plist->speed = (uint8_t)plistSpeed;
+                preset.params.plist->length = (uint8_t)plistLength;
+                preset.params.plist->entries = (AhxPListEntry*)malloc(plistLength * sizeof(AhxPListEntry));
+
+                for (int i = 0; i < plistLength; i++) {
+                    preset.params.plist->entries[i].note = plistEntries[i].note;
+                    preset.params.plist->entries[i].fixed = plistEntries[i].fixed;
+                    preset.params.plist->entries[i].waveform = plistEntries[i].waveform;
+                    preset.params.plist->entries[i].fx[0] = plistEntries[i].fx[0];
+                    preset.params.plist->entries[i].fx[1] = plistEntries[i].fx[1];
+                    preset.params.plist->entries[i].fx_param[0] = plistEntries[i].fx_param[0];
+                    preset.params.plist->entries[i].fx_param[1] = plistEntries[i].fx_param[1];
+                }
+            } else {
+                preset.params.plist = nullptr;
+            }
+
+            // Save to file (hardcoded path for now - TODO: add file dialog)
+            char filename[128];
+            snprintf(filename, sizeof(filename), "%s.ahxp", fUI->fPresetName);
+
+            if (ahx_preset_save(&preset, filename)) {
+                // Success - could show a message
+            }
+
+            // Clean up
+            ahx_preset_free(&preset);
+        }
+
+        void resetToDefaults()
+        {
+            // Reset all parameters to defaults
+            fUI->fParameters[kParameterWaveform] = 1.0f;
+            fUI->fParameters[kParameterWaveLength] = 3.0f;
+            fUI->fParameters[kParameterOscVolume] = 64.0f;
+            fUI->fParameters[kParameterAttackFrames] = 1.0f;
+            fUI->fParameters[kParameterAttackVolume] = 64.0f;
+            fUI->fParameters[kParameterDecayFrames] = 10.0f;
+            fUI->fParameters[kParameterDecayVolume] = 48.0f;
+            fUI->fParameters[kParameterReleaseFrames] = 20.0f;
+
+            // Clear PList
+            plistLength = 0;
+            plistSpeed = 6;
+
+            strcpy(fUI->fPresetName, "New Preset");
         }
 
         void KNOB(uint32_t param, const char* label, float min, float max, float step)

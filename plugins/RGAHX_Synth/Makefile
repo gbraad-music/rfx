@@ -63,10 +63,11 @@ WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
 WASM_SOURCES = ../../synth/ahx_synth_core.c \
                ../../synth/ahx_instrument.c \
                ../../synth/ahx_plist.c \
-               ../../synth/tracker_voice.c \
-               ../../synth/tracker_modulator.c \
-               ../../synth/tracker_sequence.c \
+               ../../synth/ahx_preset.c \
                ../../synth/synth_midi.c \
+               ../../players/tracker_voice.c \
+               ../../players/tracker_modulator.c \
+               ../../players/tracker_sequence.c \
                wasm_bindings.c
 
 # Exported functions for JavaScript (regroove_synth_* interface)
@@ -97,7 +98,18 @@ WASM_EXPORTED_FUNCTIONS = \
     "_regroove_synth_get_engine_name",\
     "_synth_create_audio_buffer",\
     "_synth_destroy_audio_buffer",\
-    "_synth_get_buffer_size_bytes"\
+    "_synth_get_buffer_size_bytes",\
+    "_regroove_synth_get_plist_length",\
+    "_regroove_synth_get_plist_speed",\
+    "_regroove_synth_set_plist_speed",\
+    "_regroove_synth_get_plist_entry",\
+    "_regroove_synth_set_plist_entry",\
+    "_regroove_synth_add_plist_entry",\
+    "_regroove_synth_remove_plist_entry",\
+    "_regroove_synth_clear_plist",\
+    "_regroove_synth_export_preset",\
+    "_regroove_synth_free_preset_buffer",\
+    "_regroove_synth_import_preset"\
   ]'
 
 WASM_OUTPUT = rgahxsynth.js

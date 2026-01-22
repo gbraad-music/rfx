@@ -15,6 +15,8 @@
 #include <emscripten.h>
 #endif
 
+#define AMIGA_PAULA_PAL_CLK 3546895
+
 // Convert plugin params to core instrument definition
 static void params_to_core_instrument(AhxCoreInstrument* core, const AhxInstrumentParams* params) {
     core->Waveform = params->waveform;
@@ -175,7 +177,7 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
     inst->perf_current = 0;
     if (inst->params.plist && inst->params.plist->speed > 0) {
         inst->perf_speed = inst->params.plist->speed;
-        inst->perf_wait = inst->params.plist->speed;
+        inst->perf_wait = 1;  // Execute first entry on first frame (not after waiting)
     } else {
         inst->perf_speed = 1;
         inst->perf_wait = 1;
@@ -205,13 +207,48 @@ uint32_t ahx_instrument_process(AhxInstrument* inst, float* output, uint32_t num
         return 0;
     }
 
-    // Use authentic AHX synthesis core
-    uint32_t generated = ahx_synth_voice_process(&inst->voice, output, num_samples, sample_rate);
+    if (!inst->voice.TrackOn) {
+        memset(output, 0, num_samples * sizeof(float));
+        inst->active = false;
+        return 0;
+    }
+
+    // Process each sample with proper 50Hz frame timing
+    for (uint32_t i = 0; i < num_samples; i++) {
+        // Check if we need to process a frame (50Hz timing)
+        if (inst->voice.samples_in_frame >= inst->voice.samples_per_frame) {
+            // Process PList logic + synthesis frame
+            ahx_instrument_process_frame(inst);
+            inst->voice.samples_in_frame = 0;
+
+            // Update voice period if changed
+            tracker_voice_set_period(&inst->voice.voice_playback, inst->voice.VoicePeriod,
+                                    AMIGA_PAULA_PAL_CLK, sample_rate);
+        }
+        inst->voice.samples_in_frame++;
+
+        // Get raw sample from voice playback
+        int32_t sample = tracker_voice_get_sample(&inst->voice.voice_playback);
+
+        // Apply volume and convert to float
+        float sample_f = sample / 32768.0f;
+        float vol = (inst->voice.VoiceVolume / 64.0f) * 0.5f;
+        output[i] = sample_f * vol;
+
+        if (!inst->voice.TrackOn) {
+            // Voice stopped - clear remaining buffer
+            if (i + 1 < num_samples) {
+                memset(&output[i + 1], 0, (num_samples - i - 1) * sizeof(float));
+            }
+            inst->active = false;
+            return i + 1;
+        }
+    }
 
     // Update active state
     inst->active = ahx_synth_voice_is_active(&inst->voice);
 
-    return generated;
+    return num_samples;
 }
 
 // Check if instrument is active

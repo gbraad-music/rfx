@@ -45,6 +45,42 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
             this.setParameter(data.index, data.value);
         } else if (type === 'reset') {
             this.reset();
+        } else if (type === 'plist_import') {
+            this.importPreset(data.buffer);
+        }
+    }
+
+    importPreset(buffer) {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot import preset: WASM not initialized');
+            return;
+        }
+
+        try {
+            // Stop all notes before importing
+            this.allNotesOff();
+
+            // Allocate buffer in WASM memory
+            const bufferPtr = this.wasmModule._malloc(buffer.length);
+            const heapU8 = new Uint8Array(this.wasmMemory.buffer, bufferPtr, buffer.length);
+            heapU8.set(buffer);
+
+            // Call C import function (handles all parsing)
+            const result = this.wasmModule._regroove_synth_import_preset(this.synthPtr, bufferPtr, buffer.length);
+
+            // Free buffer
+            this.wasmModule._free(bufferPtr);
+
+            if (result) {
+                console.log('[SynthWorklet] .ahxp preset imported successfully');
+                this.port.postMessage({ type: 'preset_imported', data: { success: true } });
+            } else {
+                console.error('[SynthWorklet] Preset import failed');
+                this.port.postMessage({ type: 'preset_imported', data: { success: false } });
+            }
+        } catch (error) {
+            console.error('[SynthWorklet] Import error:', error);
+            this.port.postMessage({ type: 'preset_imported', data: { success: false, error: error.message } });
         }
     }
 

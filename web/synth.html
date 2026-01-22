@@ -438,6 +438,65 @@
             <!-- RGAHX Synth Controls (AUTO-GENERATED from parameter metadata) -->
             <synth-ui id="rgahxControls" synth="rgahx" style="display: none;"></synth-ui>
 
+            <!-- RGAHX PList Editor -->
+            <div id="plistEditor" style="display: none; margin-top: 15px; padding: 15px; background: #0f0f0f; border: 1px solid #2a2a2a; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div style="color: #0066FF; font-size: 12px; letter-spacing: 1px;">PERFORMANCE LIST (PLIST) EDITOR</div>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="btnImportAHXP">Import .ahxp</button>
+                        <button id="btnImportText">Import .txt</button>
+                        <button id="btnTogglePList" style="padding: 5px 10px;">Show PList ▼</button>
+                    </div>
+                </div>
+                <input type="file" id="ahxpFileInput" accept=".ahxp" style="display: none;">
+                <input type="file" id="presetFileInput" accept=".txt" style="display: none;">
+
+                <div id="plistContent" style="display: none;">
+                    <!-- PList Controls -->
+                    <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
+                        <label style="font-size: 12px;">
+                            PList Speed:
+                            <input type="number" id="plistSpeed" min="1" max="255" value="6" style="width: 60px; margin-left: 5px;">
+                        </label>
+                        <span id="plistLength" style="font-size: 12px; color: #666;">Length: 0</span>
+                        <button id="btnAddPListEntry">Add Entry</button>
+                        <button id="btnRemovePListEntry">Remove Last</button>
+                        <button id="btnClearPList">Clear All</button>
+                    </div>
+
+                    <!-- PList Table -->
+                    <div style="overflow-x: auto; overflow-y: auto; max-height: 400px; background: #0a0a0a; border: 1px solid #2a2a2a; border-radius: 4px; margin-bottom: 15px;">
+                        <table id="plistTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                            <thead style="position: sticky; top: 0; background: #1a1a1a; border-bottom: 1px solid #2a2a2a;">
+                                <tr>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">#</th>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">Note</th>
+                                    <th style="padding: 8px; text-align: center; color: #0066FF;">Fixed</th>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">Wave</th>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">FX1</th>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">FX1 Param</th>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">FX2</th>
+                                    <th style="padding: 8px; text-align: left; color: #0066FF;">FX2 Param</th>
+                                </tr>
+                            </thead>
+                            <tbody id="plistTableBody">
+                                <!-- Entries will be added here -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Preset Operations -->
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding-top: 10px; border-top: 1px solid #2a2a2a;">
+                        <label style="font-size: 12px;">
+                            Preset Name:
+                            <input type="text" id="presetName" value="My Preset" maxlength="63" style="width: 200px; margin-left: 5px;">
+                        </label>
+                        <button id="btnExportAHXP">Export .ahxp</button>
+                        <button id="btnExportText">Export .txt</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- RGSID Synth Controls (AUTO-GENERATED from parameter metadata) -->
             <synth-ui id="rgsidControls" synth="rgsid" style="display: none;"></synth-ui>
 
@@ -807,6 +866,7 @@
 
             // Show/hide engine-specific controls
             document.getElementById('rgahxControls').style.display = engine === 'rgahx' ? 'block' : 'none';
+            document.getElementById('plistEditor').style.display = engine === 'rgahx' ? 'block' : 'none';
             document.getElementById('rgsidControls').style.display = engine === 'rgsid' ? 'block' : 'none';
             document.getElementById('rgslicerControls').style.display = engine === 'rgslicer' ? 'block' : 'none';
             document.getElementById('rgslicerWavControls').style.display = engine === 'rgslicer' ? 'block' : 'none';
@@ -2151,6 +2211,401 @@
 
             // Clear file input
             e.target.value = '';
+        });
+
+        // ========================================================================
+        // RGAHX PList Editor
+        // ========================================================================
+
+        const NOTE_NAMES = [
+            "---",
+            "C-1", "C#1", "D-1", "D#1", "E-1", "F-1", "F#1", "G-1", "G#1", "A-1", "A#1", "B-1",
+            "C-2", "C#2", "D-2", "D#2", "E-2", "F-2", "F#2", "G-2", "G#2", "A-2", "A#2", "B-2",
+            "C-3", "C#3", "D-3", "D#3", "E-3", "F-3", "F#3", "G-3", "G#3", "A-3", "A#3", "B-3",
+            "C-4", "C#4", "D-4", "D#4", "E-4", "F-4", "F#4", "G-4", "G#4", "A-4", "A#4", "B-4",
+            "C-5", "C#5", "D-5", "D#5", "E-5", "F-5", "F#5", "G-5", "G#5", "A-5", "A#5", "B-5"
+        ];
+
+        // Toggle PList editor visibility
+        document.getElementById('btnTogglePList').addEventListener('click', () => {
+            const content = document.getElementById('plistContent');
+            const btn = document.getElementById('btnTogglePList');
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                btn.textContent = 'Hide PList ▲';
+                updatePListTable();
+            } else {
+                content.style.display = 'none';
+                btn.textContent = 'Show PList ▼';
+            }
+        });
+
+        // Add PList entry
+        document.getElementById('btnAddPListEntry').addEventListener('click', () => {
+            if (!currentSynth || !currentSynth.workletNode) {
+                console.warn('[PList] No synth active');
+                return;
+            }
+            currentSynth.workletNode.port.postMessage({
+                type: 'plist_add_entry'
+            });
+            setTimeout(updatePListTable, 50);
+        });
+
+        // Remove PList entry
+        document.getElementById('btnRemovePListEntry').addEventListener('click', () => {
+            if (!currentSynth || !currentSynth.workletNode) return;
+            currentSynth.workletNode.port.postMessage({
+                type: 'plist_remove_entry'
+            });
+            setTimeout(updatePListTable, 50);
+        });
+
+        // Clear PList
+        document.getElementById('btnClearPList').addEventListener('click', () => {
+            if (!currentSynth || !currentSynth.workletNode) return;
+            if (confirm('Clear all PList entries?')) {
+                currentSynth.workletNode.port.postMessage({
+                    type: 'plist_clear'
+                });
+                setTimeout(updatePListTable, 50);
+            }
+        });
+
+        // PList speed change
+        document.getElementById('plistSpeed').addEventListener('change', (e) => {
+            if (!currentSynth || !currentSynth.workletNode) return;
+            currentSynth.workletNode.port.postMessage({
+                type: 'plist_set_speed',
+                data: { speed: parseInt(e.target.value) }
+            });
+        });
+
+        // Listen for PList state updates from worklet
+        window.addEventListener('plist_state', (event) => {
+            handlePListStateUpdate(event.detail);
+        });
+
+        // Update PList table from synth state
+        function updatePListTable() {
+            if (!currentSynth || !currentSynth.workletNode) return;
+
+            currentSynth.workletNode.port.postMessage({
+                type: 'plist_get_state'
+            });
+        }
+
+        // Handle PList state updates from worklet
+        function handlePListStateUpdate(data) {
+            const { length, speed, entries } = data;
+
+            // Update UI
+            document.getElementById('plistLength').textContent = `Length: ${length}`;
+            document.getElementById('plistSpeed').value = speed;
+
+            // Update table
+            const tbody = document.getElementById('plistTableBody');
+            tbody.innerHTML = '';
+
+            for (let i = 0; i < length; i++) {
+                const entry = entries[i] || { note: 0, fixed: false, waveform: 0, fx: [0, 0], fx_param: [0, 0] };
+                const row = document.createElement('tr');
+                row.style.background = i % 2 === 0 ? '#0a0a0a' : '#0f0f0f';
+                row.style.borderBottom = '1px solid #2a2a2a';
+
+                row.innerHTML = `
+                    <td style="padding: 6px;">${i}</td>
+                    <td style="padding: 6px;">
+                        <select data-index="${i}" data-field="note" style="width: 70px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 4px; font-size: 11px;">
+                            ${NOTE_NAMES.map((n, idx) => `<option value="${idx}" ${entry.note === idx ? 'selected' : ''}>${n}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td style="padding: 6px; text-align: center;">
+                        <input type="checkbox" data-index="${i}" data-field="fixed" ${entry.fixed ? 'checked' : ''}>
+                    </td>
+                    <td style="padding: 6px;">
+                        <input type="number" data-index="${i}" data-field="waveform" min="0" max="3" value="${entry.waveform}" style="width: 50px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 4px; font-size: 11px;">
+                    </td>
+                    <td style="padding: 6px;">
+                        <input type="number" data-index="${i}" data-field="fx0" min="0" max="7" value="${entry.fx[0]}" style="width: 50px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 4px; font-size: 11px;">
+                    </td>
+                    <td style="padding: 6px;">
+                        <input type="number" data-index="${i}" data-field="fx0_param" min="0" max="255" value="${entry.fx_param[0]}" style="width: 60px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 4px; font-size: 11px;">
+                    </td>
+                    <td style="padding: 6px;">
+                        <input type="number" data-index="${i}" data-field="fx1" min="0" max="7" value="${entry.fx[1]}" style="width: 50px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 4px; font-size: 11px;">
+                    </td>
+                    <td style="padding: 6px;">
+                        <input type="number" data-index="${i}" data-field="fx1_param" min="0" max="255" value="${entry.fx_param[1]}" style="width: 60px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a; padding: 4px; font-size: 11px;">
+                    </td>
+                `;
+
+                tbody.appendChild(row);
+            }
+
+            // Add event listeners to all inputs
+            tbody.querySelectorAll('input, select').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const index = parseInt(e.target.dataset.index);
+                    const field = e.target.dataset.field;
+                    let value = e.target.type === 'checkbox' ? (e.target.checked ? 1 : 0) : parseInt(e.target.value);
+
+                    if (!currentSynth || !currentSynth.workletNode) return;
+
+                    // Get current entry values
+                    const row = e.target.closest('tr');
+                    const note = parseInt(row.querySelector('[data-field="note"]').value);
+                    const fixed = row.querySelector('[data-field="fixed"]').checked ? 1 : 0;
+                    const waveform = parseInt(row.querySelector('[data-field="waveform"]').value);
+                    const fx0 = parseInt(row.querySelector('[data-field="fx0"]').value);
+                    const fx0_param = parseInt(row.querySelector('[data-field="fx0_param"]').value);
+                    const fx1 = parseInt(row.querySelector('[data-field="fx1"]').value);
+                    const fx1_param = parseInt(row.querySelector('[data-field="fx1_param"]').value);
+
+                    currentSynth.workletNode.port.postMessage({
+                        type: 'plist_set_entry',
+                        data: {
+                            index,
+                            note,
+                            fixed,
+                            waveform,
+                            fx0,
+                            fx0_param,
+                            fx1,
+                            fx1_param
+                        }
+                    });
+                });
+            });
+        }
+
+        // Export .ahxp
+        document.getElementById('btnExportAHXP').addEventListener('click', () => {
+            if (!currentSynth || !currentSynth.workletNode) {
+                console.error('[PList] No synth active');
+                return;
+            }
+
+            const presetName = document.getElementById('presetName').value || 'MyPreset';
+
+            currentSynth.workletNode.port.postMessage({
+                type: 'plist_export',
+                presetName
+            });
+        });
+
+        // Export to compact text format
+        document.getElementById('btnExportText').addEventListener('click', () => {
+            if (!currentSynth) {
+                console.error('[PList] No synth active');
+                return;
+            }
+
+            const presetName = document.getElementById('presetName').value || 'MyPreset';
+
+            // Request export from worklet
+            currentSynth.workletNode.port.postMessage({
+                type: 'plist_export_text',
+                presetName
+            });
+        });
+
+        // Import .ahxp
+        document.getElementById('btnImportAHXP').addEventListener('click', () => {
+            document.getElementById('ahxpFileInput').click();
+        });
+
+        document.getElementById('ahxpFileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                if (!currentSynth || !currentSynth.workletNode) {
+                    console.error('[PList] No synth active');
+                    return;
+                }
+
+                const arrayBuffer = await file.arrayBuffer();
+                const view = new DataView(arrayBuffer);
+
+                // Read header (16 bytes)
+                const magic = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+                if (magic !== 'AHXP') {
+                    console.error('[PList] Invalid .ahxp file - wrong magic');
+                    return;
+                }
+
+                const version = view.getUint32(4, true);
+                console.log(`[PList] Loading .ahxp version ${version}`);
+
+                // Skip to preset data (after 16-byte header)
+                let offset = 16;
+
+                // Read preset name (64 bytes)
+                offset += 64;
+
+                // Read author (64 bytes)
+                offset += 64;
+
+                // Read description (256 bytes)
+                offset += 256;
+
+                // Read AhxInstrumentParams
+                // We need to extract parameter values and PList separately
+                // Send full buffer to worklet (it will parse the header)
+                const buffer = new Uint8Array(arrayBuffer);
+
+                currentSynth.workletNode.port.postMessage({
+                    type: 'plist_import',
+                    data: { buffer }
+                });
+
+                console.log(`[PList] Sent .ahxp to worklet (${buffer.length} bytes)`);
+
+            } catch (error) {
+                console.error('[PList] .ahxp import error:', error);
+            }
+
+            e.target.value = '';
+        });
+
+        // Import .txt
+        document.getElementById('btnImportText').addEventListener('click', () => {
+            document.getElementById('presetFileInput').click();
+        });
+
+        document.getElementById('presetFileInput').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                if (!currentSynth || !currentSynth.workletNode) {
+                    console.error('[PList] No synth active - please initialize RGAHX first');
+                    return;
+                }
+
+                const text = await file.text();
+
+                // Parse text format preset
+                const lines = text.split('\n');
+                let speed = 6;
+                const entries = [];
+                const parameters = {};
+
+                for (const line of lines) {
+                    const trimmed = line.trim();
+
+                    // Parse parameters
+                    if (trimmed.startsWith('Param')) {
+                        const match = trimmed.match(/Param(\d+)=([\d.]+)/);
+                        if (match) {
+                            const index = parseInt(match[1]);
+                            const value = parseFloat(match[2]);
+                            parameters[index] = value;
+                        }
+                    }
+
+                    if (trimmed.startsWith('Speed=')) {
+                        speed = parseInt(trimmed.split('=')[1]);
+                    } else if (/^\d+:/.test(trimmed)) {
+                        // Parse entry line: "0: C-3 Fixed Wave=1 Filter=10 Volume=64"
+                        const parts = trimmed.split(' ');
+                        const noteStr = parts[1];
+                        const fixed = parts.includes('Fixed');
+
+                        // Parse note
+                        let note = 0;
+                        const noteIdx = NOTE_NAMES.indexOf(noteStr);
+                        if (noteIdx >= 0) {
+                            note = noteIdx;
+                        }
+
+                        // Parse waveform
+                        let waveform = 0;
+                        const wavePart = parts.find(p => p.startsWith('Wave='));
+                        if (wavePart) {
+                            waveform = parseInt(wavePart.split('=')[1]);
+                        }
+
+                        // Parse FX commands
+                        let fx0 = 0, fx0_param = 0, fx1 = 0, fx1_param = 0;
+                        const FX_NAMES = ["Filter", "Porta", "Modul", "Volume", "Speed", "Jump", "Reso", "Square"];
+
+                        // Find first FX
+                        for (let i = 0; i < FX_NAMES.length; i++) {
+                            const fxPart = parts.find(p => p.startsWith(FX_NAMES[i] + '='));
+                            if (fxPart && fx0 === 0) {
+                                fx0 = i;
+                                fx0_param = parseInt(fxPart.split('=')[1]);
+                                break;
+                            }
+                        }
+
+                        // Find second FX (skip the one we already found)
+                        for (let i = 0; i < FX_NAMES.length; i++) {
+                            if (i === fx0) continue;
+                            const fxPart = parts.find(p => p.startsWith(FX_NAMES[i] + '='));
+                            if (fxPart) {
+                                fx1 = i;
+                                fx1_param = parseInt(fxPart.split('=')[1]);
+                                break;
+                            }
+                        }
+
+                        entries.push({ note, fixed, waveform, fx0, fx0_param, fx1, fx1_param });
+                    }
+                }
+
+                console.log('[PList] Parsed preset:', { parameters, speed, entries });
+
+                // Apply parameters
+                for (const index in parameters) {
+                    currentSynth.workletNode.port.postMessage({
+                        type: 'setParam',
+                        data: { index: parseInt(index), value: parameters[index] }
+                    });
+                }
+
+                // Send all PList data in a single batch
+                currentSynth.workletNode.port.postMessage({
+                    type: 'plist_import_batch',
+                    data: {
+                        speed,
+                        entries
+                    }
+                });
+
+                console.log(`[PList] Text preset imported: ${entries.length} entries loaded`);
+
+            } catch (error) {
+                console.error('[PList] Import error:', error);
+            }
+
+            e.target.value = '';
+        });
+
+        // Listen for preset import result
+        window.addEventListener('preset_imported', (event) => {
+            const { success, error, parameters } = event.detail;
+            if (success) {
+                console.log('✅ [PList] Binary preset imported successfully');
+
+                // Update UI parameters
+                if (parameters && currentSynth) {
+                    const synthUI = document.getElementById('rgahxControls');
+                    if (synthUI && synthUI.updateUIFromParameters) {
+                        // Convert from array of {index, value} to array of values
+                        const valueArray = [];
+                        for (const p of parameters) {
+                            valueArray[p.index] = p.value;
+                        }
+                        synthUI.updateUIFromParameters(valueArray);
+                        console.log('[PList] UI parameters updated');
+                    }
+                }
+            } else {
+                console.error('❌ [PList] Binary preset import failed:', error);
+            }
         });
 
         // Initialize on load

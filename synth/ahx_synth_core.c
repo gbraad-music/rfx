@@ -252,9 +252,15 @@ static void waves_generate_white_noise(int16_t* buffer, int len) {
     }
 }
 
-// Generate waveform and populate VoiceBuffer based on waveform type and wave_length
-void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length) {
+// Generate waveform and populate VoiceBuffer based on waveform type, wave_length, and filter position
+void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length, int filter_pos) {
     int16_t temp_buffer[0x281];
+
+    // Filter position (32-63) controls harmonic content
+    // Lower values = fewer harmonics (darker sound), higher = more harmonics (brighter)
+    // Clamp to valid range
+    if (filter_pos < 32) filter_pos = 32;
+    if (filter_pos > 63) filter_pos = 63;
 
     // Generate base waveform at different lengths (matching AHX waves structure)
     switch (waveform) {
@@ -320,6 +326,13 @@ void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t
         }
     }
 
+    // TODO: Apply authentic AHX filter modulation
+    // In authentic AHX, FilterPos (32-63) is an INDEX into pre-computed waveform tables
+    // with different harmonic content. We would need to generate 44 variations of each
+    // waveform type. For now, we just track FilterPos but don't apply filtering.
+    // The modulators still update FilterPos, which is used by PList commands.
+    (void)filter_pos;  // Suppress unused parameter warning
+
     // Wrap-around sample for interpolation
     voice->VoiceBuffer[0x280] = voice->VoiceBuffer[0];
 }
@@ -341,6 +354,8 @@ void ahx_synth_voice_init(AhxSynthVoice* voice) {
     voice->NoteMaxVolume = 0x40;  // Default max volume
     voice->WNRandom = 0x280;      // White noise seed
     voice->SpeedMultiplier = 1;   // Default speed (no multiplier)
+    voice->PListActive = false;   // No PList by default
+    voice->FilterPos = 32;        // Default filter position (middle)
 }
 
 // Calculate ADSR deltas (AUTHENTIC AHX ALGORITHM from ahx_player.c:389)
@@ -504,7 +519,7 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
 #endif
 
     // Generate waveform and populate VoiceBuffer
-    ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength);
+    ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
 
     // Setup voice playback with period and waveform buffer
     tracker_voice_set_period(&voice->voice_playback, voice->VoicePeriod, AMIGA_PAULA_PAL_CLK, sample_rate);
@@ -603,14 +618,16 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         voice->ADSRVolume += voice->ADSR.rVolume;
         if (--voice->ADSR.rFrames <= 0) {
             voice->ADSRVolume = voice->Instrument->Envelope.rVolume << 8;
-            // Release finished - ALWAYS stop voice
-            // Even if release volume > 0, we've completed the envelope
-            voice->TrackOn = false;
+            // Release finished - stop voice UNLESS PList is still active
+            if (!voice->PListActive) {
+                voice->TrackOn = false;
+            }
         }
     } else {
-        // All ADSR stages complete - voice should be off
-        // This shouldn't be reached, but safety stop
-        voice->TrackOn = false;
+        // All ADSR stages complete - stop voice UNLESS PList is still active
+        if (!voice->PListActive) {
+            voice->TrackOn = false;
+        }
     }
 
     // Vibrato
@@ -642,6 +659,9 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
             tracker_modulator_set_position(&voice->filter_mod, filter_pos);
         }
 
+        // Sync to voice FilterPos (used for waveform generation)
+        voice->FilterPos = filter_pos;
+
         // Reset wait counter
         voice->FilterWait = voice->Instrument->FilterSpeed - 3;
         if (voice->FilterWait < 1) voice->FilterWait = 1;
@@ -661,7 +681,7 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
 
     // Process waveform changes (AUTHENTIC AHX ALGORITHM from ahx_player.c:1204)
     if (voice->NewWaveform) {
-        ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength);
+        ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
 
         // Update voice playback with new waveform buffer (16-bit)
         tracker_voice_set_waveform_16bit(&voice->voice_playback, voice->VoiceBuffer, 0x280);

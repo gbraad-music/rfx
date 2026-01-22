@@ -400,8 +400,11 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
     inst->voice.debug_frame_count++;
 #endif
 
+    // Update PList active state (keeps voice alive even after envelope finishes)
+    inst->voice.PListActive = (inst->params.plist && inst->perf_current < inst->params.plist->length);
+
     // Process PList if active
-    if (inst->params.plist && inst->perf_current < inst->params.plist->length) {
+    if (inst->voice.PListActive) {
         // Decrement wait normally - SpeedMultiplier affects frame rate, not counters
         if (--inst->perf_wait <= 0) {
             uint8_t cur = inst->perf_current++;

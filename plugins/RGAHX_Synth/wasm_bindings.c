@@ -329,7 +329,8 @@ void regroove_synth_set_parameter(AhxSynthInstance* synth, int index, float valu
         if (regen_waveform) {
             ahx_synth_generate_waveform(&synth->voices[i].voice,
                 synth->voices[i].voice.Waveform,
-                synth->voices[i].voice.WaveLength);
+                synth->voices[i].voice.WaveLength,
+                synth->voices[i].voice.FilterPos);
             // Update voice playback with new waveform buffer
             tracker_voice_set_waveform_16bit(&synth->voices[i].voice.voice_playback,
                 synth->voices[i].voice.VoiceBuffer, 0x280);
@@ -781,13 +782,21 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
 
             // Use raw values from file (already in 50Hz timing)
             for (int v = 0; v < MAX_VOICES; v++) {
-                emscripten_log(EM_LOG_CONSOLE, "[Import] ADSR from file: a=%d d=%d s=%d r=%d, Filter=%d, Square=%d",
+                emscripten_log(EM_LOG_CONSOLE, "[Import] ADSR from file: a=%d d=%d s=%d r=%d",
                     synth->voices[v].core_inst.Envelope.aFrames,
                     synth->voices[v].core_inst.Envelope.dFrames,
                     synth->voices[v].core_inst.Envelope.sFrames,
-                    synth->voices[v].core_inst.Envelope.rFrames,
+                    synth->voices[v].core_inst.Envelope.rFrames);
+                emscripten_log(EM_LOG_CONSOLE, "[Import] Filter: enabled=%d, speed=%d, limits=%d-%d",
+                    synth->voices[v].params.filter_enabled,
                     synth->voices[v].core_inst.FilterSpeed,
-                    synth->voices[v].core_inst.SquareSpeed);
+                    synth->voices[v].core_inst.FilterLowerLimit,
+                    synth->voices[v].core_inst.FilterUpperLimit);
+                emscripten_log(EM_LOG_CONSOLE, "[Import] Square: enabled=%d, speed=%d, limits=%d-%d",
+                    synth->voices[v].params.square_enabled,
+                    synth->voices[v].core_inst.SquareSpeed,
+                    synth->voices[v].core_inst.SquareLowerLimit,
+                    synth->voices[v].core_inst.SquareUpperLimit);
 
                 // Recalculate ADSR
                 ahx_synth_voice_calc_adsr(&synth->voices[v].voice, &synth->voices[v].core_inst);

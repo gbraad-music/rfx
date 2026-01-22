@@ -111,6 +111,9 @@ typedef struct {
 
     // Speed multiplier (affects ADSR and modulators)
     int SpeedMultiplier;           // 1-4 (1=50Hz, 3=150Hz effective timing)
+
+    // PList state (prevents voice stop when PList is active)
+    bool PListActive;              // True if PList has more entries to play
 } AhxSynthVoice;
 
 /**
@@ -149,8 +152,9 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice);
  * @param voice Voice to generate waveform for
  * @param waveform Waveform type (0-3)
  * @param wave_length Wave length parameter (0-7)
+ * @param filter_pos Filter position (32-63) controlling harmonic content
  */
-void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length);
+void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t wave_length, int filter_pos);
 
 /**
  * Get Amiga period for AHX note index

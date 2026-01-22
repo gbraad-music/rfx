@@ -95,7 +95,7 @@ class RGAHXSynth {
             console.log('[RGAHXSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=238');
+            await this.audioContext.audioWorklet.addModule('synths/synth-worklet-processor.js?v=242');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -151,8 +151,8 @@ class RGAHXSynth {
 
             // Fetch both JS glue code and WASM binary
             const [jsResponse, wasmResponse] = await Promise.all([
-                fetch('synths/rgahxsynth.js?v=238'),
-                fetch('synths/rgahxsynth.wasm?v=238')
+                fetch('synths/rgahxsynth.js?v=242'),
+                fetch('synths/rgahxsynth.wasm?v=242')
             ]);
 
             const jsCode = await jsResponse.text();

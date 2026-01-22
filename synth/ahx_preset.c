@@ -181,6 +181,11 @@ bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
     preset->params.waveform = (AhxWaveform)params[0];
     preset->params.wave_length = params[1];
     preset->params.volume = params[2];
+
+    // CRITICAL: ADSR values in .ahxp are in CIA TICKS, need to convert to 50Hz frames
+    // The PList speed determines tick-to-frame conversion
+    // NOTE: PList will be loaded later, so we can't access speed here
+    // For now, load values as-is and divide during PList import
     preset->params.envelope.attack_frames = params[3];
     preset->params.envelope.attack_volume = params[4];
     preset->params.envelope.decay_frames = params[5];
@@ -354,12 +359,14 @@ bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uin
     preset->params.wave_length = ptr[1] & 0x7;
 
     // Envelope
-    preset->params.envelope.attack_frames = ptr[2];
+    // IMPORTANT: ADSR values in HivelyTracker .hvl format are stored in CIA ticks
+    // Convert to 50Hz frames by dividing by 3 (default AHX song speed)
+    preset->params.envelope.attack_frames = (ptr[2] + 2) / 3;
     preset->params.envelope.attack_volume = ptr[3];
-    preset->params.envelope.decay_frames = ptr[4];
+    preset->params.envelope.decay_frames = (ptr[4] + 2) / 3;
     preset->params.envelope.decay_volume = ptr[5];
-    preset->params.envelope.sustain_frames = ptr[6];
-    preset->params.envelope.release_frames = ptr[7];
+    preset->params.envelope.sustain_frames = (ptr[6] + 2) / 3;
+    preset->params.envelope.release_frames = (ptr[7] + 2) / 3;
     preset->params.envelope.release_volume = ptr[8];
 
     // Filter

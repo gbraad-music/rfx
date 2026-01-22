@@ -172,6 +172,10 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
     if (inst->params.plist && inst->params.plist->speed > 0) {
         inst->perf_speed = inst->params.plist->speed;
         inst->perf_wait = 0;  // Apply entry 0 immediately, then wait for entry 1
+#ifdef EMSCRIPTEN
+        emscripten_log(EM_LOG_CONSOLE, "[Note On] PList speed=%d, setting perf_speed=%d",
+            inst->params.plist->speed, inst->perf_speed);
+#endif
     } else {
         inst->perf_speed = 1;
         inst->perf_wait = 0;
@@ -371,9 +375,19 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
     if (!inst) return;
 
 #ifdef EMSCRIPTEN
-    if (inst->voice.debug_frame_count < 30) {  // Log first 30 frames
-        emscripten_log(EM_LOG_CONSOLE, "[Frame %d] perf_current=%d, perf_wait=%d",
-            inst->voice.debug_frame_count, inst->perf_current, inst->perf_wait);
+    // Always log when envelope completes or voice stops
+    bool should_log = inst->voice.debug_frame_count < 40 ||
+                      inst->voice.ADSR.rFrames <= 2 ||
+                      !inst->voice.TrackOn;
+
+    if (should_log) {
+        emscripten_log(EM_LOG_CONSOLE, "[Frame %d] perf=%d/%d wait=%d ADSR: a=%d d=%d s=%d r=%d vol=%d TrackOn=%d",
+            inst->voice.debug_frame_count, inst->perf_current,
+            inst->params.plist ? inst->params.plist->length : 0,
+            inst->perf_wait,
+            inst->voice.ADSR.aFrames, inst->voice.ADSR.dFrames,
+            inst->voice.ADSR.sFrames, inst->voice.ADSR.rFrames,
+            inst->voice.ADSRVolume >> 8, inst->voice.TrackOn);
     }
     inst->voice.debug_frame_count++;
 #endif

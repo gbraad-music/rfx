@@ -738,35 +738,79 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
         if (plist_length > 0 && size >= plist_offset + 2 + (plist_length * 7)) {
             emscripten_log(EM_LOG_CONSOLE, "[Import] PList data found: %d entries at speed %d", plist_length, plist_speed);
 
-            // Apply PList to all voices
+            // Clear existing PList (operates on all voices)
+            regroove_synth_clear_plist(synth);
+
+            // CRITICAL: Create PList with correct speed for ALL voices BEFORE adding entries
+            // Otherwise add_plist_entry() will create them with default speed=6!
             for (int v = 0; v < MAX_VOICES; v++) {
-                // Clear existing PList
-                regroove_synth_clear_plist(synth);
-
-                // Parse entries
-                size_t entry_offset = plist_offset + 2;
-                for (int i = 0; i < plist_length; i++) {
-                    regroove_synth_add_plist_entry(synth);
-
-                    uint8_t note = buffer[entry_offset++];
-                    uint8_t fixed = buffer[entry_offset++];
-                    uint8_t waveform = buffer[entry_offset++];
-                    uint8_t fx0 = buffer[entry_offset++];
-                    uint8_t fx0_param = buffer[entry_offset++];
-                    uint8_t fx1 = buffer[entry_offset++];
-                    uint8_t fx1_param = buffer[entry_offset++];
-
-                    regroove_synth_set_plist_entry(synth, i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
-
-                    emscripten_log(EM_LOG_CONSOLE, "[Import] PList[%d]: note=%d, fixed=%d, waveform=%d, fx0=%d(0x%02x), fx1=%d(0x%02x)",
-                        i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
+                if (!synth->voices[v].params.plist) {
+                    synth->voices[v].params.plist = (AhxPList*)malloc(sizeof(AhxPList));
+                    synth->voices[v].params.plist->speed = plist_speed;
+                    synth->voices[v].params.plist->length = 0;
+                    synth->voices[v].params.plist->entries = NULL;
+                    emscripten_log(EM_LOG_CONSOLE, "[Import] Created PList for voice %d with speed=%d", v, plist_speed);
                 }
+            }
 
-                // Set speed AFTER all entries are added (otherwise add_entry creates PList with default speed=6)
-                regroove_synth_set_plist_speed(synth, plist_speed);
-                emscripten_log(EM_LOG_CONSOLE, "[Import] Set PList speed to %d", plist_speed);
+            // Parse and add entries (this adds to ALL voices)
+            size_t entry_offset = plist_offset + 2;
+            for (int i = 0; i < plist_length; i++) {
+                regroove_synth_add_plist_entry(synth);
 
-                break; // Only set PList once for all voices
+                uint8_t note = buffer[entry_offset++];
+                uint8_t fixed = buffer[entry_offset++];
+                uint8_t waveform = buffer[entry_offset++];
+                uint8_t fx0 = buffer[entry_offset++];
+                uint8_t fx0_param = buffer[entry_offset++];
+                uint8_t fx1 = buffer[entry_offset++];
+                uint8_t fx1_param = buffer[entry_offset++];
+
+                regroove_synth_set_plist_entry(synth, i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
+
+                emscripten_log(EM_LOG_CONSOLE, "[Import] PList[%d]: note=%d, fixed=%d, waveform=%d, fx0=%d(0x%02x), fx1=%d(0x%02x)",
+                    i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
+            }
+
+            // CRITICAL: Now divide ADSR/Filter/Square speeds by PList speed to convert ticks to frames!
+            if (plist_speed > 0) {
+                for (int v = 0; v < MAX_VOICES; v++) {
+                    emscripten_log(EM_LOG_CONSOLE, "[Import] BEFORE speed division: ADSR a=%d d=%d s=%d r=%d, Filter=%d, Square=%d",
+                        synth->voices[v].core_inst.Envelope.aFrames,
+                        synth->voices[v].core_inst.Envelope.dFrames,
+                        synth->voices[v].core_inst.Envelope.sFrames,
+                        synth->voices[v].core_inst.Envelope.rFrames,
+                        synth->voices[v].core_inst.FilterSpeed,
+                        synth->voices[v].core_inst.SquareSpeed);
+
+                    // Convert CIA ticks to 50Hz frames - ALL timing parameters!
+                    synth->voices[v].core_inst.Envelope.aFrames = (synth->voices[v].core_inst.Envelope.aFrames + plist_speed - 1) / plist_speed;
+                    synth->voices[v].core_inst.Envelope.dFrames = (synth->voices[v].core_inst.Envelope.dFrames + plist_speed - 1) / plist_speed;
+                    synth->voices[v].core_inst.Envelope.sFrames = (synth->voices[v].core_inst.Envelope.sFrames + plist_speed - 1) / plist_speed;
+                    synth->voices[v].core_inst.Envelope.rFrames = (synth->voices[v].core_inst.Envelope.rFrames + plist_speed - 1) / plist_speed;
+
+                    // CRITICAL: Filter and Square speeds are ALSO in ticks!
+                    synth->voices[v].core_inst.FilterSpeed = (synth->voices[v].core_inst.FilterSpeed + plist_speed - 1) / plist_speed;
+                    synth->voices[v].core_inst.SquareSpeed = (synth->voices[v].core_inst.SquareSpeed + plist_speed - 1) / plist_speed;
+
+                    emscripten_log(EM_LOG_CONSOLE, "[Import] AFTER speed division by %d: ADSR a=%d d=%d s=%d r=%d, Filter=%d, Square=%d",
+                        plist_speed,
+                        synth->voices[v].core_inst.Envelope.aFrames,
+                        synth->voices[v].core_inst.Envelope.dFrames,
+                        synth->voices[v].core_inst.Envelope.sFrames,
+                        synth->voices[v].core_inst.Envelope.rFrames,
+                        synth->voices[v].core_inst.FilterSpeed,
+                        synth->voices[v].core_inst.SquareSpeed);
+
+                    // Recalculate ADSR with corrected frame values
+                    ahx_synth_voice_calc_adsr(&synth->voices[v].voice, &synth->voices[v].core_inst);
+
+                    emscripten_log(EM_LOG_CONSOLE, "[Import] Final ADSR runtime: a=%d d=%d s=%d r=%d",
+                        synth->voices[v].voice.ADSR.aFrames,
+                        synth->voices[v].voice.ADSR.dFrames,
+                        synth->voices[v].voice.ADSR.sFrames,
+                        synth->voices[v].voice.ADSR.rFrames);
+                }
             }
         } else {
             emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] PList data incomplete: length=%d but buffer too small", plist_length);

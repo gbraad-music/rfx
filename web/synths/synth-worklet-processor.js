@@ -49,6 +49,10 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
             this.importPreset(data.buffer);
         } else if (type === 'plist_export') {
             this.exportPreset(data.presetName || 'MyPreset');
+        } else if (type === 'plist_set_speed') {
+            this.setPListSpeed(data.speed);
+        } else if (type === 'plist_get_state') {
+            this.getPListState();
         }
     }
 
@@ -83,6 +87,62 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
         } catch (error) {
             console.error('[SynthWorklet] Import error:', error);
             this.port.postMessage({ type: 'preset_imported', data: { success: false, error: error.message } });
+        }
+    }
+
+    setPListSpeed(speed) {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot set PList speed: WASM not initialized');
+            return;
+        }
+
+        try {
+            if (this.wasmModule._regroove_synth_set_plist_speed) {
+                this.wasmModule._regroove_synth_set_plist_speed(this.synthPtr, speed);
+                console.log(`[SynthWorklet] PList speed set to ${speed}`);
+            } else {
+                console.error('[SynthWorklet] _regroove_synth_set_plist_speed not available');
+            }
+        } catch (error) {
+            console.error('[SynthWorklet] Error setting PList speed:', error);
+        }
+    }
+
+    getPListState() {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot get PList state: WASM not initialized');
+            return;
+        }
+
+        try {
+            const length = this.wasmModule._regroove_synth_get_plist_length(this.synthPtr);
+            const speed = this.wasmModule._regroove_synth_get_plist_speed(this.synthPtr);
+
+            // Get all entries
+            const entries = [];
+            for (let i = 0; i < length; i++) {
+                const entryPtr = this.wasmModule._malloc(8); // PList entry struct size
+                this.wasmModule._regroove_synth_get_plist_entry(this.synthPtr, i, entryPtr);
+
+                const heapU8 = new Uint8Array(this.wasmMemory.buffer, entryPtr, 8);
+                entries.push({
+                    note: heapU8[0] | (heapU8[1] << 8),
+                    fixed: heapU8[2],
+                    waveform: heapU8[3],
+                    fx: [heapU8[4], heapU8[5]],
+                    fx_param: [heapU8[6], heapU8[7]]
+                });
+
+                this.wasmModule._free(entryPtr);
+            }
+
+            // Send state to main thread
+            this.port.postMessage({
+                type: 'plist_state',
+                data: { length, speed, entries }
+            });
+        } catch (error) {
+            console.error('[SynthWorklet] Error getting PList state:', error);
         }
     }
 

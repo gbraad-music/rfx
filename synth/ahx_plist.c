@@ -33,7 +33,9 @@ void ahx_plist_execute_command(
     int* perf_wait,
     // Portamento
     int* period_perf_slide_speed,
-    int* period_perf_slide_on
+    int* period_perf_slide_on,
+    // Note state
+    int note_off
 ) {
     switch (fx) {
         case 0: // Set Filter Position
@@ -96,8 +98,8 @@ void ahx_plist_execute_command(
             }
             break;
 
-        case 5: // Jump to PList Step
-            if (perf_current) *perf_current = fx_param;
+        case 5: // Jump to PList Step (only during sustain, not after note-off)
+            if (!note_off && perf_current) *perf_current = fx_param;
             break;
 
         case 6: // Set Volume

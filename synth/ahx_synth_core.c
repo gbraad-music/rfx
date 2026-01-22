@@ -409,13 +409,6 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
 #ifdef EMSCRIPTEN
     emscripten_log(EM_LOG_CONSOLE, "[AHX] Note on: sample_rate=%d, samples_per_frame=%d",
         sample_rate, voice->samples_per_frame);
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Instrument envelope: a=%d(%d) d=%d(%d) s=%d r=%d(%d)",
-        voice->Instrument->Envelope.aFrames, voice->Instrument->Envelope.aVolume,
-        voice->Instrument->Envelope.dFrames, voice->Instrument->Envelope.dVolume,
-        voice->Instrument->Envelope.sFrames,
-        voice->Instrument->Envelope.rFrames, voice->Instrument->Envelope.rVolume);
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Calculated ADSR runtime: a=%d d=%d s=%d r=%d",
-        voice->ADSR.aFrames, voice->ADSR.dFrames, voice->ADSR.sFrames, voice->ADSR.rFrames);
 #endif
 
     // Reset frame counter for debugging
@@ -436,7 +429,24 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->ADSRVolume = 0;
 
     // CRITICAL: Recalculate ADSR deltas to reset frame counters
+#ifdef EMSCRIPTEN
+    if (!voice->Instrument) {
+        emscripten_log(EM_LOG_ERROR, "[AHX] ERROR: Instrument pointer is NULL!");
+    } else {
+        emscripten_log(EM_LOG_CONSOLE, "[AHX] Instrument envelope BEFORE calc: a=%d(%d) d=%d(%d) s=%d r=%d(%d)",
+            voice->Instrument->Envelope.aFrames, voice->Instrument->Envelope.aVolume,
+            voice->Instrument->Envelope.dFrames, voice->Instrument->Envelope.dVolume,
+            voice->Instrument->Envelope.sFrames,
+            voice->Instrument->Envelope.rFrames, voice->Instrument->Envelope.rVolume);
+    }
+#endif
+
     ahx_synth_voice_calc_adsr(voice, voice->Instrument);
+
+#ifdef EMSCRIPTEN
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Calculated ADSR runtime AFTER calc: a=%d d=%d s=%d r=%d",
+        voice->ADSR.aFrames, voice->ADSR.dFrames, voice->ADSR.sFrames, voice->ADSR.rFrames);
+#endif
 
     // Reset vibrato
     voice->VibratoDelay = voice->Instrument->VibratoDelay;

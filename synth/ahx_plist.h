@@ -51,6 +51,7 @@ extern "C" {
  * @param perf_wait Pointer to PList wait counter
  * @param period_perf_slide_speed Pointer to portamento speed
  * @param period_perf_slide_on Pointer to portamento active flag
+ * @param note_off 1 if note has been released, 0 otherwise (prevents PList jumps during release)
  */
 void ahx_plist_execute_command(
     uint8_t fx,
@@ -81,7 +82,9 @@ void ahx_plist_execute_command(
     int* perf_wait,
     // Portamento
     int* period_perf_slide_speed,
-    int* period_perf_slide_on
+    int* period_perf_slide_on,
+    // Note state
+    int note_off
 );
 
 #ifdef __cplusplus

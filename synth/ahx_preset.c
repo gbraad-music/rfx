@@ -83,7 +83,8 @@ bool ahx_preset_save(const AhxPreset* preset, const char* filepath) {
     params[20] = preset->params.vibrato_speed;
     params[21] = preset->params.hard_cut_release ? 1 : 0;
     params[22] = preset->params.hard_cut_frames;
-    // params[23-31] = reserved (already zeroed)
+    params[23] = preset->params.speed_multiplier; // SpeedMultiplier from AHX song (1-4)
+    // params[24-31] = reserved (already zeroed)
 
     if (fwrite(params, 32, 1, f) != 1) {
         fclose(f);
@@ -92,7 +93,7 @@ bool ahx_preset_save(const AhxPreset* preset, const char* filepath) {
 
     // Write PList data after struct (if present)
     if (preset->params.plist && preset->params.plist->length > 0) {
-        // Write speed and length
+        // Write speed (keep raw value - import will handle it)
         if (fputc(preset->params.plist->speed, f) == EOF) {
             fclose(f);
             return false;
@@ -206,6 +207,7 @@ bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
     preset->params.vibrato_speed = params[20];
     preset->params.hard_cut_release = params[21] != 0;
     preset->params.hard_cut_frames = params[22];
+    preset->params.speed_multiplier = params[23] > 0 ? params[23] : 3; // Default to 3 if not set
 
     // Clear PList pointer (will be loaded separately if present)
     preset->params.plist = NULL;

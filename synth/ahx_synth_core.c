@@ -340,6 +340,7 @@ void ahx_synth_voice_init(AhxSynthVoice* voice) {
     voice->TrackOn = true;
     voice->NoteMaxVolume = 0x40;  // Default max volume
     voice->WNRandom = 0x280;      // White noise seed
+    voice->SpeedMultiplier = 1;   // Default speed (no multiplier)
 }
 
 // Calculate ADSR deltas (AUTHENTIC AHX ALGORITHM from ahx_player.c:389)
@@ -403,12 +404,14 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
 
     voice->Released = false;
     voice->TrackOn = true;
-    voice->samples_per_frame = sample_rate / AHX_FRAME_RATE;
+    // Apply SpeedMultiplier to frame rate (higher multiplier = more frames per second)
+    int speed_mult = (voice->SpeedMultiplier > 0) ? voice->SpeedMultiplier : 1;
+    voice->samples_per_frame = sample_rate / AHX_FRAME_RATE / speed_mult;
     voice->samples_in_frame = 0;
 
 #ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Note on: sample_rate=%d, samples_per_frame=%d",
-        sample_rate, voice->samples_per_frame);
+    emscripten_log(EM_LOG_CONSOLE, "[AHX] Note on: sample_rate=%d, SpeedMult=%d, samples_per_frame=%d",
+        sample_rate, speed_mult, voice->samples_per_frame);
 #endif
 
     // Reset frame counter for debugging
@@ -478,6 +481,12 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     } else {
         tracker_modulator_set_active(&voice->square_mod, false);
     }
+
+    // Initialize modulator wait counters (authentic AHX timing)
+    // Filter uses Speed-3 (min 1), Square uses Speed directly
+    voice->FilterWait = voice->Instrument->FilterSpeed - 3;
+    if (voice->FilterWait < 1) voice->FilterWait = 1;
+    voice->SquareWait = voice->Instrument->SquareSpeed;
 
     // Setup hard cut release
     voice->HardCutRelease = voice->Instrument->HardCutRelease;
@@ -614,14 +623,40 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         voice->VibratoPeriod = vib_table_value;
     }
 
-    // Update filter modulation
-    if (tracker_modulator_is_active(&voice->filter_mod)) {
-        tracker_modulator_update(&voice->filter_mod);
+    // Update filter modulation (authentic AHX timing - wait counter)
+    if (tracker_modulator_is_active(&voice->filter_mod) && --voice->FilterWait <= 0) {
+        // Authentic AHX filter behavior: Speed < 4 updates multiple times
+        int f_max = (voice->Instrument->FilterSpeed < 4) ? (5 - voice->Instrument->FilterSpeed) : 1;
+        for (int i = 0; i < f_max; i++) {
+            tracker_modulator_update(&voice->filter_mod);
+        }
+
+        // Clamp filter position to valid range
+        int filter_pos = tracker_modulator_get_position(&voice->filter_mod);
+        if (filter_pos < 1) {
+            filter_pos = 1;
+            tracker_modulator_set_position(&voice->filter_mod, filter_pos);
+        }
+        if (filter_pos > 63) {
+            filter_pos = 63;
+            tracker_modulator_set_position(&voice->filter_mod, filter_pos);
+        }
+
+        // Reset wait counter
+        voice->FilterWait = voice->Instrument->FilterSpeed - 3;
+        if (voice->FilterWait < 1) voice->FilterWait = 1;
+
+        // Mark for waveform regeneration
+        voice->NewWaveform = 1;
     }
 
-    // Update PWM modulation
-    if (tracker_modulator_is_active(&voice->square_mod)) {
-        tracker_modulator_update(&voice->square_mod);
+    // Update PWM modulation (authentic AHX timing - wait counter)
+    if (voice->Waveform == 2 && tracker_modulator_is_active(&voice->square_mod)) {
+        if (--voice->SquareWait <= 0) {
+            tracker_modulator_update(&voice->square_mod);
+            voice->SquareWait = voice->Instrument->SquareSpeed;
+            voice->NewWaveform = 1;
+        }
     }
 
     // Process waveform changes (AUTHENTIC AHX ALGORITHM from ahx_player.c:1204)

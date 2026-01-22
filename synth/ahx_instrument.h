@@ -98,6 +98,9 @@ typedef struct {
 
     // PList (optional - set to NULL if not used)
     AhxPList* plist;            // Optional PList sequence
+
+    // Song speed (for correct ADSR timing)
+    uint8_t speed_multiplier;   // 1-4 (affects frame rate: 1=50Hz, 2=100Hz, etc.)
 } AhxInstrumentParams;
 
 // AHX Instrument voice state (uses authentic AHX synthesis core)

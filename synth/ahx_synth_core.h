@@ -88,6 +88,10 @@ typedef struct {
     int NoteCutOn;                 // Note cut active
     int NoteCutWait;               // Note cut wait frames
 
+    // Modulator wait counters (authentic AHX timing)
+    int FilterWait;                // Frames until next filter update
+    int SquareWait;                // Frames until next square update
+
     // Active state
     bool TrackOn;                  // Voice active
     bool Released;                 // Note released
@@ -104,6 +108,9 @@ typedef struct {
 
     // Debug frame counter
     uint32_t debug_frame_count;
+
+    // Speed multiplier (affects ADSR and modulators)
+    int SpeedMultiplier;           // 1-4 (1=50Hz, 3=150Hz effective timing)
 } AhxSynthVoice;
 
 /**

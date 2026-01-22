@@ -156,6 +156,9 @@ AhxInstrumentParams ahx_instrument_default_params(void) {
     params.hard_cut_release = false;
     params.hard_cut_frames = 3;
 
+    // Default speed multiplier (standard AHX)
+    params.speed_multiplier = 3;
+
     params.plist = NULL;
 
     return params;
@@ -170,11 +173,13 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
     inst->voice.debug_frame_count = 0;
 
     if (inst->params.plist && inst->params.plist->speed > 0) {
+        // PList speed is in 50Hz ticks (PAL timing)
+        // Keep it as-is, but we'll decrement the wait counter by SpeedMultiplier each frame
         inst->perf_speed = inst->params.plist->speed;
         inst->perf_wait = 0;  // Apply entry 0 immediately, then wait for entry 1
 #ifdef EMSCRIPTEN
-        emscripten_log(EM_LOG_CONSOLE, "[Note On] PList speed=%d, setting perf_speed=%d",
-            inst->params.plist->speed, inst->perf_speed);
+        emscripten_log(EM_LOG_CONSOLE, "[Note On] PList speed=%d, SpeedMult=%d, setting perf_speed=%d",
+            inst->params.plist->speed, inst->params.speed_multiplier, inst->perf_speed);
 #endif
     } else {
         inst->perf_speed = 1;
@@ -184,6 +189,9 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
     inst->period_perf_slide_speed = 0;
     inst->period_perf_slide_period = 0;
     inst->period_perf_slide_on = false;
+
+    // Set speed multiplier in voice for ADSR timing
+    inst->voice.SpeedMultiplier = (inst->params.speed_multiplier > 0) ? inst->params.speed_multiplier : 1;
 
     // Use authentic AHX synthesis core with MIDI note (will be overridden by PList)
     ahx_synth_voice_note_on(&inst->voice, note, velocity, sample_rate);
@@ -394,6 +402,7 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
 
     // Process PList if active
     if (inst->params.plist && inst->perf_current < inst->params.plist->length) {
+        // Decrement wait normally - SpeedMultiplier affects frame rate, not counters
         if (--inst->perf_wait <= 0) {
             uint8_t cur = inst->perf_current++;
             AhxPListEntry* entry = &inst->params.plist->entries[cur];
@@ -430,6 +439,7 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
         // PList finished - decay portamento
         if (inst->perf_wait) {
             inst->perf_wait--;
+            if (inst->perf_wait < 0) inst->perf_wait = 0;
         } else {
             inst->period_perf_slide_speed = 0;
         }

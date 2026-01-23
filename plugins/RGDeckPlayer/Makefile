@@ -23,6 +23,7 @@ FILES_DSP = \
 	../../players/tracker_voice.c \
 	../../players/tracker_modulator.c \
 	../../synth/ahx_synth_core.c \
+	../../synth/ahx_waves.c \
 	../../synth/ahx_instrument.c \
 	../../synth/ahx_preset.c \
 	../../synth/ahx_plist.c \

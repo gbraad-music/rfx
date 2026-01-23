@@ -31,6 +31,7 @@ add_executable(ahx_player_test
     ahx_player_test.c
     ../../players/ahx_player.c
     ../../synth/ahx_synth_core.c
+    ../../synth/ahx_waves.c
     ../../synth/ahx_plist.c
     ../../players/tracker_modulator.c
     ../../players/tracker_sequence.c

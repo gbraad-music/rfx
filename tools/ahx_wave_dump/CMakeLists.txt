@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ahx_preset_tool VERSION 1.0.0 LANGUAGES C)
+project(ahx_wave_dump VERSION 1.0.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -11,9 +11,9 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/../../players
 )
 
-# AHX Preset Tool executable
-add_executable(ahx_preset_tool
-    ahx_preset_tool.c
+# AHX Wave Dump Tool executable
+add_executable(ahx_wave_dump
+    ahx_wave_dump.c
     ../../synth/ahx_preset.c
     ../../synth/ahx_instrument.c
     ../../synth/ahx_plist.c
@@ -24,15 +24,15 @@ add_executable(ahx_preset_tool
 )
 
 # Link libraries
-target_link_libraries(ahx_preset_tool m)
+target_link_libraries(ahx_wave_dump m)
 
 # Windows-specific settings
 if(WIN32)
     # Link MinGW standard libraries statically
-    set_target_properties(ahx_preset_tool PROPERTIES
+    set_target_properties(ahx_wave_dump PROPERTIES
         LINK_FLAGS "-static-libgcc -mconsole"
     )
 endif()
 
 # Installation
-install(TARGETS ahx_preset_tool DESTINATION bin)
+install(TARGETS ahx_wave_dump DESTINATION bin)

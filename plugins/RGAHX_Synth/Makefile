@@ -13,6 +13,7 @@ TARGETS = lv2_sep vst3
 FILES_DSP = \
 	RGAHX_SynthPlugin.cpp \
 	../../synth/ahx_synth_core.c \
+	../../synth/ahx_waves.c \
 	../../synth/ahx_instrument.c \
 	../../synth/ahx_preset.c \
 	../../synth/ahx_plist.c \
@@ -61,6 +62,7 @@ WASM_CFLAGS = -O3 -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap","ccall"]' \
 
 # WebAssembly source files
 WASM_SOURCES = ../../synth/ahx_synth_core.c \
+               ../../synth/ahx_waves.c \
                ../../synth/ahx_instrument.c \
                ../../synth/ahx_plist.c \
                ../../synth/ahx_preset.c \

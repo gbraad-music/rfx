@@ -421,6 +421,13 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
                 inst->voice.Waveform = entry->waveform - 1;  // 1-4 maps to 0-3
                 inst->voice.NewWaveform = 1;
                 inst->period_perf_slide_speed = inst->period_perf_slide_period = 0;
+
+                // Initialize square modulation when switching to square waveform
+                if (inst->voice.Waveform == 2 && !tracker_modulator_is_active(&inst->voice.square_mod)) {
+                    // Enable square modulation automatically
+                    tracker_modulator_set_active(&inst->voice.square_mod, true);
+                    inst->voice.SquarePos = tracker_modulator_get_position(&inst->voice.square_mod);
+                }
             }
 
             // Reset portamento flag (will be set by commands if needed)

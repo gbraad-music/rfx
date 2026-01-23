@@ -1316,7 +1316,9 @@ static void player_plist_command_parse(AhxPlayer* player, int v, int fx, int fx_
         &player->Voices[v].PerfWait,
         // Portamento
         &player->Voices[v].PeriodPerfSlideSpeed,
-        &player->Voices[v].PeriodPerfSlideOn
+        &player->Voices[v].PeriodPerfSlideOn,
+        // Note state
+        player->Voices[v].NoteCutOn
     );
 
     // Sync specific changes to generic tracker components

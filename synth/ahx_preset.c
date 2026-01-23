@@ -348,8 +348,8 @@ bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uin
     // Read target instrument name
     strncpy(preset->name, name_ptr, 63);
     preset->name[63] = '\0';
-    snprintf(preset->author, 64, "Imported from AHX");
-    snprintf(preset->description, 256, "Instrument %d from %s", instrument_index, ahx_filepath);
+    preset->author[0] = '\0';      // Empty author
+    preset->description[0] = '\0'; // Empty description
 
     // Parse instrument parameters
     if (ptr + 22 - buffer > file_size) {
@@ -361,14 +361,13 @@ bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uin
     preset->params.wave_length = ptr[1] & 0x7;
 
     // Envelope
-    // IMPORTANT: ADSR values in HivelyTracker .hvl format are stored in CIA ticks
-    // Convert to 50Hz frames by dividing by 3 (default AHX song speed)
-    preset->params.envelope.attack_frames = (ptr[2] + 2) / 3;
+    // Keep raw values from AHX (CIA ticks) - conversion handled elsewhere
+    preset->params.envelope.attack_frames = ptr[2];
     preset->params.envelope.attack_volume = ptr[3];
-    preset->params.envelope.decay_frames = (ptr[4] + 2) / 3;
+    preset->params.envelope.decay_frames = ptr[4];
     preset->params.envelope.decay_volume = ptr[5];
-    preset->params.envelope.sustain_frames = (ptr[6] + 2) / 3;
-    preset->params.envelope.release_frames = (ptr[7] + 2) / 3;
+    preset->params.envelope.sustain_frames = ptr[6];
+    preset->params.envelope.release_frames = ptr[7];
     preset->params.envelope.release_volume = ptr[8];
 
     // Filter

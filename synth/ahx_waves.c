@@ -316,7 +316,7 @@ void ahx_waves_generate_square(AhxWaves* waves, int16_t* output_buffer, int squa
     if (square_pos > 63) square_pos = 63;
 
     // Access squares with filter modulation
-    // FilterPos 32 = raw squares, 33-63 = filtered variations (stored in LowPasses)
+    // FilterPos 32 = raw squares, 33-63 = high-pass filtered variations (stored in HighPasses)
     // Within each 6520-sample filter block: triangles(252) + sawtooths(252) + squares(4096) + noise(1920)
     int16_t* square_ptr;
 
@@ -324,12 +324,12 @@ void ahx_waves_generate_square(AhxWaves* waves, int16_t* output_buffer, int squa
         // Use raw unfiltered squares
         square_ptr = waves->Squares;
     } else {
-        // Use filtered squares from LowPasses (following ahx_player.c reference)
-        // The player offsets from Squares[], which reads into LowPasses that follows in memory
+        // Use filtered squares from HighPasses (following ahx_player.c reference)
+        // The player offsets from Squares[], which reads into HighPasses that follows in memory
         // Skip to correct filter variation, then skip past triangles and sawtooths to get to squares
         int filter_variation = filter_pos - 33;  // 0-30 for filter_pos 33-63
         int offset = filter_variation * (0xfc + 0xfc + 0x80*0x1f + 0x80 + 0x280*3) + (0xfc + 0xfc);
-        square_ptr = &waves->LowPasses[offset];
+        square_ptr = &waves->HighPasses[offset];
     }
 
     // Calculate square position with wave_length scaling (from ahx_player.c:1180)

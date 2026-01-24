@@ -291,11 +291,10 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // Initialize SquarePos to 0 (matches reference player initialization)
     voice->SquarePos = 0;
 
-    // Initialize modulator wait counters (authentic AHX timing)
-    // Filter uses Speed-3 (min 1), Square uses Speed directly
-    voice->FilterWait = voice->Instrument->FilterSpeed - 3;
-    if (voice->FilterWait < 1) voice->FilterWait = 1;
-    voice->SquareWait = voice->Instrument->SquareSpeed;
+    // Initialize modulator wait counters to 0 (authentic AHX from ahx_player.c:833,850)
+    // This allows FX 4 to trigger modulation immediately on the first frame
+    voice->FilterWait = 0;
+    voice->SquareWait = 0;
 
     // Setup hard cut release
     voice->HardCutRelease = voice->Instrument->HardCutRelease;
@@ -525,6 +524,16 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     vol = (vol * voice->TrackMasterVolume) >> 6;
     vol = (vol * voice->VelocityScale) >> 6;
     vol = (vol * voice->Instrument->Volume) >> 6;
+
+    static int last_voice_vol = -1;
+    static int last_wf = -1;
+    if ((vol != last_voice_vol || voice->Waveform != last_wf) && voice->debug_frame_count < 100) {
+        printf("[Volume] Frame=%d Waveform=%d NoteMax=%d => Final=%d\n",
+               voice->debug_frame_count, voice->Waveform, voice->NoteMaxVolume, vol);
+        last_voice_vol = vol;
+        last_wf = voice->Waveform;
+    }
+
     voice->VoiceVolume = vol;
     if (voice->VoiceVolume > 64) voice->VoiceVolume = 64;
     if (voice->VoiceVolume < 0) voice->VoiceVolume = 0;

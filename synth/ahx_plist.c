@@ -3,6 +3,7 @@
  */
 
 #include "ahx_plist.h"
+#include <stdio.h>
 
 void ahx_plist_execute_command(
     uint8_t fx,
@@ -39,12 +40,20 @@ void ahx_plist_execute_command(
 ) {
     switch (fx) {
         case 0: // Set Filter Position
-            if (song_revision > 0 && fx_param != 0) {
-                if (ignore_filter && *ignore_filter) {
-                    if (filter_pos) *filter_pos = *ignore_filter;
+            if (fx_param != 0) {
+                // For song_revision > 0: check ignore_filter flag
+                // For synth mode (song_revision == 0): always apply
+                if (song_revision > 0 && ignore_filter && *ignore_filter) {
+                    if (filter_pos) {
+                        printf("[FX 0] Set FilterPos: %d -> %d (from ignore)\n", *filter_pos, *ignore_filter);
+                        *filter_pos = *ignore_filter;
+                    }
                     *ignore_filter = 0;
                 } else {
-                    if (filter_pos) *filter_pos = fx_param;
+                    if (filter_pos) {
+                        printf("[FX 0] Set FilterPos: %d -> %d\n", *filter_pos, fx_param);
+                        *filter_pos = fx_param;
+                    }
                 }
                 if (new_waveform) *new_waveform = 1;
             }
@@ -119,13 +128,22 @@ void ahx_plist_execute_command(
         case 6: // Set Volume
             if (fx_param <= 0x40) {
                 // Note volume (0x00-0x40)
-                if (note_max_volume) *note_max_volume = fx_param;
+                if (note_max_volume) {
+                    printf("[FX 6] Set NoteMaxVolume: %d -> %d\n", *note_max_volume, fx_param);
+                    *note_max_volume = fx_param;
+                }
             } else if (fx_param >= 0x50 && fx_param <= 0x90) {
                 // PerfSub volume (0x50-0x90)
-                if (perf_sub_volume) *perf_sub_volume = fx_param - 0x50;
+                if (perf_sub_volume) {
+                    printf("[FX 6] Set PerfSubVolume: %d -> %d\n", *perf_sub_volume, fx_param - 0x50);
+                    *perf_sub_volume = fx_param - 0x50;
+                }
             } else if (fx_param >= 0xA0 && fx_param <= 0xE0) {
                 // TrackMaster volume (0xA0-0xE0)
-                if (track_master_volume) *track_master_volume = fx_param - 0xA0;
+                if (track_master_volume) {
+                    printf("[FX 6] Set TrackMasterVolume: %d -> %d\n", *track_master_volume, fx_param - 0xA0);
+                    *track_master_volume = fx_param - 0xA0;
+                }
             }
             break;
 

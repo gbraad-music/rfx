@@ -53,12 +53,20 @@ void tracker_voice_set_period(TrackerVoice* voice,
         return;
     }
 
-    voice->delta = Period2Delta(period, clock_rate, sample_rate);
+    uint32_t new_delta = Period2Delta(period, clock_rate, sample_rate);
 
-    // Wraparound handling (for looping waveforms)
-    if (voice->delta > voice->length) {
-        voice->delta -= voice->length;
+    #ifdef DEBUG_PERIOD
+    if (voice->delta != new_delta) {
+        fprintf(stderr, "    tracker_voice_set_period: period=%d -> delta=%u (was %u)\n",
+                period, new_delta, voice->delta);
     }
+    #endif
+
+    voice->delta = new_delta;
+
+    // Delta is playback SPEED (16.16 fixed point), not position
+    // It should never be clamped or wrapped based on waveform length
+    // Only the playback position wraps during get_sample()
 
     if (voice->delta == 0) {
         voice->delta = 1;
@@ -155,6 +163,13 @@ int32_t tracker_voice_get_sample(TrackerVoice* voice) {
     }
 
     // Advance position for NEXT sample
+    static uint32_t sample_count = 0;
+    static uint32_t last_delta = 0;
+    if (sample_count++ % 4800 == 0 || voice->delta != last_delta) {
+        fprintf(stderr, "[Sample %u] Using delta=%u, pos=%llu\n",
+                sample_count, voice->delta, (unsigned long long)(voice->sample_pos >> 16));
+        last_delta = voice->delta;
+    }
     voice->sample_pos += voice->delta;
 
     // Check if we need to wrap for next call

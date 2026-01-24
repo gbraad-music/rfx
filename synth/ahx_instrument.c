@@ -10,6 +10,7 @@
 #include "ahx_plist.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
@@ -267,9 +268,22 @@ uint32_t ahx_instrument_process(AhxInstrument* inst, float* output, uint32_t num
             ahx_instrument_process_frame(inst);
             inst->voice.samples_in_frame = 0;
 
-            // Update voice period if changed
+            // Update voice period - ALWAYS call to ensure delta stays correct
+            static int call_count = 0;
+            if (call_count++ < 50) {
+                fprintf(stderr, "  [Frame update] VoicePeriod=%d, calling tracker_voice_set_period\n",
+                        inst->voice.VoicePeriod);
+            }
             tracker_voice_set_period(&inst->voice.voice_playback, inst->voice.VoicePeriod,
                                     AMIGA_PAULA_PAL_CLK, sample_rate);
+
+            // Debug: track when period changes
+            static int last_period = -1;
+            if (inst->voice.VoicePeriod != last_period) {
+                fprintf(stderr, "  >> Period changed: %d -> delta=%u\n",
+                        inst->voice.VoicePeriod, inst->voice.voice_playback.delta);
+                last_period = inst->voice.VoicePeriod;
+            }
         }
         inst->voice.samples_in_frame++;
 
@@ -417,17 +431,13 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
 #endif
 
             // Apply waveform change
+            fprintf(stderr, "[Entry %d] PList waveform=%d\n", cur, entry->waveform);
             if (entry->waveform > 0) {
                 inst->voice.Waveform = entry->waveform - 1;  // 1-4 maps to 0-3
                 inst->voice.NewWaveform = 1;
                 inst->period_perf_slide_speed = inst->period_perf_slide_period = 0;
-
-                // Initialize square modulation when switching to square waveform
-                if (inst->voice.Waveform == 2 && !tracker_modulator_is_active(&inst->voice.square_mod)) {
-                    // Enable square modulation automatically
-                    tracker_modulator_set_active(&inst->voice.square_mod, true);
-                    inst->voice.SquarePos = tracker_modulator_get_position(&inst->voice.square_mod);
-                }
+                fprintf(stderr, "  -> Setting Waveform=%d, NewWaveform=1\n", inst->voice.Waveform);
+                // Note: Square modulation is only activated by FX command 4, not automatically
             }
 
             // Reset portamento flag (will be set by commands if needed)
@@ -440,9 +450,17 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
 
             // Apply note change
             if (entry->note > 0) {
+                bool note_changed = (inst->voice.InstrPeriod != entry->note);
+                fprintf(stderr, "[Entry %d] NOTE CHANGE: %d -> %d (period will update)\n",
+                    cur, inst->voice.InstrPeriod, entry->note);
                 inst->voice.InstrPeriod = entry->note;
                 inst->voice.PlantPeriod = 1;
                 inst->voice.FixedNote = entry->fixed;
+
+                // Mark that waveform position should reset on note change
+                if (note_changed) {
+                    inst->voice.NewWaveform = 1;  // Force waveform update to reset position
+                }
             }
         }
     } else {

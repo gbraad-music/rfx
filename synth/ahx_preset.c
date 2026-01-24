@@ -304,6 +304,7 @@ bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uin
     // Parse header
     uint16_t name_offset = (buffer[4] << 8) | buffer[5];
     uint8_t position_nr = ((buffer[6] & 0xf) << 8) | buffer[7];
+    uint8_t speed_multiplier = ((buffer[6] >> 5) & 3) + 1;  // Extract SpeedMultiplier (1-4)
     uint8_t track_length = buffer[10];
     uint8_t track_nr = buffer[11];
     uint8_t instrument_nr = buffer[12];
@@ -400,6 +401,9 @@ bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uin
     // Hard cut
     preset->params.hard_cut_frames = (ptr[14] >> 4) & 7;
     preset->params.hard_cut_release = (ptr[14] & 0x80) ? true : false;
+
+    // Speed multiplier from song header
+    preset->params.speed_multiplier = speed_multiplier;
 
     // Default waveform (will be overridden by PList if used)
     preset->params.waveform = AHX_WAVE_SAWTOOTH;

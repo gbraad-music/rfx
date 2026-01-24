@@ -416,26 +416,57 @@
         <div class="banner-title">Synth Tester</div>
     </div>
     <div class="container">
-        <!-- Visualizations Section (at the top) -->
-        <div class="section">
-            <div class="section-title">Audio Analysis</div>
-            <div class="viz-container">
-                <div class="freq-viz">
-                    <div class="freq-bar" id="bassBar">
-                        <div class="freq-label">Bass</div>
+        <!-- Audio Analysis and Playback sections side by side -->
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 15px; margin-bottom: 20px;">
+            <!-- Audio Analysis Section -->
+            <div class="section" style="margin-bottom: 0;">
+                <div class="section-title">Audio Analysis</div>
+                <div class="viz-container">
+                    <div class="freq-viz">
+                        <div class="freq-bar" id="bassBar">
+                            <div class="freq-label">Bass</div>
+                        </div>
+                        <div class="freq-bar" id="midBar">
+                            <div class="freq-label">Mid</div>
+                        </div>
+                        <div class="freq-bar" id="highBar">
+                            <div class="freq-label">High</div>
+                        </div>
                     </div>
-                    <div class="freq-bar" id="midBar">
-                        <div class="freq-label">Mid</div>
+                    <div class="visualizer-container">
+                        <canvas id="waveform"></canvas>
                     </div>
-                    <div class="freq-bar" id="highBar">
-                        <div class="freq-label">High</div>
+                    <div class="visualizer-container">
+                        <canvas id="spectrum"></canvas>
                     </div>
                 </div>
-                <div class="visualizer-container">
-                    <canvas id="waveform"></canvas>
+            </div>
+
+            <!-- Playback Section -->
+            <div class="section" style="margin-bottom: 0;">
+                <div class="section-title">Playback</div>
+
+                <div style="display: flex; gap: 12px; justify-content: center; padding-top: 10px;">
+                    <!-- Tempo Fader (Disabled for now) -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; opacity: 0.4; pointer-events: none;">
+                        <div style="text-align: center; color: #666; font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">BPM</div>
+                        <svg-slider id="synthTempoFader" value="64" min="0" max="127" width="45" color="#666" style="height: 280px;"></svg-slider>
+                        <div id="synthTempoValue" style="text-align: center; color: #666; font-size: 0.75em; font-weight: bold; min-height: 1.2em;">120</div>
+                    </div>
+
+                    <!-- Volume Fader -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: #aaaaaa; font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Vol</div>
+                        <svg-slider id="synthGainFader" value="127" min="0" max="127" width="45" color="#CF1A37" style="height: 280px;"></svg-slider>
+                        <div id="synthGainValue" style="text-align: center; color: #ffffff; font-size: 0.75em; font-weight: bold; min-height: 1.2em;">100%</div>
+                    </div>
                 </div>
-                <div class="visualizer-container">
-                    <canvas id="spectrum"></canvas>
+
+                <!-- Output Device Selector -->
+                <div style="margin-top: 15px; padding: 0 10px;">
+                    <select id="synthOutputDeviceList" style="width: 120px; font-size: 0.6em; padding: 4px 6px; background: #2a2a2a; color: #fff; border: 1px solid #3a3a3a;">
+                        <option value="">Default Output</option>
+                    </select>
                 </div>
             </div>
         </div>
@@ -743,6 +774,7 @@
         let slicerSynth = null;
         let sfzPlayer = null;
         let sharedAnalyzer = null;
+        let masterGainNode = null;
         let isAudible = true;
         let keyboardOctave = 3;  // C3 default
         let keyboardChannel = 0; // Channel 1 (synth) default
@@ -763,6 +795,11 @@
             // Create AudioContext
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
             console.log('[Synth Test] AudioContext created:', audioContext.sampleRate, 'Hz');
+
+            // Create master gain node for volume control
+            masterGainNode = audioContext.createGain();
+            masterGainNode.gain.value = 1.0;
+            masterGainNode.connect(audioContext.destination);
 
             // Initialize MIDI
             midiManager = new MIDIManager();
@@ -947,8 +984,8 @@
             currentSynth.masterGain.connect(sharedAnalyzer.inputGain);
             console.log('[Synth Test] Connected synth to shared analyzer');
 
-            // Connect analyzer to speakers
-            sharedAnalyzer.connectTo(audioContext.destination);
+            // Connect analyzer to master gain (volume control)
+            sharedAnalyzer.connectTo(masterGainNode);
 
             let engineName = 'Simple';
             if (engine === 'rgresonate1') engineName = 'RGResonate1';
@@ -1022,8 +1059,8 @@
             drumSynth.masterGain.connect(sharedAnalyzer.inputGain);
             console.log('[Synth Test] Connected drum to shared analyzer');
 
-            // Connect analyzer to speakers
-            sharedAnalyzer.connectTo(audioContext.destination);
+            // Connect analyzer to master gain (volume control)
+            sharedAnalyzer.connectTo(masterGainNode);
 
             // Don't call setAudible(true) - already connected through analyzer
             // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
@@ -2190,7 +2227,7 @@
                 }
 
                 sfzPlayer.masterGain.connect(sharedAnalyzer.inputGain);
-                sharedAnalyzer.connectTo(audioContext.destination);
+                sharedAnalyzer.connectTo(masterGainNode);
 
                 // Show RGSFZ controls
                 document.getElementById('rgsfzControls').style.display = 'block';
@@ -2718,7 +2755,57 @@
         });
 
         // Initialize on load
-        window.addEventListener('load', init);
+        window.addEventListener('load', () => {
+            init();
+            
+            // Setup volume control
+            const synthGainFader = document.getElementById('synthGainFader');
+            const synthGainValue = document.getElementById('synthGainValue');
+            
+            if (synthGainFader) {
+                synthGainFader.addEventListener('input', (e) => {
+                    const value = parseInt(e.target.value);
+                    const gain = value / 127.0;
+                    if (masterGainNode) {
+                        masterGainNode.gain.value = gain;
+                    }
+                    synthGainValue.textContent = Math.round(gain * 100) + '%';
+                });
+                // Initialize display
+                synthGainValue.textContent = '100%';
+            }
+
+            // Setup output device selector
+            const synthOutputDeviceList = document.getElementById('synthOutputDeviceList');
+            if (synthOutputDeviceList && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+                navigator.mediaDevices.enumerateDevices().then(devices => {
+                    const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+                    synthOutputDeviceList.innerHTML = '<option value="">Default Output</option>';
+                    audioOutputs.forEach(device => {
+                        const option = document.createElement('option');
+                        option.value = device.deviceId;
+                        option.textContent = device.label || `Output ${device.deviceId.slice(0, 8)}`;
+                        synthOutputDeviceList.appendChild(option);
+                    });
+                }).catch(err => {
+                    console.warn('[Synth] Could not enumerate audio devices:', err);
+                });
+
+                synthOutputDeviceList.addEventListener('change', async (e) => {
+                    const deviceId = e.target.value;
+                    if (audioContext && audioContext.setSinkId) {
+                        try {
+                            await audioContext.setSinkId(deviceId || '');
+                            console.log('[Synth] Audio output changed to:', deviceId || 'default');
+                        } catch (err) {
+                            console.error('[Synth] Failed to change audio output:', err);
+                        }
+                    } else {
+                        console.warn('[Synth] setSinkId not supported in this browser');
+                    }
+                });
+            }
+        });
     </script>
 
     <!-- Fullscreen Scope Functionality -->

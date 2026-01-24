@@ -138,6 +138,9 @@ void ahx_synth_voice_init(AhxSynthVoice* voice) {
 
     voice->TrackOn = true;
     voice->NoteMaxVolume = 0x40;  // Default max volume
+    voice->PerfSubVolume = 0x40;  // Default performance sub-volume (full)
+    voice->TrackMasterVolume = 0x40;  // Default track master volume (full)
+    voice->VelocityScale = 0x40;  // Default velocity (full)
     voice->WNRandom = 0x280;      // White noise seed
     voice->SpeedMultiplier = 1;   // Default speed (no multiplier)
     voice->PListActive = false;   // No PList by default
@@ -225,9 +228,10 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // VoicePeriod will be calculated in first process_frame() from PeriodTable lookup
     voice->VoicePeriod = AhxPeriodTable[voice->InstrPeriod];
 
-    // Set velocity as volume
-    voice->NoteMaxVolume = (velocity * 64) / 127;
-    if (voice->NoteMaxVolume > 64) voice->NoteMaxVolume = 64;
+    // Set velocity as a scale factor (0-64) that multiplies all volume calculations
+    // This allows PList volume commands to work while still respecting MIDI velocity
+    voice->VelocityScale = (velocity * 64) / 127;
+    if (voice->VelocityScale > 64) voice->VelocityScale = 64;
 
     // Reset ADSR to attack phase
     voice->ADSRVolume = 0;
@@ -507,9 +511,16 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         voice->NewWaveform = 0;
     }
 
-    // Calculate final voice volume
-    int adsr_vol = voice->ADSRVolume >> 8;  // Convert from fixed point (8-bit)
-    voice->VoiceVolume = (voice->NoteMaxVolume * adsr_vol * voice->Instrument->Volume) >> 12;
+    // Calculate final voice volume (authentic AHX from ahx_player.c:1241-1243)
+    // Formula: (((((ADSR * NoteMaxVolume) >> 6) * PerfSubVolume) >> 6) * TrackMasterVolume) >> 6) * VelocityScale) >> 6) * InstrumentVolume) >> 6
+    int adsr_vol = voice->ADSRVolume >> 8;  // Convert from 16-bit fixed point to 8-bit
+    int vol = adsr_vol;
+    vol = (vol * voice->NoteMaxVolume) >> 6;
+    vol = (vol * voice->PerfSubVolume) >> 6;
+    vol = (vol * voice->TrackMasterVolume) >> 6;
+    vol = (vol * voice->VelocityScale) >> 6;
+    vol = (vol * voice->Instrument->Volume) >> 6;
+    voice->VoiceVolume = vol;
     if (voice->VoiceVolume > 64) voice->VoiceVolume = 64;
     if (voice->VoiceVolume < 0) voice->VoiceVolume = 0;
 

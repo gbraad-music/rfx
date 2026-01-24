@@ -64,6 +64,9 @@ void ahx_plist_execute_command(
             if (ignore_square && wave_length && square_pos) {
                 if (!*ignore_square) {
                     *square_pos = fx_param >> (5 - *wave_length);
+#ifdef EMSCRIPTEN
+                    emscripten_log(EM_LOG_CONSOLE, "[FX 3] Set square_pos = %d (param=%d, wave_length=%d)", *square_pos, fx_param, *wave_length);
+#endif
                 } else {
                     *ignore_square = 0;
                 }
@@ -71,12 +74,17 @@ void ahx_plist_execute_command(
             break;
 
         case 4: // Toggle Square/Filter Modulation
-            if (song_revision == 0 || fx_param == 0) {
+            if (fx_param == 0) {
+                // fx_param=0: toggle square only (old AHX behavior)
                 if (square_on && square_init && square_sign) {
                     *square_init = (*square_on ^= 1);
                     *square_sign = 1;
+#ifdef EMSCRIPTEN
+                    emscripten_log(EM_LOG_CONSOLE, "[FX 4] Toggle square: now %s (param=0)", *square_on ? "ON" : "OFF");
+#endif
                 }
             } else {
+                // fx_param != 0: check nibbles for square/filter
                 if (fx_param & 0x0f) {
                     if (square_on && square_init && square_sign) {
                         *square_init = (*square_on ^= 1);
@@ -84,6 +92,9 @@ void ahx_plist_execute_command(
                         if ((fx_param & 0x0f) == 0x0f) {
                             *square_sign = -1;
                         }
+#ifdef EMSCRIPTEN
+                        emscripten_log(EM_LOG_CONSOLE, "[FX 4] Toggle square: now %s (param=0x%02x low nibble)", *square_on ? "ON" : "OFF", fx_param);
+#endif
                     }
                 }
                 if (fx_param & 0xf0) {
@@ -93,6 +104,9 @@ void ahx_plist_execute_command(
                         if ((fx_param & 0xf0) == 0xf0) {
                             *filter_sign = -1;
                         }
+#ifdef EMSCRIPTEN
+                        emscripten_log(EM_LOG_CONSOLE, "[FX 4] Toggle filter: now %s (param=0x%02x high nibble)", *filter_on ? "ON" : "OFF", fx_param);
+#endif
                     }
                 }
             }

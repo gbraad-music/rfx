@@ -62,6 +62,7 @@ typedef struct {
     int NoteMaxVolume;             // Note volume (0-64)
     int PerfSubVolume;             // Performance sub-volume (0-64)
     int TrackMasterVolume;         // Track master volume (0-64)
+    int VelocityScale;             // MIDI velocity scale (0-64), multiplies all volumes
     int VoiceVolume;               // Final output volume
     int VoicePeriod;               // Current period (Amiga-style)
     int InstrPeriod;               // Base instrument period
@@ -75,6 +76,7 @@ typedef struct {
     int SquarePos;                 // Current square position
     int PlantPeriod;               // Period update pending
     int FixedNote;                 // Fixed note (no transpose)
+    int TrackPeriod;               // MIDI note transpose (AHX note index)
 
     // Vibrato state
     int VibratoDelay;              // Frames until vibrato starts

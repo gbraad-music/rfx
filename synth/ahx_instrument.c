@@ -368,14 +368,39 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
     );
 
     // Map results back to modulator fields
-    voice->square_mod.init_pending = square_init != 0;
-    voice->square_mod.active = square_on != 0;
-    voice->square_mod.sign = square_sign;
-    voice->filter_mod.init_pending = filter_init != 0;
-    voice->filter_mod.active = filter_on != 0;
-    voice->filter_mod.sign = filter_sign;
-    voice->square_mod.position = square_pos;
-    voice->filter_mod.position = filter_pos;
+    // Use proper tracker_modulator functions to ensure correct initialization
+    tracker_modulator_set_position(&voice->square_mod, square_pos);
+    tracker_modulator_set_direction(&voice->square_mod, square_sign);
+    if (square_on && !voice->square_mod.active) {
+        // Turning ON - use set_active which handles init_pending
+        printf("[FX] Turning square modulation ON (pos=%d, sign=%d)\n", square_pos, square_sign);
+        tracker_modulator_set_active(&voice->square_mod, true);
+    } else if (!square_on && voice->square_mod.active) {
+        // Turning OFF
+        printf("[FX] Turning square modulation OFF\n");
+        tracker_modulator_set_active(&voice->square_mod, false);
+    } else if (square_init) {
+        // Re-init while already active
+        printf("[FX] Re-init square modulation (pos=%d, active=%d)\n", square_pos, voice->square_mod.active);
+        voice->square_mod.init_pending = true;
+    }
+
+    tracker_modulator_set_position(&voice->filter_mod, filter_pos);
+    tracker_modulator_set_direction(&voice->filter_mod, filter_sign);
+    if (filter_on && !voice->filter_mod.active) {
+        // Turning ON - use set_active which handles init_pending
+        printf("[FX] Turning filter modulation ON (pos=%d, sign=%d)\n", filter_pos, filter_sign);
+        tracker_modulator_set_active(&voice->filter_mod, true);
+    } else if (!filter_on && voice->filter_mod.active) {
+        // Turning OFF
+        printf("[FX] Turning filter modulation OFF\n");
+        tracker_modulator_set_active(&voice->filter_mod, false);
+    } else if (filter_init) {
+        // Re-init while already active
+        printf("[FX] Re-init filter modulation (pos=%d, active=%d)\n", filter_pos, voice->filter_mod.active);
+        voice->filter_mod.init_pending = true;
+    }
+
     inst->period_perf_slide_on = period_perf_slide_on != 0;
 }
 

@@ -221,8 +221,11 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // Reset frame counter for debugging
     voice->debug_frame_count = 0;
 
-    // Convert MIDI note to AHX note index (1-60) - NOT period!
-    voice->InstrPeriod = ahx_synth_note_to_period(note);  // Stores AHX note INDEX
+    // MIDI note acts as the TRACK note (like pattern note in tracker)
+    voice->TrackPeriod = ahx_synth_note_to_period(note);  // MIDI note -> AHX note index
+
+    // Initial instrument period (will be overridden by PList if present)
+    voice->InstrPeriod = 0;  // PList will set this, or use TrackPeriod if no PList
     voice->PlantPeriod = 1;  // Signal that period needs calculation
 
     // VoicePeriod will be calculated in first process_frame() from PeriodTable lookup
@@ -263,17 +266,13 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->VibratoDepth = voice->Instrument->VibratoDepth;
     voice->VibratoSpeed = voice->Instrument->VibratoSpeed;
 
-    // Setup filter modulation
-    if (voice->Instrument->FilterLowerLimit != voice->Instrument->FilterUpperLimit) {
-        tracker_modulator_set_active(&voice->filter_mod, true);
-        tracker_modulator_set_limits(&voice->filter_mod,
-            voice->Instrument->FilterLowerLimit,
-            voice->Instrument->FilterUpperLimit);
-        tracker_modulator_set_speed(&voice->filter_mod, voice->Instrument->FilterSpeed);
-        tracker_modulator_init(&voice->filter_mod);  // Reset to start
-    } else {
-        tracker_modulator_set_active(&voice->filter_mod, false);
-    }
+    // Setup filter modulation limits (authentic AHX from ahx_player.c:849-872)
+    tracker_modulator_set_limits(&voice->filter_mod,
+        voice->Instrument->FilterLowerLimit & 0x3f,  // Mask out high bits
+        voice->Instrument->FilterUpperLimit & 0x3f);
+    tracker_modulator_set_speed(&voice->filter_mod, voice->Instrument->FilterSpeed);
+    tracker_modulator_set_position(&voice->filter_mod, 32);  // Start at middle position
+    tracker_modulator_set_active(&voice->filter_mod, false);  // Initially OFF (activated by FX 4)
 
     // Setup PWM modulation limits (authentic AHX from ahx_player.c:834-847)
     // Scale limits by wave length
@@ -531,12 +530,11 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         // Calculate audio period from instrument note index (ahx_player.c:1228-1233)
         int audio_period = voice->InstrPeriod;
 
-        // CRITICAL: When FixedNote is OFF (no *), apply default transpose
-        // Reference: C-1 without fixed plays at F-2 pitch (confirmed by tuner)
-        // C-1 = note 1, F-2 = note 18, so transpose = 17
-        // This matches instrument preset design where non-fixed notes sound 17 semitones higher
+        // Apply MIDI transpose for non-fixed notes (like tracker TrackPeriod)
+        // Reference: hvl2wav/replay.c line 1228-1233
+        // AudioPeriod = InstrPeriod + Transpose + TrackPeriod - 1
         if (!voice->FixedNote) {
-            audio_period = audio_period + 17;
+            audio_period = audio_period + voice->TrackPeriod - 1;
         }
 
         // Clamp to valid note range

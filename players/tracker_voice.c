@@ -163,13 +163,6 @@ int32_t tracker_voice_get_sample(TrackerVoice* voice) {
     }
 
     // Advance position for NEXT sample
-    static uint32_t sample_count = 0;
-    static uint32_t last_delta = 0;
-    if (sample_count++ % 4800 == 0 || voice->delta != last_delta) {
-        fprintf(stderr, "[Sample %u] Using delta=%u, pos=%llu\n",
-                sample_count, voice->delta, (unsigned long long)(voice->sample_pos >> 16));
-        last_delta = voice->delta;
-    }
     voice->sample_pos += voice->delta;
 
     // Check if we need to wrap for next call

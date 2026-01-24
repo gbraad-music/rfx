@@ -75,12 +75,8 @@ void ahx_synth_generate_waveform(AhxSynthVoice* voice, uint8_t waveform, uint8_t
         // SquarePos comes from modulator (0-63), affects pulse width
         int16_t temp_buffer[0x281];
         int square_reverse = 0;
-        fprintf(stderr, "      Generating square: SquarePos=%d, wave_length=%d, filter_pos=%d\n",
-                voice->SquarePos, wave_length, filter_pos);
         ahx_waves_generate_square(waves, temp_buffer,
                                   voice->SquarePos, wave_length, filter_pos, &square_reverse);
-        fprintf(stderr, "      Square generated: first 4 samples = %d %d %d %d\n",
-                temp_buffer[0], temp_buffer[1], temp_buffer[2], temp_buffer[3]);
 
         // Repeat square waveform to fill VoiceBuffer (matching player_set_audio logic)
         int wave_loops = (1 << (5 - wave_length)) * 5;
@@ -484,26 +480,11 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         bool note_changed = (voice->InstrPeriod != last_note);
 
         if (voice->Waveform != last_waveform || voice->WaveLength != last_wavelength) {
-            const char* wf_names[] = {"Triangle", "Sawtooth", "Square", "Noise"};
-            fprintf(stderr, "    Waveform change: type=%s(%d) wavelength=%d FilterPos=%d SquarePos=%d\n",
-                    wf_names[voice->Waveform], voice->Waveform, voice->WaveLength,
-                    voice->FilterPos, voice->SquarePos);
             last_waveform = voice->Waveform;
             last_wavelength = voice->WaveLength;
         }
 
         ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
-
-        // Debug: show first 8 samples of generated waveform
-        static int sample_count = 0;
-        if (sample_count++ < 5) {
-            fprintf(stderr, "      Buffer samples[0-7]: %d %d %d %d %d %d %d %d\n",
-                    voice->VoiceBuffer[0], voice->VoiceBuffer[1], voice->VoiceBuffer[2], voice->VoiceBuffer[3],
-                    voice->VoiceBuffer[4], voice->VoiceBuffer[5], voice->VoiceBuffer[6], voice->VoiceBuffer[7]);
-        }
-
-        // Update voice playback with new waveform buffer (16-bit)
-        uint64_t old_pos = voice->voice_playback.sample_pos;
 
         // Calculate actual waveform cycle length for this wave_length
         int wave_cycle_length = 4 * (1 << voice->WaveLength);  // 32 for wave_length=3
@@ -520,12 +501,7 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         // This prevents pitch drift. Filter/square modulation should NOT reset position.
         if (waveform_type_changed || note_changed) {
             voice->voice_playback.sample_pos = 0;
-            fprintf(stderr, "      Set waveform: RESET position (wf_change=%d note_change=%d), loop_end=%d\n",
-                    waveform_type_changed, note_changed, wave_cycle_length);
             last_note = voice->InstrPeriod;  // Update tracked note
-        } else {
-            fprintf(stderr, "      Set waveform: KEEP position 0x%llx, loop_end=%d samples\n",
-                    (unsigned long long)old_pos, wave_cycle_length);
         }
 
         voice->NewWaveform = 0;
@@ -565,11 +541,6 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         // Clamp to valid period range
         if (voice->VoicePeriod < 113) voice->VoicePeriod = 113;
         if (voice->VoicePeriod > 6848) voice->VoicePeriod = 6848;
-
-        fprintf(stderr, "  -> Calculated period: note %d (fixed=%d) -> table_index %d = period %d\n",
-            voice->InstrPeriod, voice->FixedNote,
-            voice->FixedNote ? voice->InstrPeriod : (voice->InstrPeriod - 1),
-            voice->VoicePeriod);
     }
 }
 

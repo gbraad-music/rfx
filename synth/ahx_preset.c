@@ -130,6 +130,9 @@ bool ahx_preset_save(const AhxPreset* preset, const char* filepath) {
 bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
     if (!preset || !filepath) return false;
 
+    // CRITICAL: Zero out the entire preset structure to avoid garbage data
+    memset(preset, 0, sizeof(AhxPreset));
+
     FILE* f = fopen(filepath, "rb");
     if (!f) return false;
 
@@ -255,6 +258,9 @@ bool ahx_preset_load(AhxPreset* preset, const char* filepath) {
 // Import from AHX file
 bool ahx_preset_import_from_ahx(AhxPreset* preset, const char* ahx_filepath, uint8_t instrument_index) {
     if (!preset || !ahx_filepath) return false;
+
+    // CRITICAL: Zero out the entire preset structure to avoid writing garbage to file
+    memset(preset, 0, sizeof(AhxPreset));
 
     FILE* f = fopen(ahx_filepath, "rb");
     if (!f) return false;

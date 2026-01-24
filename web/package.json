@@ -1,0 +1,16 @@
+{
+  "name": "regroove-effects-tester",
+  "version": "1.0.0",
+  "description": "Web-based audio effects processor with WASM - Electron Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["audio", "effects", "wasm", "electron"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^40.0.0"
+  }
+}

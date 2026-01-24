@@ -1,7 +1,8 @@
-const CACHE_NAME = 'rfx-effects-v194';
+const CACHE_NAME = 'rfx-effects-v195';
 const ASSETS = [
     './',
     './index.html',
+    './player.html',
     './synth.html',
     './manifest.json',
     './favicon.svg',

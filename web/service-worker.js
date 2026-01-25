@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v197';
+const CACHE_NAME = 'rfx-effects-v198';
 const ASSETS = [
     './',
     './index.html',
@@ -12,7 +12,6 @@ const ASSETS = [
     './icon-192x192.png',
     './icon-512x512.png',
     './effects.js',
-    './audio-worklet-processor.js',
     './regroove-effects.js',
     './regroove-effects.wasm',
     // Web UI components
@@ -22,6 +21,10 @@ const ASSETS = [
     './components/vu-meter.js',
     './components/waveform-display.js',
     './components/spectrum-analyzer.js',
+    './components/piano-keyboard.js',
+    // AudioWorklet processors
+    './worklets/audio-worklet-processor.js',
+    './worklets/synth-worklet-processor.js',
     // Unified Deck Player (MOD/MED/AHX/SID with automatic detection)
     './players/deck-player.js',
     './players/deck-player.wasm',
@@ -43,7 +46,8 @@ const ASSETS = [
     './external/rg1piano-synth.js',
     './external/rg909-drum.js',
     './external/rgsfz-synth.js',
-    './synths/synth-worklet-processor.js',
+    './external/rgahxdrum.js',
+    './external/rgslicer-synth.js',
     './synths/drum-worklet-processor.js',
     './synths/rgresonate1-synth.js',
     './synths/rgresonate1-synth.wasm',

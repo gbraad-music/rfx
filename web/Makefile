@@ -125,7 +125,7 @@ $(OUTPUT): $(SOURCES)
 	@echo "[BUILD] WASM effects built with non-minified function names"
 	@echo "[COPY] Copying drop-in files to revision project..."
 	@if [ -d ~/Projects/revision/effects ]; then \
-		cp regroove-effects.wasm regroove-effects.js audio-worklet-processor.js ~/Projects/revision/effects/ && \
+		cp regroove-effects.wasm regroove-effects.js worklets/audio-worklet-processor.js ~/Projects/revision/effects/ && \
 		echo "  [OK] Copied to ~/Projects/revision/effects/"; \
 	fi
 
@@ -154,8 +154,9 @@ synths:
 	else \
 		echo "  [WARN] RGAHX not built (run 'make web' in plugins/RGAHX_Synth)"; \
 	fi
+	@mkdir -p worklets
 	@if [ -d ~/Projects/revision/synths ]; then \
-		cp ~/Projects/revision/synths/synth-worklet-processor.js synths/ && \
+		cp ~/Projects/revision/synths/synth-worklet-processor.js worklets/ && \
 		cp ~/Projects/revision/synths/drum-worklet-processor.js synths/ && \
 		echo "  [OK] AudioWorklet processors"; \
 	else \

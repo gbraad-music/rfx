@@ -74,7 +74,7 @@ class AudioEffectsProcessor {
         const wasmBytes = await wasmResponse.arrayBuffer();
         
         console.log('🎛️ Registering AudioWorklet...');
-        await this.audioContext.audioWorklet.addModule('audio-worklet-processor.js');
+        await this.audioContext.audioWorklet.addModule('worklets/audio-worklet-processor.js');
         
         console.log('🔧 Creating worklet...');
         this.workletNode = new AudioWorkletNode(this.audioContext, 'wasm-effects-processor');
@@ -1069,7 +1069,7 @@ class AudioEffectsProcessor {
             console.log('📡 Loading worklet into offline context...');
             try {
                 // Fetch the worklet code and create a blob URL for offline context
-                const workletResponse = await fetch('audio-worklet-processor.js');
+                const workletResponse = await fetch('worklets/audio-worklet-processor.js');
                 const workletCode = await workletResponse.text();
                 const workletBlob = new Blob([workletCode], { type: 'application/javascript' });
                 const workletURL = URL.createObjectURL(workletBlob);

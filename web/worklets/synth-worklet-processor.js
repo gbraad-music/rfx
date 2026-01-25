@@ -5,7 +5,7 @@
 class SynthWorkletProcessor extends AudioWorkletProcessor {
     constructor(options) {
         super();
-        console.log('[SynthWorklet] ✅ LOADED v173 - CommonJS capture');
+        console.log('[SynthWorklet] ✅ LOADED v176 - RGSlicer WASM bindings');
         this.wasmModule = null;
         this.synthPtr = null;
         this.audioBufferPtr = null;
@@ -53,6 +53,8 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
             this.setPListSpeed(data.speed);
         } else if (type === 'plist_get_state') {
             this.getPListState();
+        } else if (type === 'loadWav') {
+            this.loadWavFile(data);
         }
     }
 
@@ -143,6 +145,111 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
             });
         } catch (error) {
             console.error('[SynthWorklet] Error getting PList state:', error);
+        }
+    }
+
+    loadWavFile(data) {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot load WAV: WASM not initialized');
+            return;
+        }
+
+        try {
+            const { pcmData, sampleRate, cuePoints } = data;
+            console.log(`[SynthWorklet] Loading WAV: ${pcmData.length} samples, ${cuePoints.length} cue points`);
+
+            // Allocate PCM data in WASM memory
+            const pcmPtr = this.wasmModule._malloc(pcmData.length * 2); // Int16 = 2 bytes
+            const heapI16 = new Int16Array(this.wasmMemory.buffer, pcmPtr, pcmData.length);
+            heapI16.set(pcmData);
+
+            // Call rgslicer_load_wav_from_memory to load the WAV data
+            // Function signature: rgslicer_load_wav_from_memory(synth*, pcm_data*, num_samples, sample_rate) -> int
+            if (this.wasmModule._rgslicer_load_wav_from_memory) {
+                const result = this.wasmModule._rgslicer_load_wav_from_memory(
+                    this.synthPtr,
+                    pcmPtr,
+                    pcmData.length,
+                    sampleRate
+                );
+
+                if (!result) {
+                    console.error('[SynthWorklet] Failed to load sample into RGSlicer');
+                    this.wasmModule._free(pcmPtr);
+                    return;
+                }
+
+                // Prepare CUE positions for slicing
+                let cuePtr = 0;
+                let numCues = 0;
+
+                if (cuePoints && cuePoints.length > 0) {
+                    console.log(`[SynthWorklet] Creating ${cuePoints.length} slices from CUE points`);
+                    numCues = cuePoints.length;
+                    cuePtr = this.wasmModule._malloc(numCues * 4); // uint32 array
+                    const heapU32 = new Uint32Array(this.wasmMemory.buffer, cuePtr, numCues);
+                    for (let i = 0; i < numCues; i++) {
+                        heapU32[i] = cuePoints[i].position;
+                    }
+                }
+
+                // Call rgslicer_set_slices_from_cues to create slices
+                // This handles both CUE-based slicing and auto-slicing
+                if (this.wasmModule._rgslicer_set_slices_from_cues) {
+                    const numSlicesCreated = this.wasmModule._rgslicer_set_slices_from_cues(
+                        this.synthPtr,
+                        cuePtr,
+                        numCues
+                    );
+                    console.log(`[SynthWorklet] Created ${numSlicesCreated} slices`);
+                }
+
+                // Free CUE pointer if allocated
+                if (cuePtr) {
+                    this.wasmModule._free(cuePtr);
+                }
+
+                // Get slice info from WASM
+                const numSlices = this.wasmModule._rgslicer_get_slice_count
+                    ? this.wasmModule._rgslicer_get_slice_count(this.synthPtr)
+                    : 0;
+
+                // Get slice details
+                const slices = [];
+                if (this.wasmModule._rgslicer_get_slice_offset_at && this.wasmModule._rgslicer_get_slice_length_at) {
+                    for (let i = 0; i < numSlices; i++) {
+                        const offset = this.wasmModule._rgslicer_get_slice_offset_at(this.synthPtr, i);
+                        const length = this.wasmModule._rgslicer_get_slice_length_at(this.synthPtr, i);
+                        slices.push({
+                            offset: offset,
+                            length: length,
+                            midiNote: 36 + i  // White key mapping starts at C2 (MIDI 36)
+                        });
+                    }
+                }
+
+                console.log(`[SynthWorklet] WAV loaded: ${numSlices} slices`);
+
+                // Send slice info back to main thread
+                this.port.postMessage({
+                    type: 'sliceInfo',
+                    data: {
+                        numSlices: numSlices,
+                        slices: slices.length > 0 ? slices : null
+                    }
+                });
+            } else {
+                console.error('[SynthWorklet] _rgslicer_load_wav_from_memory not found in WASM exports');
+            }
+
+            // Free allocated memory
+            this.wasmModule._free(pcmPtr);
+        } catch (error) {
+            console.error('[SynthWorklet] Error loading WAV:', error);
+            this.port.postMessage({
+                type: 'error',
+                data: error.message
+            });
         }
     }
 

@@ -243,35 +243,36 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->VibratoDepth = voice->Instrument->VibratoDepth;
     voice->VibratoSpeed = voice->Instrument->VibratoSpeed;
 
-    // Setup filter modulation
-    if (voice->Instrument->FilterLowerLimit != voice->Instrument->FilterUpperLimit) {
-        tracker_modulator_set_active(&voice->filter_mod, true);
-        tracker_modulator_set_limits(&voice->filter_mod,
-            voice->Instrument->FilterLowerLimit,
-            voice->Instrument->FilterUpperLimit);
-        tracker_modulator_set_speed(&voice->filter_mod, voice->Instrument->FilterSpeed);
-        tracker_modulator_init(&voice->filter_mod);  // Reset to start
-    } else {
-        tracker_modulator_set_active(&voice->filter_mod, false);
+    // Setup filter modulation limits (authentic AHX from ahx_player.c:849-872)
+    tracker_modulator_set_limits(&voice->filter_mod,
+        voice->Instrument->FilterLowerLimit & 0x3f,
+        voice->Instrument->FilterUpperLimit & 0x3f);
+    tracker_modulator_set_speed(&voice->filter_mod, voice->Instrument->FilterSpeed);
+    tracker_modulator_set_position(&voice->filter_mod, 32);
+    tracker_modulator_set_active(&voice->filter_mod, false);  // Initially OFF (activated by FX 4)
+
+    // Setup PWM modulation limits (authentic AHX from ahx_player.c:834-847)
+    // Scale limits by wave length
+    int square_lower = voice->Instrument->SquareLowerLimit >> (5 - voice->WaveLength);
+    int square_upper = voice->Instrument->SquareUpperLimit >> (5 - voice->WaveLength);
+    if (square_upper < square_lower) {
+        int t = square_upper;
+        square_upper = square_lower;
+        square_lower = t;
     }
 
-    // Setup PWM modulation
-    if (voice->Instrument->SquareLowerLimit != voice->Instrument->SquareUpperLimit) {
-        tracker_modulator_set_active(&voice->square_mod, true);
-        tracker_modulator_set_limits(&voice->square_mod,
-            voice->Instrument->SquareLowerLimit,
-            voice->Instrument->SquareUpperLimit);
-        tracker_modulator_set_speed(&voice->square_mod, voice->Instrument->SquareSpeed);
-        tracker_modulator_init(&voice->square_mod);  // Reset to start
-    } else {
-        tracker_modulator_set_active(&voice->square_mod, false);
-    }
+    tracker_modulator_set_limits(&voice->square_mod, square_lower, square_upper);
+    tracker_modulator_set_speed(&voice->square_mod, voice->Instrument->SquareSpeed);
+    tracker_modulator_set_position(&voice->square_mod, 0);
+    tracker_modulator_set_active(&voice->square_mod, false);  // Initially OFF (activated by FX 4)
 
-    // Initialize modulator wait counters (authentic AHX timing)
-    // Filter uses Speed-3 (min 1), Square uses Speed directly
-    voice->FilterWait = voice->Instrument->FilterSpeed - 3;
-    if (voice->FilterWait < 1) voice->FilterWait = 1;
-    voice->SquareWait = voice->Instrument->SquareSpeed;
+    // Initialize SquarePos to 0 (matches reference player initialization)
+    voice->SquarePos = 0;
+
+    // Initialize modulator wait counters to 0 (authentic AHX from ahx_player.c:833,850)
+    // This allows FX 4 to trigger modulation immediately on the first frame
+    voice->FilterWait = 0;
+    voice->SquareWait = 0;
 
     // Setup hard cut release
     voice->HardCutRelease = voice->Instrument->HardCutRelease;
@@ -430,6 +431,7 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     if (voice->Waveform == 2 && tracker_modulator_is_active(&voice->square_mod)) {
         if (--voice->SquareWait <= 0) {
             tracker_modulator_update(&voice->square_mod);
+            voice->SquarePos = tracker_modulator_get_position(&voice->square_mod);
             voice->SquareWait = voice->Instrument->SquareSpeed;
             voice->NewWaveform = 1;
         }

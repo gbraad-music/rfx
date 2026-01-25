@@ -18,6 +18,9 @@
 
 #define AMIGA_PAULA_PAL_CLK 3546895
 
+// Forward declaration for plist_command_parse (used in note_on)
+static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8_t fx, uint8_t fx_param);
+
 // Convert plugin params to core instrument definition
 static void params_to_core_instrument(AhxCoreInstrument* core, const AhxInstrumentParams* params) {
     core->Waveform = params->waveform;
@@ -387,6 +390,9 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
 
     tracker_modulator_set_position(&voice->filter_mod, filter_pos);
     tracker_modulator_set_direction(&voice->filter_mod, filter_sign);
+    // CRITICAL: Sync FilterPos to voice (used for waveform generation!)
+    voice->FilterPos = filter_pos;
+
     if (filter_on && !voice->filter_mod.active) {
         // Turning ON - use set_active which handles init_pending
         printf("[FX] Turning filter modulation ON (pos=%d, sign=%d)\n", filter_pos, filter_sign);
@@ -432,15 +438,18 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
     // Process PList if active
     if (inst->voice.PListActive) {
         // Decrement wait normally - SpeedMultiplier affects frame rate, not counters
+        printf("[Frame %d] BEFORE PList: perf_wait=%d, FilterPos=%d, filter_mod.active=%d\n",
+            inst->voice.debug_frame_count, inst->perf_wait, inst->voice.FilterPos,
+            inst->voice.filter_mod.active);
+
         if (--inst->perf_wait <= 0) {
             uint8_t cur = inst->perf_current++;
             AhxPListEntry* entry = &inst->params.plist->entries[cur];
             inst->perf_wait = inst->perf_speed;
 
-#ifdef EMSCRIPTEN
-            emscripten_log(EM_LOG_CONSOLE, "[PList Advance] Entry %d: waveform=%d, note=%d",
-                cur, entry->waveform, entry->note);
-#endif
+            printf("[Frame %d] EXECUTING PList Entry %d: WF=%d FX1=%d(%02X) FX2=%d(%02X)\n",
+                inst->voice.debug_frame_count, cur, entry->waveform,
+                entry->fx[0], entry->fx_param[0], entry->fx[1], entry->fx_param[1]);
 
             // Apply waveform change
             if (entry->waveform > 0) {
@@ -457,6 +466,10 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
             for (int i = 0; i < 2; i++) {
                 plist_command_parse(inst, &inst->voice, entry->fx[i], entry->fx_param[i]);
             }
+
+            printf("[Frame %d] AFTER FX: FilterPos=%d, filter_mod.active=%d, filter_mod.pos=%d\n",
+                inst->voice.debug_frame_count, inst->voice.FilterPos,
+                inst->voice.filter_mod.active, inst->voice.filter_mod.position);
 
             // Apply note change
             if (entry->note > 0) {

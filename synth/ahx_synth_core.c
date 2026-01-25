@@ -434,6 +434,11 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     }
 
     // Update filter modulation (authentic AHX timing - wait counter)
+    if (voice->debug_frame_count < 10) {
+        printf("[Frame %d] Filter check: active=%d, FilterWait=%d\n",
+            voice->debug_frame_count, voice->filter_mod.active, voice->FilterWait);
+    }
+
     if (tracker_modulator_is_active(&voice->filter_mod) && --voice->FilterWait <= 0) {
         // Authentic AHX filter behavior: Speed < 4 updates multiple times
         int f_max = (voice->Instrument->FilterSpeed < 4) ? (5 - voice->Instrument->FilterSpeed) : 1;
@@ -455,7 +460,8 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
 
         // Sync to voice FilterPos (used for waveform generation)
         voice->FilterPos = filter_pos;
-        printf("[Filter Mod] Updated: %d -> %d (waveform=%d)\n", old_filter_pos, filter_pos, voice->Waveform);
+        printf("[Frame %d] Filter UPDATED: %d -> %d (waveform=%d)\n",
+            voice->debug_frame_count, old_filter_pos, filter_pos, voice->Waveform);
 
         // Reset wait counter
         voice->FilterWait = voice->Instrument->FilterSpeed - 3;

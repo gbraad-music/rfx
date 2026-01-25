@@ -263,7 +263,7 @@
         }
 
         .drum-pad:hover {
-            border-color: #4a4a4a;
+            border-color: #0066FF;
         }
 
         .drum-pad:active, .drum-pad.active {
@@ -1235,7 +1235,7 @@
                 else if (data.channel === 9 && (drumSynth || ahxDrumSynth)) {
                     const activeDrum = ahxDrumSynth || drumSynth;
                     activeDrum.triggerDrum(data.note, data.velocity);
-                    console.log('[MIDI] Routed to drums (Channel 10)');
+                    highlightDrumPad(data.note);
                 } else if (currentSynth) {
                     // Use handleMidi if available (SID synth with channel routing)
                     if (currentSynth.handleMidi) {
@@ -1250,6 +1250,7 @@
                 if (!sfzPlayer && data.channel !== 9 && (drumSynth || ahxDrumSynth) && data.note >= 36 && data.note <= 49) {
                     const activeDrum = ahxDrumSynth || drumSynth;
                     activeDrum.triggerDrum(data.note, data.velocity);
+                    highlightDrumPad(data.note);
                 }
             });
 
@@ -1274,6 +1275,17 @@
             });
         }
 
+        function highlightDrumPad(note) {
+            // Find drum pad with matching note
+            const pad = document.querySelector(`.drum-pad[data-note="${note}"]`);
+            if (pad) {
+                pad.classList.add('active');
+                setTimeout(() => {
+                    pad.classList.remove('active');
+                }, 100);
+            }
+        }
+
         function triggerDrum(note) {
             if (!drumSynth && !ahxDrumSynth) {
                 console.warn('[Synth Test] Drum not initialized');
@@ -1281,6 +1293,7 @@
             }
             const activeDrum = ahxDrumSynth || drumSynth;
             activeDrum.triggerDrum(note, 127);
+            highlightDrumPad(note);
         }
 
         async function toggleAudible() {
@@ -2058,6 +2071,7 @@
                     if (drumSynth || ahxDrumSynth) {
                         const activeDrum = ahxDrumSynth || drumSynth;
                         activeDrum.triggerDrum(note, velocity);
+                        highlightDrumPad(note);
                         console.log('[Keyboard] Drum note:', note, 'velocity:', velocity);
                     }
                 } else {

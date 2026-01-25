@@ -37,16 +37,23 @@ class DrumWorkletProcessor extends AudioWorkletProcessor {
             const moduleCode = wasmData.jsCode;
             const wasmBytes = wasmData.wasmBytes;
 
+            // Store function names (defaults to RG909 for backward compatibility)
+            this.moduleName = wasmData.moduleName || 'RG909Module';
+            this.createFunc = wasmData.createFunc || 'rg909_create';
+            this.destroyFunc = wasmData.destroyFunc || 'rg909_destroy';
+            this.triggerFunc = wasmData.triggerFunc || 'rg909_trigger_drum';
+            this.processFunc = wasmData.processFunc || 'rg909_process_f32';
+
             // Eval the Emscripten loader and capture memory reference
             const modifiedCode = moduleCode.replace(
                 ';return moduleRtn',
                 ';globalThis.__wasmMemory=wasmMemory;return moduleRtn'
             );
 
-            eval(modifiedCode + '\nthis.RG909Module = RG909Module;');
+            eval(modifiedCode + `\nthis.DrumModule = ${this.moduleName};`);
 
             // Call the factory with WASM bytes
-            this.wasmModule = await this.RG909Module({
+            this.wasmModule = await this.DrumModule({
                 wasmBinary: wasmBytes
             });
 
@@ -56,8 +63,9 @@ class DrumWorkletProcessor extends AudioWorkletProcessor {
 
             console.log('[DrumWorklet] WASM ready');
 
-            // Allocate audio buffer (stereo interleaved)
-            this.audioBufferPtr = this.wasmModule._malloc(this.bufferSize * 2 * 4);
+            // Allocate audio buffer (mono for AHX, stereo for RG909)
+            const channelCount = this.processFunc.includes('f32') ? 2 : 1;
+            this.audioBufferPtr = this.wasmModule._malloc(this.bufferSize * channelCount * 4);
 
             if (!this.audioBufferPtr) {
                 throw new Error('_malloc returned null - memory allocation failed');
@@ -66,7 +74,8 @@ class DrumWorkletProcessor extends AudioWorkletProcessor {
             console.log(`[DrumWorklet] Buffer: 0x${this.audioBufferPtr.toString(16)}`);
 
             // Create drum synth instance
-            this.drumPtr = this.wasmModule._rg909_create(this.sampleRate);
+            const createFn = this.wasmModule['_' + this.createFunc];
+            this.drumPtr = createFn(this.sampleRate);
             console.log(`[DrumWorklet] Drum created: 0x${this.drumPtr.toString(16)}`);
 
             this.port.postMessage({ type: 'ready' });
@@ -78,17 +87,26 @@ class DrumWorkletProcessor extends AudioWorkletProcessor {
     }
 
     triggerDrum(note, velocity) {
-        if (!this.drumPtr || !this.wasmModule._rg909_trigger_drum) return;
-        this.wasmModule._rg909_trigger_drum(this.drumPtr, note, velocity, this.sampleRate);
+        if (!this.drumPtr) return;
+        const triggerFn = this.wasmModule['_' + this.triggerFunc];
+        if (!triggerFn) return;
+        // RG909 uses 4 params, RGAHX uses 3
+        if (this.triggerFunc.includes('909')) {
+            triggerFn(this.drumPtr, note, velocity, this.sampleRate);
+        } else {
+            triggerFn(this.drumPtr, note, velocity);
+        }
     }
 
     reset() {
-        if (!this.drumPtr || !this.wasmModule._rg909_reset) return;
-        this.wasmModule._rg909_reset(this.drumPtr);
+        if (!this.drumPtr) return;
+        const resetFn = this.wasmModule['_' + this.destroyFunc];
+        if (resetFn) resetFn(this.drumPtr);
     }
 
     process(inputs, outputs, parameters) {
-        if (!this.wasmModule || !this.drumPtr || !this.audioBufferPtr || !this.wasmModule._rg909_process_f32) {
+        const processFn = this.wasmModule ? this.wasmModule['_' + this.processFunc] : null;
+        if (!this.wasmModule || !this.drumPtr || !this.audioBufferPtr || !processFn) {
             // Output silence
             return true;
         }
@@ -99,27 +117,43 @@ class DrumWorkletProcessor extends AudioWorkletProcessor {
         }
 
         const frames = output[0].length;
+        const isStereo = this.processFunc.includes('f32');
 
         // Update heap view (use saved memory reference)
         const heapF32 = new Float32Array(
             this.wasmMemory.buffer,
             this.audioBufferPtr,
-            frames * 2
+            frames * (isStereo ? 2 : 1)
         );
 
         // Zero the buffer
         heapF32.fill(0);
 
         // Process audio through drum synth
-        this.wasmModule._rg909_process_f32(this.drumPtr, this.audioBufferPtr, frames, this.sampleRate);
+        // RG909 uses 4 params (drumPtr, buffer, frames, sampleRate), RGAHX uses 3 (drumPtr, buffer, frames)
+        if (this.processFunc.includes('909')) {
+            processFn(this.drumPtr, this.audioBufferPtr, frames, this.sampleRate);
+        } else {
+            processFn(this.drumPtr, this.audioBufferPtr, frames);
+        }
 
-        // De-interleave output
-        const outputL = output[0];
-        const outputR = output[1] || output[0];
+        if (isStereo) {
+            // De-interleave stereo output (RG909)
+            const outputL = output[0];
+            const outputR = output[1] || output[0];
 
-        for (let i = 0; i < frames; i++) {
-            outputL[i] = heapF32[i * 2];
-            outputR[i] = heapF32[i * 2 + 1];
+            for (let i = 0; i < frames; i++) {
+                outputL[i] = heapF32[i * 2];
+                outputR[i] = heapF32[i * 2 + 1];
+            }
+        } else {
+            // Mono output, duplicate to both channels (RGAHX)
+            const outputL = output[0];
+            const outputR = output[1] || output[0];
+
+            for (let i = 0; i < frames; i++) {
+                outputL[i] = outputR[i] = heapF32[i];
+            }
         }
 
         return true;

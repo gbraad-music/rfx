@@ -364,9 +364,30 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
 void ahx_instrument_process_frame(AhxInstrument* inst) {
     if (!inst) return;
 
-    // Update PList active state (keeps voice alive even after envelope finishes)
-    // Stop PList after note-off to allow normal release phase
-    inst->voice.PListActive = (inst->params.plist && inst->perf_current < inst->params.plist->length && !inst->released);
+    // Update PList active state
+    // For one-shot sounds (drums): PList stops when ADSR envelope completes
+    // For sustained notes: PList stops when note is released
+    // Check if ADSR is complete (all stages done)
+    bool adsr_complete = (!inst->voice.ADSR.aFrames && !inst->voice.ADSR.dFrames &&
+                          !inst->voice.ADSR.sFrames && !inst->voice.ADSR.rFrames);
+
+    // PList is active if:
+    // 1. PList exists AND
+    // 2. For one-shot (not released): ADSR must still be running
+    // 3. For sustained (released): PList runs until manually stopped
+    bool plist_should_run = inst->params.plist != NULL &&
+                            inst->perf_current < inst->params.plist->length;
+
+    if (plist_should_run) {
+        // For one-shot sounds: stop PList when ADSR completes (prevents infinite FX 5 loops)
+        if (!inst->released && adsr_complete) {
+            inst->voice.PListActive = false;
+        } else {
+            inst->voice.PListActive = true;
+        }
+    } else {
+        inst->voice.PListActive = false;
+    }
 
     // Process PList if active
     if (inst->voice.PListActive) {

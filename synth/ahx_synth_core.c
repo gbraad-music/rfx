@@ -384,6 +384,7 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         voice->ADSRVolume += voice->ADSR.rVolume;
         if (--voice->ADSR.rFrames <= 0) {
             voice->ADSRVolume = voice->Instrument->Envelope.rVolume << 8;
+            voice->ADSR.rFrames = 0;
             // Release finished - stop voice UNLESS PList is still active
             if (!voice->PListActive) {
                 voice->TrackOn = false;

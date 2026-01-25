@@ -690,6 +690,7 @@
             <div class="section-title">Drum Engine</div>
             <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <button id="btnInitDrum">Initialize RG909 Drum</button>
+                <button id="btnInitAHXDrum">Initialize RGAHX Drum</button>
                 <button id="btnRenderDrums" disabled>Render All Drums to WAV</button>
             </div>
             <div id="renderStatus" style="font-size: 12px; color: #666; margin-bottom: 15px;"></div>
@@ -751,11 +752,13 @@
     <script src="external/rgsid-synth.js"></script>
     <script src="external/rg1piano-synth.js"></script>
     <script src="external/rg909-drum.js"></script>
+    <script src="external/rgahxdrum.js"></script>
     <script src="external/rgslicer-synth.js"></script>
     <script src="external/rgsfz-synth.js"></script>
 
     <!-- Load WASM modules -->
     <script src="synths/rg909-drum.js"></script>
+    <script src="synths/rgahxdrum.js"></script>
 
     <!-- WebRTC MIDI (loaded as module) -->
     <script type="module" src="external/midi-rtc-bridge.js"></script>
@@ -771,6 +774,7 @@
         let webrtcMidi = null;
         let currentSynth = null;
         let drumSynth = null;
+        let ahxDrumSynth = null;
         let slicerSynth = null;
         let sfzPlayer = null;
         let sharedAnalyzer = null;
@@ -841,6 +845,7 @@
 
             // Initialize drum
             document.getElementById('btnInitDrum').addEventListener('click', initializeDrum);
+            document.getElementById('btnInitAHXDrum').addEventListener('click', initializeAHXDrum);
 
             // Render drums
             document.getElementById('btnRenderDrums').addEventListener('click', renderAllDrums);
@@ -1070,6 +1075,51 @@
             document.getElementById('btnRenderDrums').disabled = false;
         }
 
+        async function initializeAHXDrum() {
+            // Resume AudioContext if needed
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+            }
+
+            if (ahxDrumSynth) {
+                console.log('[Synth Test] RGAHX Drum already initialized');
+                return;
+            }
+
+            ahxDrumSynth = new RGAHXDrum(audioContext);
+            await ahxDrumSynth.initialize();
+
+            // Create shared analyzer if not exists
+            if (!sharedAnalyzer) {
+                sharedAnalyzer = new FrequencyAnalyzer(audioContext, {
+                    fftSize: 8192,
+                    smoothing: 0.8,
+                    updateRate: 50,
+                    sourceName: 'midi-synth',
+                    enableDecay: true
+                });
+                sharedAnalyzer.start();
+                console.log('[Synth Test] Created shared frequency analyzer');
+
+                // Listen to frequency events
+                sharedAnalyzer.on('*', (event) => {
+                    if (event.type === 'frequency' && event.data && event.data.bands) {
+                        updateFrequencyBars(event.data.bands);
+                    }
+                });
+            }
+
+            // Connect AHX drum to shared analyzer
+            ahxDrumSynth.masterGain.connect(sharedAnalyzer.inputGain);
+            console.log('[Synth Test] Connected RGAHX drum to shared analyzer');
+
+            // Connect analyzer to master gain (volume control)
+            sharedAnalyzer.connectTo(masterGainNode);
+
+            document.getElementById('btnInitAHXDrum').textContent = 'RGAHX Drum Initialized';
+            document.getElementById('btnInitAHXDrum').disabled = true;
+        }
+
         function toggleWebRTCConfig() {
             const config = document.getElementById('webrtc-config');
             config.style.display = config.style.display === 'none' ? 'block' : 'none';
@@ -1182,8 +1232,9 @@
                     console.log('[MIDI] Routed to SFZ');
                 }
                 // MIDI Channel 10 (index 9) routes to drums (GM standard)
-                else if (data.channel === 9 && drumSynth) {
-                    drumSynth.triggerDrum(data.note, data.velocity);
+                else if (data.channel === 9 && (drumSynth || ahxDrumSynth)) {
+                    const activeDrum = ahxDrumSynth || drumSynth;
+                    activeDrum.triggerDrum(data.note, data.velocity);
                     console.log('[MIDI] Routed to drums (Channel 10)');
                 } else if (currentSynth) {
                     // Use handleMidi if available (SID synth with channel routing)
@@ -1196,8 +1247,9 @@
                 }
 
                 // Also handle drum notes by note number (36-49) if not on channel 10 and no SFZ
-                if (!sfzPlayer && data.channel !== 9 && drumSynth && data.note >= 36 && data.note <= 49) {
-                    drumSynth.triggerDrum(data.note, data.velocity);
+                if (!sfzPlayer && data.channel !== 9 && (drumSynth || ahxDrumSynth) && data.note >= 36 && data.note <= 49) {
+                    const activeDrum = ahxDrumSynth || drumSynth;
+                    activeDrum.triggerDrum(data.note, data.velocity);
                 }
             });
 
@@ -1223,11 +1275,12 @@
         }
 
         function triggerDrum(note) {
-            if (!drumSynth) {
+            if (!drumSynth && !ahxDrumSynth) {
                 console.warn('[Synth Test] Drum not initialized');
                 return;
             }
-            drumSynth.triggerDrum(note, 127);
+            const activeDrum = ahxDrumSynth || drumSynth;
+            activeDrum.triggerDrum(note, 127);
         }
 
         async function toggleAudible() {
@@ -2002,8 +2055,9 @@
                 // Route to drums or synth based on channel
                 else if (keyboardChannel === 9) {
                     // Channel 10 (drums)
-                    if (drumSynth) {
-                        drumSynth.triggerDrum(note, velocity);
+                    if (drumSynth || ahxDrumSynth) {
+                        const activeDrum = ahxDrumSynth || drumSynth;
+                        activeDrum.triggerDrum(note, velocity);
                         console.log('[Keyboard] Drum note:', note, 'velocity:', velocity);
                     }
                 } else {

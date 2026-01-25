@@ -313,22 +313,6 @@ async function initializeSynth(engine) {
 
   synthStatus.innerHTML = `Synth: <span>${engineName}</span>`;
 
-  // Update button states
-  document.getElementById("btnInitSimple").textContent =
-    engine === "simple"
-      ? "Simple Synth Initialized"
-      : "Initialize Simple Synth";
-  document.getElementById("btnInitRGResonate1").textContent =
-    engine === "rgresonate1"
-      ? "RGResonate1 Initialized"
-      : "Initialize RGResonate1";
-  document.getElementById("btnInitRGAHX").textContent =
-    engine === "rgahx" ? "RGAHX Initialized" : "Initialize RGAHX";
-  document.getElementById("btnInitRGSID").textContent =
-    engine === "rgsid" ? "RGSID Initialized" : "Initialize RGSID";
-  document.getElementById("btnInitRG1Piano").textContent =
-    engine === "rg1piano" ? "RG1Piano Initialized" : "Initialize RG1Piano";
-
   // Disable active button
   document.getElementById("btnInitSimple").disabled = engine === "simple";
   document.getElementById("btnInitRGResonate1").disabled =
@@ -396,8 +380,6 @@ async function initializeDrum() {
 
   // Don't call setAudible(true) - already connected through analyzer
   // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
-
-  document.getElementById("btnInitDrum").textContent = "RG909 Drum Initialized";
   document.getElementById("btnInitDrum").disabled = true;
   document.getElementById("btnRenderDrums").disabled = false;
 }
@@ -2021,4 +2003,82 @@ window.addEventListener("load", () => {
       }
     });
   }
+
+  // Setup fullscreen for drum pads
+  setupDrumPadsFullscreen();
+  
+  // Setup fullscreen for keyboard
+  setupKeyboardFullscreen();
 });
+
+// Setup fullscreen functionality for drum pads
+function setupDrumPadsFullscreen() {
+  const drumPads = document.querySelector('.drum-pads');
+  const btnFullscreen = document.getElementById('btnDrumFullscreen');
+  if (!drumPads || !btnFullscreen) return;
+
+  // Button click to enter fullscreen
+  btnFullscreen.addEventListener('click', () => {
+    if (drumPads.requestFullscreen) {
+      drumPads.requestFullscreen();
+    } else if (drumPads.webkitRequestFullscreen) {
+      drumPads.webkitRequestFullscreen();
+    } else if (drumPads.msRequestFullscreen) {
+      drumPads.msRequestFullscreen();
+    }
+  });
+
+  // Handle clicks on the exit button (::after pseudo-element)
+  drumPads.addEventListener('click', (e) => {
+    if (!document.fullscreenElement) return;
+    
+    // Check if click is in the top-right corner (exit button area)
+    const rect = drumPads.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    // Exit button is at top-right: 10px from top, 10px from right, 32x32px
+    if (clickX >= rect.width - 42 && clickX <= rect.width - 10 &&
+        clickY >= 10 && clickY <= 42) {
+      document.exitFullscreen();
+    }
+  });
+
+  console.log('[Fullscreen] Drum pads fullscreen button enabled');
+}
+
+// Setup fullscreen functionality for keyboard
+function setupKeyboardFullscreen() {
+  const keyboardContainer = document.getElementById('keyboardContainer');
+  const btnFullscreen = document.getElementById('btnKeyboardFullscreen');
+  if (!keyboardContainer || !btnFullscreen) return;
+
+  // Button click to enter fullscreen
+  btnFullscreen.addEventListener('click', () => {
+    if (keyboardContainer.requestFullscreen) {
+      keyboardContainer.requestFullscreen();
+    } else if (keyboardContainer.webkitRequestFullscreen) {
+      keyboardContainer.webkitRequestFullscreen();
+    } else if (keyboardContainer.msRequestFullscreen) {
+      keyboardContainer.msRequestFullscreen();
+    }
+  });
+
+  // Handle clicks on the exit button (::after pseudo-element)
+  keyboardContainer.addEventListener('click', (e) => {
+    if (!document.fullscreenElement) return;
+    
+    // Check if click is in the top-right corner (exit button area)
+    const rect = keyboardContainer.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    
+    // Exit button is at top-right: 10px from top, 10px from right, 32x32px
+    if (clickX >= rect.width - 42 && clickX <= rect.width - 10 &&
+        clickY >= 10 && clickY <= 42) {
+      document.exitFullscreen();
+    }
+  });
+
+  console.log('[Fullscreen] Keyboard fullscreen button enabled');
+}

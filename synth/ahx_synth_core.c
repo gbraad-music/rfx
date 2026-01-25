@@ -283,6 +283,8 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // Set waveform and wave length from instrument
     voice->Waveform = voice->Instrument->Waveform;
     voice->WaveLength = voice->Instrument->WaveLength;
+    voice->LastWaveform = voice->Waveform;
+    voice->LastNote = voice->InstrPeriod;
 
     // Generate waveform and populate VoiceBuffer
     ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
@@ -439,16 +441,8 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
 
     // Process waveform changes (AUTHENTIC AHX ALGORITHM from ahx_player.c:1204)
     if (voice->NewWaveform) {
-        static int last_waveform = -1;
-        static int last_wavelength = -1;
-        static int last_note = -1;
-        bool waveform_type_changed = (voice->Waveform != last_waveform);
-        bool note_changed = (voice->InstrPeriod != last_note);
-
-        if (voice->Waveform != last_waveform || voice->WaveLength != last_wavelength) {
-            last_waveform = voice->Waveform;
-            last_wavelength = voice->WaveLength;
-        }
+        bool waveform_type_changed = (voice->Waveform != voice->LastWaveform);
+        bool note_changed = (voice->InstrPeriod != voice->LastNote);
 
         ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
 
@@ -467,8 +461,11 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         // This prevents pitch drift. Filter/square modulation should NOT reset position.
         if (waveform_type_changed || note_changed) {
             voice->voice_playback.sample_pos = 0;
-            last_note = voice->InstrPeriod;  // Update tracked note
+            voice->LastNote = voice->InstrPeriod;  // Update tracked note
         }
+
+        // Update last waveform
+        voice->LastWaveform = voice->Waveform;
 
         voice->NewWaveform = 0;
     }

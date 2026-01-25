@@ -70,6 +70,8 @@ typedef struct {
     int Waveform;                  // Current waveform (0-3)
     int WaveLength;                // Wave length (0-7)
     int NewWaveform;               // Waveform change pending
+    int LastWaveform;              // Previous waveform (for detecting type changes)
+    int LastNote;                  // Previous note (for detecting note changes)
     int IgnoreFilter;              // Ignore next filter command
     int IgnoreSquare;              // Ignore next square command
     int FilterPos;                 // Current filter position

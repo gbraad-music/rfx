@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Web-based audio effects processor with WASM">
+    <meta name="theme-color" content="#CF1A37">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="RFX Tester">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="./favicon-96x96.png">
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+    <title>Regroove Player</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="top-banner">
+        <a href="index.html" class="back-button">◄</a>
+        <div class="banner-title">Effects Tester</div>
+    </div>
+    <div class="container">
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 15px; margin-bottom: 20px;">
+            <!-- Audio Source Section -->
+            <div class="control-section" style="margin-bottom: 0;">
+                <div class="section-title">Audio Source</div>
+
+                <div class="controls-grid">
+                    <div class="file-input">
+                        <button>📁 Load File</button>
+                        <input type="file" id="audioFile" accept="*">
+                    </div>
+
+                    <button id="micBtn">🎤 Input/Mic</button>
+                    <button id="playBtn" disabled>▶ Play</button>
+                    <button id="stopBtn" disabled>◼ Stop</button>
+
+                    <select id="testSignal">
+                        <option value="">Test Signal</option>
+                        <option value="sine">Sine 440Hz</option>
+                        <option value="noise">White Noise</option>
+                        <option value="sweep">Frequency Sweep</option>
+                    </select>
+
+                    <button id="renderBtn" style="display: none;">💾 Render to WAV</button>
+                </div>
+
+                <div id="audioSourceInfo" class="device-selector" style="display: none;">
+                    <!-- Shows mic selector OR file name (mutually exclusive) -->
+                    <select id="micDeviceList" style="display: none;">
+                        <option value="">Select Microphone...</option>
+                    </select>
+                    <div id="currentFileName" style="display: none; color: var(--text-primary); font-size: 0.85em; padding: 10px 15px; background: var(--bg-tertiary); border: 1px solid var(--border); letter-spacing: 1px; font-family: Arial, sans-serif; box-sizing: border-box; min-height: 38px;">
+                        <span style="color: var(--text-secondary); text-transform: uppercase;">Playing:</span> <span id="fileNameText"></span>
+                    </div>
+                </div>
+
+                <div id="playbackProgress" style="visibility: hidden; cursor: pointer; margin-top: 10px; height: 26px;" title="Click to seek">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75em; color: var(--text-secondary); margin-bottom: 3px;">
+                        <span id="currentTime">0:00</span>
+                        <span id="totalTime">0:00</span>
+                    </div>
+                    <div style="background: var(--bg-tertiary); height: 8px; border: 1px solid var(--border); position: relative; border-radius: 2px;">
+                        <div id="progressBar" style="background: #CF1A37; height: 100%; width: 0%; transition: width 0.1s; pointer-events: none; border-radius: 2px;"></div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <div class="visualizer-container" style="flex: 2.5; height: 200px;">
+                        <canvas id="visualizer"></canvas>
+                    </div>
+                    <div class="visualizer-container" style="flex: 2.5; height: 200px;">
+                        <canvas id="spectrum"></canvas>
+                    </div>
+                    <div class="visualizer-container" style="flex: 1.0; height: 200px;">
+                        <canvas id="vumeter"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Playback Section -->
+            <div class="control-section" style="margin-bottom: 0;">
+                <div class="section-title">Playback</div>
+
+                <div style="display: flex; gap: 12px; justify-content: center; padding-top: 10px;">
+                    <!-- Tempo Fader -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Tempo</div>
+                        <svg-slider id="tempoFader" value="64" min="0" max="127" width="45" color="#CF1A37" style="height: 280px;"></svg-slider>
+                        <div id="tempoValue" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">0.0%</div>
+                    </div>
+
+                    <!-- Volume Fader -->
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px;">
+                        <div style="text-align: center; color: var(--text-secondary); font-size: 0.65em; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold;">Vol</div>
+                        <svg-slider id="gainFader" value="127" min="0" max="127" width="45" color="#CF1A37" style="height: 280px;"></svg-slider>
+                        <div id="gainValue" style="text-align: center; color: var(--text-primary); font-size: 0.75em; font-weight: bold; min-height: 1.2em;">100%</div>
+                    </div>
+                </div>
+
+                <!-- Output Device Selector -->
+                <div style="margin-top: 15px; padding: 0 10px;">
+                    <select id="outputDeviceList" style="width: 120px; font-size: 0.6em; padding: 4px 6px;">
+                        <option value="">Default Output</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- MOD/MED Player Controls -->
+        <div id="modmedControls" class="control-section" style="display: none;">
+            <div class="section-title">MOD/MED Player</div>
+
+            <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center; justify-content: center;">
+                <!-- File info -->
+                <div id="modmedFileInfo" style="flex: 1 0 100%; text-align: center; color: var(--text-secondary); font-size: 0.85em; margin-bottom: 10px;">
+                    <span id="modmedTypeName" style="color: #0066FF;">No file loaded</span>
+                </div>
+
+                <!-- Position display -->
+                <div style="flex: 0 0 auto; display: flex; gap: 10px; font-family: monospace; font-size: 0.9em;">
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">ORDER</span>
+                        <span id="modmedOrderPos" style="color: var(--text-primary); font-weight: bold; min-width: 2ch;">00</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">LENGTH</span>
+                        <span id="modmedSongLength" style="color: var(--text-primary); font-weight: bold; min-width: 2ch;">--</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">ROW</span>
+                        <span id="modmedRowPos" style="color: var(--text-primary); font-weight: bold; min-width: 3ch;">000</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 3px;">
+                        <span style="color: var(--text-secondary); font-size: 0.7em;">BPM</span>
+                        <span id="modmedBpm" style="color: var(--text-primary); font-weight: bold; min-width: 3ch;">125</span>
+                    </div>
+                </div>
+
+                <!-- Pattern navigation -->
+                <div style="flex: 0 0 auto; display: flex; gap: 6px; align-items: center;">
+                    <button id="modmedPrevPattern" class="modmed-button" title="Previous Pattern">◄</button>
+                    <button id="modmedNextPattern" class="modmed-button" title="Next Pattern">►</button>
+                    <button id="modmedLoopPattern" class="modmed-loop-button" title="Loop Current Pattern">⟲</button>
+                </div>
+
+                <!-- Channel mute buttons (will be populated dynamically based on file channels) -->
+                <div id="modmedChannelMutes" style="display: flex; gap: 6px; align-items: center;">
+                    <!-- Buttons added dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <div class="control-section">
+            <div class="section-title">MODEL 1 Input Processing</div>
+            <div id="model1-effects" class="effects-grid"></div>
+        </div>
+
+        <div class="control-section">
+            <div class="section-title">Effects Chain</div>
+            <div id="effects" class="effects-grid"></div>
+        </div>
+    </div>
+
+    <!-- Custom UI components from Revision -->
+    <script type="module" src="components/svg-slider.js"></script>
+    <script type="module" src="components/pad-knob.js"></script>
+    <script type="module" src="components/fader-components.js"></script>
+
+    <!-- Extracted visualization components -->
+    <script src="components/vu-meter.js"></script>
+    <script src="components/waveform-display.js"></script>
+    <script src="components/spectrum-analyzer.js"></script>
+
+    <script src="player.js" type="module"></script>
+
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => {
+                        console.log('Service Worker registered');
+
+                        // Check for updates periodically (not on every load to avoid loops)
+                        // Uncomment if needed: reg.update();
+
+                        // Notify when new service worker is available (don't auto-reload)
+                        reg.addEventListener('updatefound', () => {
+                            const newWorker = reg.installing;
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                                    console.log('✅ New service worker activated (refresh manually to update)');
+                                    // Don't auto-reload to avoid infinite loops
+                                }
+                            });
+                        });
+                    })
+                    .catch(err => console.warn('Service Worker registration failed:', err));
+
+                // Listen for service worker updates
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    console.log('Service worker updated');
+                });
+            });
+        }
+    </script>
+
+    <!-- Fullscreen Scope Functionality -->
+    <script>
+        // Enable fullscreen for all visualizer containers - run immediately
+        function setupFullscreen() {
+            const containers = document.querySelectorAll('.visualizer-container');
+            console.log('Setting up fullscreen for', containers.length, 'containers');
+
+            containers.forEach((container, idx) => {
+                // Single click to toggle fullscreen (double-click is confusing)
+                container.addEventListener('click', (e) => {
+                    // Ignore if clicking on canvas during animation
+                    if (e.target !== container && e.target.tagName !== 'CANVAS') return;
+
+                    if (document.fullscreenElement === container) {
+                        // Exit fullscreen
+                        document.exitFullscreen();
+                    } else {
+                        // Enter fullscreen
+                        if (container.requestFullscreen) {
+                            container.requestFullscreen();
+                        } else if (container.webkitRequestFullscreen) {
+                            container.webkitRequestFullscreen(); // Safari
+                        } else if (container.msRequestFullscreen) {
+                            container.msRequestFullscreen(); // IE11
+                        }
+                    }
+                });
+
+                // Add title for user hint
+                container.title = 'Click for fullscreen';
+                console.log('Attached fullscreen to container', idx);
+            });
+
+            // Handle resize when entering/exiting fullscreen
+            let previousFullscreenElement = null;
+
+            document.addEventListener('fullscreenchange', () => {
+                // Resize canvas when ENTERING fullscreen
+                if (document.fullscreenElement) {
+                    previousFullscreenElement = document.fullscreenElement;
+                    const canvas = document.fullscreenElement.querySelector('canvas');
+                    if (canvas) {
+                        setTimeout(() => {
+                            canvas.width = canvas.offsetWidth;
+                            canvas.height = canvas.offsetHeight;
+                        }, 100);
+                    }
+                }
+                // Resize canvas when EXITING fullscreen
+                else if (previousFullscreenElement) {
+                    const canvas = previousFullscreenElement.querySelector('canvas');
+                    if (canvas) {
+                        setTimeout(() => {
+                            canvas.width = canvas.offsetWidth;
+                            canvas.height = canvas.offsetHeight;
+                        }, 100);
+                    }
+                    previousFullscreenElement = null;
+                }
+            });
+        }
+
+        // Run after effects.js loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupFullscreen);
+        } else {
+            setupFullscreen();
+        }
+
+        // Also try after a delay to ensure canvases are created
+        setTimeout(setupFullscreen, 1000);
+    </script>
+</body>
+</html>

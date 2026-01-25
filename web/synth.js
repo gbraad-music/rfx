@@ -313,22 +313,6 @@ async function initializeSynth(engine) {
 
   synthStatus.innerHTML = `Synth: <span>${engineName}</span>`;
 
-  // Update button states
-  document.getElementById("btnInitSimple").textContent =
-    engine === "simple"
-      ? "Simple Synth Initialized"
-      : "Initialize Simple Synth";
-  document.getElementById("btnInitRGResonate1").textContent =
-    engine === "rgresonate1"
-      ? "RGResonate1 Initialized"
-      : "Initialize RGResonate1";
-  document.getElementById("btnInitRGAHX").textContent =
-    engine === "rgahx" ? "RGAHX Initialized" : "Initialize RGAHX";
-  document.getElementById("btnInitRGSID").textContent =
-    engine === "rgsid" ? "RGSID Initialized" : "Initialize RGSID";
-  document.getElementById("btnInitRG1Piano").textContent =
-    engine === "rg1piano" ? "RG1Piano Initialized" : "Initialize RG1Piano";
-
   // Disable active button
   document.getElementById("btnInitSimple").disabled = engine === "simple";
   document.getElementById("btnInitRGResonate1").disabled =
@@ -396,8 +380,6 @@ async function initializeDrum() {
 
   // Don't call setAudible(true) - already connected through analyzer
   // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
-
-  document.getElementById("btnInitDrum").textContent = "RG909 Drum Initialized";
   document.getElementById("btnInitDrum").disabled = true;
   document.getElementById("btnRenderDrums").disabled = false;
 }

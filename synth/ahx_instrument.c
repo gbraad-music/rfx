@@ -10,16 +10,12 @@
 #include "ahx_plist.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
 #endif
 
 #define AMIGA_PAULA_PAL_CLK 3546895
-
-// Forward declaration for plist_command_parse (used in note_on)
-static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8_t fx, uint8_t fx_param);
 
 // Convert plugin params to core instrument definition
 static void params_to_core_instrument(AhxCoreInstrument* core, const AhxInstrumentParams* params) {
@@ -253,7 +249,7 @@ uint32_t ahx_instrument_process(AhxInstrument* inst, float* output, uint32_t num
             ahx_instrument_process_frame(inst);
             inst->voice.samples_in_frame = 0;
 
-            // Update voice period - ALWAYS call to ensure delta stays correct
+            // Update voice period if changed
             tracker_voice_set_period(&inst->voice.voice_playback, inst->voice.VoicePeriod,
                                     AMIGA_PAULA_PAL_CLK, sample_rate);
         }
@@ -353,36 +349,14 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
     );
 
     // Map results back to modulator fields
-    // Use proper tracker_modulator functions to ensure correct initialization
-    tracker_modulator_set_position(&voice->square_mod, square_pos);
-    tracker_modulator_set_direction(&voice->square_mod, square_sign);
-    if (square_on && !voice->square_mod.active) {
-        // Turning ON - use set_active which handles init_pending
-        tracker_modulator_set_active(&voice->square_mod, true);
-    } else if (!square_on && voice->square_mod.active) {
-        // Turning OFF
-        tracker_modulator_set_active(&voice->square_mod, false);
-    } else if (square_init) {
-        // Re-init while already active
-        voice->square_mod.init_pending = true;
-    }
-
-    tracker_modulator_set_position(&voice->filter_mod, filter_pos);
-    tracker_modulator_set_direction(&voice->filter_mod, filter_sign);
-    // CRITICAL: Sync FilterPos to voice (used for waveform generation!)
-    voice->FilterPos = filter_pos;
-
-    if (filter_on && !voice->filter_mod.active) {
-        // Turning ON - use set_active which handles init_pending
-        tracker_modulator_set_active(&voice->filter_mod, true);
-    } else if (!filter_on && voice->filter_mod.active) {
-        // Turning OFF
-        tracker_modulator_set_active(&voice->filter_mod, false);
-    } else if (filter_init) {
-        // Re-init while already active
-        voice->filter_mod.init_pending = true;
-    }
-
+    voice->square_mod.init_pending = square_init != 0;
+    voice->square_mod.active = square_on != 0;
+    voice->square_mod.sign = square_sign;
+    voice->filter_mod.init_pending = filter_init != 0;
+    voice->filter_mod.active = filter_on != 0;
+    voice->filter_mod.sign = filter_sign;
+    voice->square_mod.position = square_pos;
+    voice->filter_mod.position = filter_pos;
     inst->period_perf_slide_on = period_perf_slide_on != 0;
 }
 
@@ -406,7 +380,13 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
                 inst->voice.Waveform = entry->waveform - 1;  // 1-4 maps to 0-3
                 inst->voice.NewWaveform = 1;
                 inst->period_perf_slide_speed = inst->period_perf_slide_period = 0;
-                // Note: Square modulation is only activated by FX command 4, not automatically
+
+                // Initialize square modulation when switching to square waveform
+                if (inst->voice.Waveform == 2 && !tracker_modulator_is_active(&inst->voice.square_mod)) {
+                    // Enable square modulation automatically
+                    tracker_modulator_set_active(&inst->voice.square_mod, true);
+                    inst->voice.SquarePos = tracker_modulator_get_position(&inst->voice.square_mod);
+                }
             }
 
             // Reset portamento flag (will be set by commands if needed)
@@ -419,15 +399,9 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
 
             // Apply note change
             if (entry->note > 0) {
-                bool note_changed = (inst->voice.InstrPeriod != entry->note);
                 inst->voice.InstrPeriod = entry->note;
                 inst->voice.PlantPeriod = 1;
                 inst->voice.FixedNote = entry->fixed;
-
-                // Mark that waveform position should reset on note change
-                if (note_changed) {
-                    inst->voice.NewWaveform = 1;  // Force waveform update to reset position
-                }
             }
         }
     } else {

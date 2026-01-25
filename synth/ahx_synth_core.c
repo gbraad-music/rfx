@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <stdio.h>
 
 #ifdef EMSCRIPTEN
 #include <emscripten.h>
@@ -224,7 +223,7 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->PlantPeriod = 1;  // Signal that period needs calculation
 
     // VoicePeriod will be calculated in first process_frame() from PeriodTable lookup
-    voice->VoicePeriod = AhxPeriodTable[voice->InstrPeriod];
+    voice->VoicePeriod = AhxPeriodTable[voice->TrackPeriod];
 
     // Set velocity as a scale factor (0-64) that multiplies all volume calculations
     // This allows PList volume commands to work while still respecting MIDI velocity
@@ -244,35 +243,35 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->VibratoDepth = voice->Instrument->VibratoDepth;
     voice->VibratoSpeed = voice->Instrument->VibratoSpeed;
 
-    // Setup filter modulation limits (authentic AHX from ahx_player.c:849-872)
-    tracker_modulator_set_limits(&voice->filter_mod,
-        voice->Instrument->FilterLowerLimit & 0x3f,  // Mask out high bits
-        voice->Instrument->FilterUpperLimit & 0x3f);
-    tracker_modulator_set_speed(&voice->filter_mod, voice->Instrument->FilterSpeed);
-    tracker_modulator_set_position(&voice->filter_mod, 32);  // Start at middle position
-    tracker_modulator_set_active(&voice->filter_mod, false);  // Initially OFF (activated by FX 4)
-
-    // Setup PWM modulation limits (authentic AHX from ahx_player.c:834-847)
-    // Scale limits by wave length
-    int square_lower = voice->Instrument->SquareLowerLimit >> (5 - voice->WaveLength);
-    int square_upper = voice->Instrument->SquareUpperLimit >> (5 - voice->WaveLength);
-    if (square_upper < square_lower) {
-        int t = square_upper;
-        square_upper = square_lower;
-        square_lower = t;
+    // Setup filter modulation
+    if (voice->Instrument->FilterLowerLimit != voice->Instrument->FilterUpperLimit) {
+        tracker_modulator_set_active(&voice->filter_mod, true);
+        tracker_modulator_set_limits(&voice->filter_mod,
+            voice->Instrument->FilterLowerLimit,
+            voice->Instrument->FilterUpperLimit);
+        tracker_modulator_set_speed(&voice->filter_mod, voice->Instrument->FilterSpeed);
+        tracker_modulator_init(&voice->filter_mod);  // Reset to start
+    } else {
+        tracker_modulator_set_active(&voice->filter_mod, false);
     }
 
-    tracker_modulator_set_limits(&voice->square_mod, square_lower, square_upper);
-    tracker_modulator_set_position(&voice->square_mod, 0);  // Always start at 0
-    tracker_modulator_set_active(&voice->square_mod, false);  // Initially OFF (activated by FX 4)
+    // Setup PWM modulation
+    if (voice->Instrument->SquareLowerLimit != voice->Instrument->SquareUpperLimit) {
+        tracker_modulator_set_active(&voice->square_mod, true);
+        tracker_modulator_set_limits(&voice->square_mod,
+            voice->Instrument->SquareLowerLimit,
+            voice->Instrument->SquareUpperLimit);
+        tracker_modulator_set_speed(&voice->square_mod, voice->Instrument->SquareSpeed);
+        tracker_modulator_init(&voice->square_mod);  // Reset to start
+    } else {
+        tracker_modulator_set_active(&voice->square_mod, false);
+    }
 
-    // Initialize SquarePos to 0 (matches reference player initialization)
-    voice->SquarePos = 0;
-
-    // Initialize modulator wait counters to 0 (authentic AHX from ahx_player.c:833,850)
-    // This allows FX 4 to trigger modulation immediately on the first frame
-    voice->FilterWait = 0;
-    voice->SquareWait = 0;
+    // Initialize modulator wait counters (authentic AHX timing)
+    // Filter uses Speed-3 (min 1), Square uses Speed directly
+    voice->FilterWait = voice->Instrument->FilterSpeed - 3;
+    if (voice->FilterWait < 1) voice->FilterWait = 1;
+    voice->SquareWait = voice->Instrument->SquareSpeed;
 
     // Setup hard cut release
     voice->HardCutRelease = voice->Instrument->HardCutRelease;
@@ -283,8 +282,6 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     // Set waveform and wave length from instrument
     voice->Waveform = voice->Instrument->Waveform;
     voice->WaveLength = voice->Instrument->WaveLength;
-    voice->LastWaveform = voice->Waveform;
-    voice->LastNote = voice->InstrPeriod;
 
     // Generate waveform and populate VoiceBuffer
     ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
@@ -433,7 +430,6 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     if (voice->Waveform == 2 && tracker_modulator_is_active(&voice->square_mod)) {
         if (--voice->SquareWait <= 0) {
             tracker_modulator_update(&voice->square_mod);
-            voice->SquarePos = tracker_modulator_get_position(&voice->square_mod);
             voice->SquareWait = voice->Instrument->SquareSpeed;
             voice->NewWaveform = 1;
         }
@@ -441,37 +437,16 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
 
     // Process waveform changes (AUTHENTIC AHX ALGORITHM from ahx_player.c:1204)
     if (voice->NewWaveform) {
-        bool waveform_type_changed = (voice->Waveform != voice->LastWaveform);
-        bool note_changed = (voice->InstrPeriod != voice->LastNote);
-
         ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
 
-        // Calculate actual waveform cycle length for this wave_length
-        int wave_cycle_length = 4 * (1 << voice->WaveLength);  // 32 for wave_length=3
-
-        // Set waveform with full buffer (640 samples) but loop only the base cycle
+        // Update voice playback with new waveform buffer (16-bit)
         tracker_voice_set_waveform_16bit(&voice->voice_playback, voice->VoiceBuffer, 0x280);
-
-        // Override loop_end to loop just the base waveform cycle, not the full buffer
-        voice->voice_playback.loop_end = ((uint64_t)wave_cycle_length) << 16;
-
-        // CRITICAL: Reset playback position when:
-        // 1. Waveform TYPE changes (Square↔Sawtooth↔Triangle), OR
-        // 2. Note changes (new pitch)
-        // This prevents pitch drift. Filter/square modulation should NOT reset position.
-        if (waveform_type_changed || note_changed) {
-            voice->voice_playback.sample_pos = 0;
-            voice->LastNote = voice->InstrPeriod;  // Update tracked note
-        }
-
-        // Update last waveform
-        voice->LastWaveform = voice->Waveform;
 
         voice->NewWaveform = 0;
     }
 
     // Calculate final voice volume (authentic AHX from ahx_player.c:1241-1243)
-    // Formula: (((((ADSR * NoteMaxVolume) >> 6) * PerfSubVolume) >> 6) * TrackMasterVolume) >> 6) * VelocityScale) >> 6) * InstrumentVolume) >> 6
+    // Formula: ((((((ADSR * NoteMaxVolume) >> 6) * PerfSubVolume) >> 6) * TrackMasterVolume) >> 6) * VelocityScale) >> 6) * InstrumentVolume) >> 6
     int adsr_vol = voice->ADSRVolume >> 8;  // Convert from 16-bit fixed point to 8-bit
     int vol = adsr_vol;
     vol = (vol * voice->NoteMaxVolume) >> 6;
@@ -481,8 +456,6 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     vol = (vol * voice->Instrument->Volume) >> 6;
 
     voice->VoiceVolume = vol;
-    if (voice->VoiceVolume > 64) voice->VoiceVolume = 64;
-    if (voice->VoiceVolume < 0) voice->VoiceVolume = 0;
 
     // Calculate final period with vibrato (AUTHENTIC AHX from ahx_player.c:1228-1261)
     if (voice->PlantPeriod) {

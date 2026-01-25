@@ -423,6 +423,9 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
         }
     }
 
+    // Sync portamento accumulator to voice (AUTHENTIC AHX from ahx_player.c:1236)
+    inst->voice.PeriodPerfSlidePeriod = inst->period_perf_slide_period;
+
     // Process core synthesis frame
     ahx_synth_voice_process_frame(&inst->voice);
 }

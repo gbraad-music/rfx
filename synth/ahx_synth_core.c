@@ -220,6 +220,7 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
 
     // Initial instrument period (will be overridden by PList if present)
     voice->InstrPeriod = 0;  // PList will set this, or use TrackPeriod if no PList
+    voice->FixedNote = 0;    // Default to non-fixed (will be set by PList if needed)
     voice->PlantPeriod = 1;  // Signal that period needs calculation
 
     // VoicePeriod will be calculated in first process_frame() from PeriodTable lookup
@@ -242,6 +243,9 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->VibratoPeriod = 0;
     voice->VibratoDepth = voice->Instrument->VibratoDepth;
     voice->VibratoSpeed = voice->Instrument->VibratoSpeed;
+
+    // Reset portamento
+    voice->PeriodPerfSlidePeriod = 0;
 
     // Setup filter modulation limits (authentic AHX from ahx_player.c:849-872)
     tracker_modulator_set_limits(&voice->filter_mod,
@@ -485,8 +489,8 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
         // Look up actual Amiga period from table
         audio_period = AhxPeriodTable[audio_period];
 
-        // Add portamento and vibrato
-        voice->VoicePeriod = audio_period + voice->VibratoPeriod;
+        // Add portamento and vibrato (AUTHENTIC AHX from ahx_player.c:1236)
+        voice->VoicePeriod = audio_period + voice->PeriodPerfSlidePeriod + voice->VibratoPeriod;
 
         // Clamp to valid period range
         if (voice->VoicePeriod < 113) voice->VoicePeriod = 113;

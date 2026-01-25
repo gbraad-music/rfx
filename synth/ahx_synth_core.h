@@ -67,6 +67,7 @@ typedef struct {
     int VoicePeriod;               // Current period (Amiga-style)
     int InstrPeriod;               // Base instrument period
     int VibratoPeriod;             // Vibrato offset
+    int PeriodPerfSlidePeriod;     // Portamento accumulator (from PList FX 1/2)
     int Waveform;                  // Current waveform (0-3)
     int WaveLength;                // Wave length (0-7)
     int NewWaveform;               // Waveform change pending

@@ -365,7 +365,8 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
     if (!inst) return;
 
     // Update PList active state (keeps voice alive even after envelope finishes)
-    inst->voice.PListActive = (inst->params.plist && inst->perf_current < inst->params.plist->length);
+    // Stop PList after note-off to allow normal release phase
+    inst->voice.PListActive = (inst->params.plist && inst->perf_current < inst->params.plist->length && !inst->released);
 
     // Process PList if active
     if (inst->voice.PListActive) {

@@ -5,6 +5,7 @@ regroove-effects.wasm
 
 # Synth WASM files (copied from plugins/ during build)
 synths/
+players/
 
 # Python cache
 __pycache__/

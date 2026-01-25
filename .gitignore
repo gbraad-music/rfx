@@ -64,6 +64,4 @@ Thumbs.db
 # web
 plugins/*/*.js
 plugins/*/*.wasm
-web/players/
-web/synths/
 

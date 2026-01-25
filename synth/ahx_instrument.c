@@ -376,15 +376,12 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
     tracker_modulator_set_direction(&voice->square_mod, square_sign);
     if (square_on && !voice->square_mod.active) {
         // Turning ON - use set_active which handles init_pending
-        printf("[FX] Turning square modulation ON (pos=%d, sign=%d)\n", square_pos, square_sign);
         tracker_modulator_set_active(&voice->square_mod, true);
     } else if (!square_on && voice->square_mod.active) {
         // Turning OFF
-        printf("[FX] Turning square modulation OFF\n");
         tracker_modulator_set_active(&voice->square_mod, false);
     } else if (square_init) {
         // Re-init while already active
-        printf("[FX] Re-init square modulation (pos=%d, active=%d)\n", square_pos, voice->square_mod.active);
         voice->square_mod.init_pending = true;
     }
 
@@ -395,15 +392,12 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
 
     if (filter_on && !voice->filter_mod.active) {
         // Turning ON - use set_active which handles init_pending
-        printf("[FX] Turning filter modulation ON (pos=%d, sign=%d)\n", filter_pos, filter_sign);
         tracker_modulator_set_active(&voice->filter_mod, true);
     } else if (!filter_on && voice->filter_mod.active) {
         // Turning OFF
-        printf("[FX] Turning filter modulation OFF\n");
         tracker_modulator_set_active(&voice->filter_mod, false);
     } else if (filter_init) {
         // Re-init while already active
-        printf("[FX] Re-init filter modulation (pos=%d, active=%d)\n", filter_pos, voice->filter_mod.active);
         voice->filter_mod.init_pending = true;
     }
 
@@ -438,18 +432,10 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
     // Process PList if active
     if (inst->voice.PListActive) {
         // Decrement wait normally - SpeedMultiplier affects frame rate, not counters
-        printf("[Frame %d] BEFORE PList: perf_wait=%d, FilterPos=%d, filter_mod.active=%d\n",
-            inst->voice.debug_frame_count, inst->perf_wait, inst->voice.FilterPos,
-            inst->voice.filter_mod.active);
-
         if (--inst->perf_wait <= 0) {
             uint8_t cur = inst->perf_current++;
             AhxPListEntry* entry = &inst->params.plist->entries[cur];
             inst->perf_wait = inst->perf_speed;
-
-            printf("[Frame %d] EXECUTING PList Entry %d: WF=%d FX1=%d(%02X) FX2=%d(%02X)\n",
-                inst->voice.debug_frame_count, cur, entry->waveform,
-                entry->fx[0], entry->fx_param[0], entry->fx[1], entry->fx_param[1]);
 
             // Apply waveform change
             if (entry->waveform > 0) {
@@ -466,10 +452,6 @@ void ahx_instrument_process_frame(AhxInstrument* inst) {
             for (int i = 0; i < 2; i++) {
                 plist_command_parse(inst, &inst->voice, entry->fx[i], entry->fx_param[i]);
             }
-
-            printf("[Frame %d] AFTER FX: FilterPos=%d, filter_mod.active=%d, filter_mod.pos=%d\n",
-                inst->voice.debug_frame_count, inst->voice.FilterPos,
-                inst->voice.filter_mod.active, inst->voice.filter_mod.position);
 
             // Apply note change
             if (entry->note > 0) {

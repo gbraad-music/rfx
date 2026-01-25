@@ -434,15 +434,9 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     }
 
     // Update filter modulation (authentic AHX timing - wait counter)
-    if (voice->debug_frame_count < 10) {
-        printf("[Frame %d] Filter check: active=%d, FilterWait=%d\n",
-            voice->debug_frame_count, voice->filter_mod.active, voice->FilterWait);
-    }
-
     if (tracker_modulator_is_active(&voice->filter_mod) && --voice->FilterWait <= 0) {
         // Authentic AHX filter behavior: Speed < 4 updates multiple times
         int f_max = (voice->Instrument->FilterSpeed < 4) ? (5 - voice->Instrument->FilterSpeed) : 1;
-        int old_filter_pos = voice->FilterPos;
         for (int i = 0; i < f_max; i++) {
             tracker_modulator_update(&voice->filter_mod);
         }
@@ -460,8 +454,6 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
 
         // Sync to voice FilterPos (used for waveform generation)
         voice->FilterPos = filter_pos;
-        printf("[Frame %d] Filter UPDATED: %d -> %d (waveform=%d)\n",
-            voice->debug_frame_count, old_filter_pos, filter_pos, voice->Waveform);
 
         // Reset wait counter
         voice->FilterWait = voice->Instrument->FilterSpeed - 3;
@@ -475,14 +467,10 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     if (voice->Waveform == 2 && tracker_modulator_is_active(&voice->square_mod)) {
         if (--voice->SquareWait <= 0) {
             tracker_modulator_update(&voice->square_mod);
-            int old_pos = voice->SquarePos;
             voice->SquarePos = tracker_modulator_get_position(&voice->square_mod);
-            printf("[Square Mod] Updated: %d -> %d (waveform=%d)\n", old_pos, voice->SquarePos, voice->Waveform);
             voice->SquareWait = voice->Instrument->SquareSpeed;
             voice->NewWaveform = 1;
         }
-    } else if (tracker_modulator_is_active(&voice->square_mod) && voice->Waveform != 2) {
-        printf("[Square Mod] Active but waveform=%d (not square), skipping update\n", voice->Waveform);
     }
 
     // Process waveform changes (AUTHENTIC AHX ALGORITHM from ahx_player.c:1204)
@@ -530,15 +518,6 @@ void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     vol = (vol * voice->TrackMasterVolume) >> 6;
     vol = (vol * voice->VelocityScale) >> 6;
     vol = (vol * voice->Instrument->Volume) >> 6;
-
-    static int last_voice_vol = -1;
-    static int last_wf = -1;
-    if ((vol != last_voice_vol || voice->Waveform != last_wf) && voice->debug_frame_count < 100) {
-        printf("[Volume] Frame=%d Waveform=%d NoteMax=%d => Final=%d\n",
-               voice->debug_frame_count, voice->Waveform, voice->NoteMaxVolume, vol);
-        last_voice_vol = vol;
-        last_wf = voice->Waveform;
-    }
 
     voice->VoiceVolume = vol;
     if (voice->VoiceVolume > 64) voice->VoiceVolume = 64;

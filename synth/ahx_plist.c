@@ -45,13 +45,11 @@ void ahx_plist_execute_command(
                 // For synth mode (song_revision == 0): always apply
                 if (song_revision > 0 && ignore_filter && *ignore_filter) {
                     if (filter_pos) {
-                        printf("[FX 0] Set FilterPos: %d -> %d (from ignore)\n", *filter_pos, *ignore_filter);
                         *filter_pos = *ignore_filter;
                     }
                     *ignore_filter = 0;
                 } else {
                     if (filter_pos) {
-                        printf("[FX 0] Set FilterPos: %d -> %d\n", *filter_pos, fx_param);
                         *filter_pos = fx_param;
                     }
                 }
@@ -73,9 +71,6 @@ void ahx_plist_execute_command(
             if (ignore_square && wave_length && square_pos) {
                 if (!*ignore_square) {
                     *square_pos = fx_param >> (5 - *wave_length);
-#ifdef EMSCRIPTEN
-                    emscripten_log(EM_LOG_CONSOLE, "[FX 3] Set square_pos = %d (param=%d, wave_length=%d)", *square_pos, fx_param, *wave_length);
-#endif
                 } else {
                     *ignore_square = 0;
                 }
@@ -88,9 +83,6 @@ void ahx_plist_execute_command(
                 if (square_on && square_init && square_sign) {
                     *square_init = (*square_on ^= 1);
                     *square_sign = 1;
-#ifdef EMSCRIPTEN
-                    emscripten_log(EM_LOG_CONSOLE, "[FX 4] Toggle square: now %s (param=0)", *square_on ? "ON" : "OFF");
-#endif
                 }
             } else {
                 // fx_param != 0: check nibbles for square/filter
@@ -101,9 +93,6 @@ void ahx_plist_execute_command(
                         if ((fx_param & 0x0f) == 0x0f) {
                             *square_sign = -1;
                         }
-#ifdef EMSCRIPTEN
-                        emscripten_log(EM_LOG_CONSOLE, "[FX 4] Toggle square: now %s (param=0x%02x low nibble)", *square_on ? "ON" : "OFF", fx_param);
-#endif
                     }
                 }
                 if (fx_param & 0xf0) {
@@ -113,9 +102,6 @@ void ahx_plist_execute_command(
                         if ((fx_param & 0xf0) == 0xf0) {
                             *filter_sign = -1;
                         }
-#ifdef EMSCRIPTEN
-                        emscripten_log(EM_LOG_CONSOLE, "[FX 4] Toggle filter: now %s (param=0x%02x high nibble)", *filter_on ? "ON" : "OFF", fx_param);
-#endif
                     }
                 }
             }
@@ -129,19 +115,16 @@ void ahx_plist_execute_command(
             if (fx_param <= 0x40) {
                 // Note volume (0x00-0x40)
                 if (note_max_volume) {
-                    printf("[FX 6] Set NoteMaxVolume: %d -> %d\n", *note_max_volume, fx_param);
                     *note_max_volume = fx_param;
                 }
             } else if (fx_param >= 0x50 && fx_param <= 0x90) {
                 // PerfSub volume (0x50-0x90)
                 if (perf_sub_volume) {
-                    printf("[FX 6] Set PerfSubVolume: %d -> %d\n", *perf_sub_volume, fx_param - 0x50);
                     *perf_sub_volume = fx_param - 0x50;
                 }
             } else if (fx_param >= 0xA0 && fx_param <= 0xE0) {
                 // TrackMaster volume (0xA0-0xE0)
                 if (track_master_volume) {
-                    printf("[FX 6] Set TrackMasterVolume: %d -> %d\n", *track_master_volume, fx_param - 0xA0);
                     *track_master_volume = fx_param - 0xA0;
                 }
             }

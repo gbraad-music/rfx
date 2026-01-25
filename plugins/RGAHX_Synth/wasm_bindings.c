@@ -55,10 +55,7 @@ void regroove_synth_reset(AhxSynthInstance* synth) {
 
 EMSCRIPTEN_KEEPALIVE
 void regroove_synth_note_on(AhxSynthInstance* synth, uint8_t note, uint8_t velocity) {
-    if (!synth) {
-        emscripten_log(EM_LOG_ERROR, "[RGAHX] note_on: synth is NULL!");
-        return;
-    }
+    if (!synth) return;
 
     // Find free voice or steal oldest
     int voice_idx = -1;
@@ -560,9 +557,6 @@ uint8_t* regroove_synth_export_preset(AhxSynthInstance* synth, const char* name,
 
     // Write PList data if present
     if (plist && plist->length > 0) {
-        emscripten_log(EM_LOG_CONSOLE, "[Export] Writing PList: %d entries at speed %d",
-            plist->length, plist->speed);
-
         buffer[offset++] = plist->speed;
         buffer[offset++] = plist->length;
 
@@ -575,14 +569,8 @@ uint8_t* regroove_synth_export_preset(AhxSynthInstance* synth, const char* name,
             buffer[offset++] = e->fx_param[0];
             buffer[offset++] = e->fx[1];
             buffer[offset++] = e->fx_param[1];
-
-            emscripten_log(EM_LOG_CONSOLE, "[Export] PList[%d]: note=%d, fixed=%d, waveform=%d, fx0=%d(0x%02x), fx1=%d(0x%02x)",
-                i, e->note, e->fixed, e->waveform, e->fx[0], e->fx_param[0], e->fx[1], e->fx_param[1]);
         }
     }
-
-    emscripten_log(EM_LOG_CONSOLE, "[Export] Total size: %zu bytes (AhxPreset=%zu, PList=%zu)",
-        total_size, sizeof(AhxPreset), total_size - sizeof(AhxPreset));
 
     return buffer;
 }
@@ -602,7 +590,6 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
 
     // Verify magic header "AHXP"
     if (buffer[0] != 'A' || buffer[1] != 'H' || buffer[2] != 'X' || buffer[3] != 'P') {
-        emscripten_log(EM_LOG_ERROR, "[Import] Invalid .ahxp file - wrong magic");
         return 0;
     }
 
@@ -705,17 +692,7 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
         synth->voices[v].core_inst.Envelope.rFrames = preset.params.envelope.release_frames;
         synth->voices[v].core_inst.Envelope.rVolume = preset.params.envelope.release_volume;
 
-        emscripten_log(EM_LOG_CONSOLE, "[Import] Envelope set: a=%d(%d) d=%d(%d) s=%d r=%d(%d)",
-            synth->voices[v].core_inst.Envelope.aFrames, synth->voices[v].core_inst.Envelope.aVolume,
-            synth->voices[v].core_inst.Envelope.dFrames, synth->voices[v].core_inst.Envelope.dVolume,
-            synth->voices[v].core_inst.Envelope.sFrames,
-            synth->voices[v].core_inst.Envelope.rFrames, synth->voices[v].core_inst.Envelope.rVolume);
-
         ahx_synth_voice_calc_adsr(&synth->voices[v].voice, &synth->voices[v].core_inst);
-
-        emscripten_log(EM_LOG_CONSOLE, "[Import] ADSR calculated: a=%d d=%d s=%d r=%d",
-            synth->voices[v].voice.ADSR.aFrames, synth->voices[v].voice.ADSR.dFrames,
-            synth->voices[v].voice.ADSR.sFrames, synth->voices[v].voice.ADSR.rFrames);
 
         // If voice is active, regenerate waveform immediately
         // Otherwise it will use old waveform buffer until next note_on
@@ -728,8 +705,6 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
 
     // Parse PList data if present (comes after fixed-size preset data at offset 432)
     size_t plist_offset = 432;  // 16 (header) + 416 (name+author+desc+params)
-    emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] Buffer size=%d, plist_offset=%zu",
-        size, plist_offset);
 
     if (size > plist_offset + 2) {
         uint8_t plist_speed_raw = buffer[plist_offset];
@@ -739,13 +714,7 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
         uint8_t plist_speed = plist_speed_raw;
         if (plist_speed < 1) plist_speed = 1;  // Minimum 1 frame per entry
 
-        emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] Found PList header: speed=%d, length=%d",
-            plist_speed, plist_length);
-
         if (plist_length > 0 && size >= plist_offset + 2 + (plist_length * 7)) {
-            emscripten_log(EM_LOG_CONSOLE, "[Import] PList data found: %d entries at speed %d",
-                plist_length, plist_speed);
-
             // Clear existing PList (operates on all voices)
             regroove_synth_clear_plist(synth);
 
@@ -757,7 +726,6 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
                     synth->voices[v].params.plist->speed = plist_speed;
                     synth->voices[v].params.plist->length = 0;
                     synth->voices[v].params.plist->entries = NULL;
-                    emscripten_log(EM_LOG_CONSOLE, "[Import] Created PList for voice %d with speed=%d", v, plist_speed);
                 }
             }
 
@@ -775,43 +743,14 @@ int regroove_synth_import_preset(AhxSynthInstance* synth, const uint8_t* buffer,
                 uint8_t fx1_param = buffer[entry_offset++];
 
                 regroove_synth_set_plist_entry(synth, i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
-
-                emscripten_log(EM_LOG_CONSOLE, "[Import] PList[%d]: note=%d, fixed=%d, waveform=%d, fx0=%d(0x%02x), fx1=%d(0x%02x)",
-                    i, note, fixed, waveform, fx0, fx0_param, fx1, fx1_param);
             }
 
             // Use raw values from file (already in 50Hz timing)
             for (int v = 0; v < MAX_VOICES; v++) {
-                emscripten_log(EM_LOG_CONSOLE, "[Import] ADSR from file: a=%d d=%d s=%d r=%d",
-                    synth->voices[v].core_inst.Envelope.aFrames,
-                    synth->voices[v].core_inst.Envelope.dFrames,
-                    synth->voices[v].core_inst.Envelope.sFrames,
-                    synth->voices[v].core_inst.Envelope.rFrames);
-                emscripten_log(EM_LOG_CONSOLE, "[Import] Filter: enabled=%d, speed=%d, limits=%d-%d",
-                    synth->voices[v].params.filter_enabled,
-                    synth->voices[v].core_inst.FilterSpeed,
-                    synth->voices[v].core_inst.FilterLowerLimit,
-                    synth->voices[v].core_inst.FilterUpperLimit);
-                emscripten_log(EM_LOG_CONSOLE, "[Import] Square: enabled=%d, speed=%d, limits=%d-%d",
-                    synth->voices[v].params.square_enabled,
-                    synth->voices[v].core_inst.SquareSpeed,
-                    synth->voices[v].core_inst.SquareLowerLimit,
-                    synth->voices[v].core_inst.SquareUpperLimit);
-
                 // Recalculate ADSR
                 ahx_synth_voice_calc_adsr(&synth->voices[v].voice, &synth->voices[v].core_inst);
-
-                emscripten_log(EM_LOG_CONSOLE, "[Import] Final ADSR runtime: a=%d d=%d s=%d r=%d",
-                    synth->voices[v].voice.ADSR.aFrames,
-                    synth->voices[v].voice.ADSR.dFrames,
-                    synth->voices[v].voice.ADSR.sFrames,
-                    synth->voices[v].voice.ADSR.rFrames);
             }
-        } else {
-            emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] PList data incomplete: length=%d but buffer too small", plist_length);
         }
-    } else {
-        emscripten_log(EM_LOG_CONSOLE, "[Import DEBUG] No PList data - buffer too small (size=%d, needed=%zu)", size, plist_offset + 2);
     }
 
     return 1; // Success

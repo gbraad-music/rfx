@@ -213,11 +213,6 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->samples_per_frame = sample_rate / AHX_FRAME_RATE / speed_mult;
     voice->samples_in_frame = 0;
 
-#ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Note on: sample_rate=%d, SpeedMult=%d, samples_per_frame=%d",
-        sample_rate, speed_mult, voice->samples_per_frame);
-#endif
-
     // Reset frame counter for debugging
     voice->debug_frame_count = 0;
 
@@ -240,24 +235,7 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->ADSRVolume = 0;
 
     // CRITICAL: Recalculate ADSR deltas to reset frame counters
-#ifdef EMSCRIPTEN
-    if (!voice->Instrument) {
-        emscripten_log(EM_LOG_ERROR, "[AHX] ERROR: Instrument pointer is NULL!");
-    } else {
-        emscripten_log(EM_LOG_CONSOLE, "[AHX] Instrument envelope BEFORE calc: a=%d(%d) d=%d(%d) s=%d r=%d(%d)",
-            voice->Instrument->Envelope.aFrames, voice->Instrument->Envelope.aVolume,
-            voice->Instrument->Envelope.dFrames, voice->Instrument->Envelope.dVolume,
-            voice->Instrument->Envelope.sFrames,
-            voice->Instrument->Envelope.rFrames, voice->Instrument->Envelope.rVolume);
-    }
-#endif
-
     ahx_synth_voice_calc_adsr(voice, voice->Instrument);
-
-#ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Calculated ADSR runtime AFTER calc: a=%d d=%d s=%d r=%d",
-        voice->ADSR.aFrames, voice->ADSR.dFrames, voice->ADSR.sFrames, voice->ADSR.rFrames);
-#endif
 
     // Reset vibrato
     voice->VibratoDelay = voice->Instrument->VibratoDelay;
@@ -306,11 +284,6 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->Waveform = voice->Instrument->Waveform;
     voice->WaveLength = voice->Instrument->WaveLength;
 
-#ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] Generating waveform: type=%d, length=%d", voice->Waveform, voice->WaveLength);
-    emscripten_log(EM_LOG_CONSOLE, "[AHX] MIDI note=%d, AHX note=%d, Period=%d", note, voice->InstrPeriod, voice->VoicePeriod);
-#endif
-
     // Generate waveform and populate VoiceBuffer
     ahx_synth_generate_waveform(voice, voice->Waveform, voice->WaveLength, voice->FilterPos);
 
@@ -342,15 +315,6 @@ void ahx_synth_voice_note_off(AhxSynthVoice* voice) {
 // Process one frame (AUTHENTIC AHX ALGORITHM from ahx_player.c:901)
 void ahx_synth_voice_process_frame(AhxSynthVoice* voice) {
     if (!voice || !voice->TrackOn || !voice->Instrument) return;
-
-    static int frame_count = 0;
-    if (frame_count < 50) {  // Log first 50 frames
-#ifdef EMSCRIPTEN
-        emscripten_log(EM_LOG_CONSOLE, "[Frame %d] ADSR: a=%d d=%d s=%d r=%d, vol=%d, TrackOn=%d",
-            frame_count++, voice->ADSR.aFrames, voice->ADSR.dFrames, voice->ADSR.sFrames, voice->ADSR.rFrames,
-            voice->ADSRVolume >> 8, voice->TrackOn);
-#endif
-    }
 
     // Hard cut release processing
     if (voice->HardCutRelease && voice->NoteCutOn) {

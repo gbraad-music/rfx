@@ -181,10 +181,6 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
         // Keep it as-is, but we'll decrement the wait counter by SpeedMultiplier each frame
         inst->perf_speed = inst->params.plist->speed;
         inst->perf_wait = 0;  // Apply entry 0 immediately, then wait for entry 1
-#ifdef EMSCRIPTEN
-        emscripten_log(EM_LOG_CONSOLE, "[Note On] PList speed=%d, SpeedMult=%d, setting perf_speed=%d",
-            inst->params.plist->speed, inst->params.speed_multiplier, inst->perf_speed);
-#endif
     } else {
         inst->perf_speed = 1;
         inst->perf_wait = 0;
@@ -200,18 +196,9 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
     // Use authentic AHX synthesis core with MIDI note (will be overridden by PList)
     ahx_synth_voice_note_on(&inst->voice, note, velocity, sample_rate);
 
-#ifdef EMSCRIPTEN
-    emscripten_log(EM_LOG_CONSOLE, "[PList Check] plist=%p, length=%d",
-        inst->params.plist, inst->params.plist ? inst->params.plist->length : 0);
-#endif
-
     // If PList exists, override the period immediately with PList note
     if (inst->params.plist && inst->params.plist->length > 0) {
         AhxPListEntry* first_entry = &inst->params.plist->entries[0];
-#ifdef EMSCRIPTEN
-        emscripten_log(EM_LOG_CONSOLE, "[PList Check] first_entry: note=%d, fixed=%d, waveform=%d",
-            first_entry->note, first_entry->fixed, first_entry->waveform);
-#endif
         if (first_entry->note > 0) {
             // PList note is already an AHX note index (1-60), not MIDI
             inst->voice.InstrPeriod = first_entry->note;
@@ -219,11 +206,6 @@ void ahx_instrument_note_on(AhxInstrument* inst, uint8_t note, uint8_t velocity,
 
             // Recalculate period immediately and reapply to voice playback
             inst->voice.VoicePeriod = ahx_synth_get_period_for_note(first_entry->note);
-
-#ifdef EMSCRIPTEN
-            emscripten_log(EM_LOG_CONSOLE, "[PList Override] MIDI note=%d -> PList note=%d (fixed=%d), Period=%d",
-                note, first_entry->note, first_entry->fixed, inst->voice.VoicePeriod);
-#endif
 
             tracker_voice_set_period(&inst->voice.voice_playback, inst->voice.VoicePeriod,
                                     AMIGA_PAULA_PAL_CLK, sample_rate);
@@ -407,24 +389,6 @@ static void plist_command_parse(AhxInstrument* inst, AhxSynthVoice* voice, uint8
 // Process frame (deprecated - now handled by ahx_synth_core)
 void ahx_instrument_process_frame(AhxInstrument* inst) {
     if (!inst) return;
-
-#ifdef EMSCRIPTEN
-    // Always log when envelope completes or voice stops
-    bool should_log = inst->voice.debug_frame_count < 40 ||
-                      inst->voice.ADSR.rFrames <= 2 ||
-                      !inst->voice.TrackOn;
-
-    if (should_log) {
-        emscripten_log(EM_LOG_CONSOLE, "[Frame %d] perf=%d/%d wait=%d ADSR: a=%d d=%d s=%d r=%d vol=%d TrackOn=%d",
-            inst->voice.debug_frame_count, inst->perf_current,
-            inst->params.plist ? inst->params.plist->length : 0,
-            inst->perf_wait,
-            inst->voice.ADSR.aFrames, inst->voice.ADSR.dFrames,
-            inst->voice.ADSR.sFrames, inst->voice.ADSR.rFrames,
-            inst->voice.ADSRVolume >> 8, inst->voice.TrackOn);
-    }
-    inst->voice.debug_frame_count++;
-#endif
 
     // Update PList active state (keeps voice alive even after envelope finishes)
     inst->voice.PListActive = (inst->params.plist && inst->perf_current < inst->params.plist->length);

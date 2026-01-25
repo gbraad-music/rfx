@@ -367,6 +367,7 @@
         .octave-controls {
             display: flex;
             gap: 5px;
+            align-items: center;
         }
 
         .octave-btn {
@@ -743,6 +744,9 @@
     <script src="synth-registry.js"></script>
     <script type="module" src="synth-ui.js"></script>
 
+    <!-- Piano keyboard component -->
+    <script src="components/piano-keyboard.js"></script>
+
     <!-- Load MIDI stack (ES6 modules not needed for standalone scripts) -->
     <script src="external/midi-manager.js"></script>
     <script src="external/frequency-analyzer.js"></script>
@@ -783,6 +787,7 @@
         let keyboardOctave = 3;  // C3 default
         let keyboardChannel = 0; // Channel 1 (synth) default
         let activeKeys = new Set();
+        let pianoKeyboard = null;
 
         // UI elements
         const midiInput = document.getElementById('midiInput');
@@ -1598,443 +1603,35 @@
             const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
             octaveDisplay.textContent = 'C' + keyboardOctave;
 
-            // Rebuild keyboard
-            buildKeyboard();
+            // Update keyboard octave
+            if (pianoKeyboard) {
+                pianoKeyboard.setBaseOctave(keyboardOctave);
+            }
         }
 
         function buildKeyboard() {
-            const keyboardEl = document.getElementById('pianoKeyboard');
-            keyboardEl.innerHTML = '';
-
-            // Always use 2 octaves to fill the width
-            const numOctaves = 2;
-
-            // Create SVG piano keyboard (Meister's implementation)
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            const svgWidth = 700 * numOctaves;
-            const svgHeight = 600; // Taller viewBox for better vertical fill
-            svg.setAttribute('viewBox', `0 0 ${svgWidth} ${svgHeight}`);
-            svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-            svg.style.width = '100%';
-            svg.style.height = '100%';
-
-            // Piano layout: 7 white keys (C, D, E, F, G, A, B) and 5 black keys per octave
-            const whiteKeyWidth = 100;
-            const whiteKeyHeight = 580;
-            const blackKeyWidth = 60;
-            const blackKeyHeight = 380;
-            const keyRadius = 8; // Rounded corner radius
-
-            const whiteKeys = [
-                { note: 'C', offset: 0 },
-                { note: 'D', offset: 1 },
-                { note: 'E', offset: 2 },
-                { note: 'F', offset: 3 },
-                { note: 'G', offset: 4 },
-                { note: 'A', offset: 5 },
-                { note: 'B', offset: 6 }
-            ];
-
-            const blackKeys = [
-                { note: 'C#', offset: 0, position: 70 },  // Between C and D
-                { note: 'D#', offset: 1, position: 170 }, // Between D and E
-                { note: 'F#', offset: 3, position: 370 }, // Between F and G
-                { note: 'G#', offset: 4, position: 470 }, // Between G and A
-                { note: 'A#', offset: 5, position: 570 }  // Between A and B
-            ];
-
-            // Base MIDI note for this octave
-            const baseNote = 12 * keyboardOctave;
-
-            // Polyphonic note tracking (Meister's approach)
-            const activeNotes = new Set();
-            const activeTouches = new Map(); // touchId -> noteNumber
-            let mouseNote = null;
-
-            // Helper to calculate velocity from Y position in key (Meister's approach)
-            const calculateVelocity = (eventOrTouch, keyY, keyHeight) => {
-                const svgRect = svg.getBoundingClientRect();
-                let clientY;
-
-                if (eventOrTouch.clientY !== undefined) {
-                    clientY = eventOrTouch.clientY;
-                } else if (eventOrTouch.touches && eventOrTouch.touches.length > 0) {
-                    clientY = eventOrTouch.touches[0].clientY;
-                } else {
-                    clientY = 0;
-                }
-
-                const svgY = clientY - svgRect.top;
-                const svgHeightPixels = svgRect.height;
-                const viewBoxY = (svgY / svgHeightPixels) * svgHeight;
-                const relativeY = (viewBoxY - keyY) / keyHeight;
-                const clampedY = Math.max(0, Math.min(1, relativeY));
-                const velocity = Math.round(10 + (clampedY * 117));
-                return Math.max(10, Math.min(127, velocity));
-            };
-
-            // Helper to get note at pointer position (for sliding)
-            const getNoteAtPosition = (eventOrTouch) => {
-                const svgRect = svg.getBoundingClientRect();
-                let clientX, clientY;
-
-                if (eventOrTouch.clientX !== undefined && eventOrTouch.clientY !== undefined) {
-                    clientX = eventOrTouch.clientX;
-                    clientY = eventOrTouch.clientY;
-                } else if (eventOrTouch.touches && eventOrTouch.touches.length > 0) {
-                    clientX = eventOrTouch.touches[0].clientX;
-                    clientY = eventOrTouch.touches[0].clientY;
-                } else {
-                    return null;
-                }
-
-                const element = document.elementFromPoint(clientX, clientY);
-                if (element && element.dataset && element.dataset.noteNumber) {
-                    return {
-                        noteNumber: parseInt(element.dataset.noteNumber),
-                        keyY: parseFloat(element.dataset.keyY),
-                        keyHeight: parseFloat(element.dataset.keyHeight),
-                        path: element
-                    };
-                }
-                return null;
-            };
-
-            // Create white keys for each octave
-            for (let octaveIndex = 0; octaveIndex < numOctaves; octaveIndex++) {
-                const octaveOffset = octaveIndex * 700;
-                const octaveNoteBase = baseNote + (octaveIndex * 12);
-
-                whiteKeys.forEach(({ note, offset }) => {
-                    const noteNumber = octaveNoteBase + offset * 2 + (offset >= 3 ? -1 : 0);
-                    const x = octaveOffset + (offset * whiteKeyWidth);
-                    const keyY = 0;
-
-                    const keyGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                    keyGroup.style.cursor = 'pointer';
-
-                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    const pathData = `M ${x},0 L ${x+whiteKeyWidth},0 L ${x+whiteKeyWidth},${whiteKeyHeight-keyRadius} Q ${x+whiteKeyWidth},${whiteKeyHeight} ${x+whiteKeyWidth-keyRadius},${whiteKeyHeight} L ${x+keyRadius},${whiteKeyHeight} Q ${x},${whiteKeyHeight} ${x},${whiteKeyHeight-keyRadius} Z`;
-                    path.setAttribute('d', pathData);
-                    path.setAttribute('fill', '#f0f0f0');
-                    path.setAttribute('stroke', '#000');
-                    path.setAttribute('stroke-width', '2');
-                    path.dataset.noteNumber = noteNumber;
-                    path.dataset.keyY = keyY;
-                    path.dataset.keyHeight = whiteKeyHeight;
-                    path.dataset.isWhiteKey = 'true';
-
-                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.setAttribute('x', x + whiteKeyWidth / 2);
-                    text.setAttribute('y', whiteKeyHeight - 20);
-                    text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('fill', '#666');
-                    text.setAttribute('font-size', '14');
-                    text.setAttribute('font-family', 'Arial, sans-serif');
-                    text.setAttribute('pointer-events', 'none');
-                    text.textContent = note;
-
-                    keyGroup.appendChild(path);
-                    keyGroup.appendChild(text);
-
-                    // Mouse handlers with sliding support
-                    keyGroup.addEventListener('mousedown', (e) => {
-                        const velocity = calculateVelocity(e, keyY, whiteKeyHeight);
-                        if (mouseNote !== null && mouseNote !== noteNumber) {
-                            const prevPath = svg.querySelector(`[data-note-number="${mouseNote}"]`);
-                            if (prevPath && !Array.from(activeTouches.values()).includes(mouseNote)) {
-                                const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                                prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                            }
-                            activeNotes.delete(mouseNote);
-                            playKeyboardNote(mouseNote, 0, true); // Note off
-                        }
-                        mouseNote = noteNumber;
-                        activeNotes.add(noteNumber);
-                        path.setAttribute('fill', '#CF1A37');
-                        playKeyboardNote(noteNumber, velocity, false); // Note on
-                    });
-
-                    keyGroup.addEventListener('mouseup', () => {
-                        if (mouseNote === noteNumber) {
-                            activeNotes.delete(noteNumber);
-                            if (!Array.from(activeTouches.values()).includes(noteNumber)) {
-                                path.setAttribute('fill', '#f0f0f0');
-                            }
-                            playKeyboardNote(noteNumber, 0, true); // Note off
-                            mouseNote = null;
-                        }
-                    });
-
-                    // Touch handlers with sliding support
-                    keyGroup.addEventListener('touchstart', (e) => {
-                        e.preventDefault();
-                        for (let i = 0; i < e.changedTouches.length; i++) {
-                            const touch = e.changedTouches[i];
-                            const touchId = touch.identifier;
-                            const velocity = calculateVelocity(touch, keyY, whiteKeyHeight);
-
-                            const prevNote = activeTouches.get(touchId);
-                            if (prevNote !== undefined && prevNote !== noteNumber) {
-                                const prevPath = svg.querySelector(`[data-note-number="${prevNote}"]`);
-                                const otherTouchHoldingPrev = Array.from(activeTouches.entries()).some(
-                                    ([id, note]) => id !== touchId && note === prevNote
-                                );
-                                if (prevPath && !otherTouchHoldingPrev && mouseNote !== prevNote) {
-                                    const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                                    prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                                }
-                                activeNotes.delete(prevNote);
-                                playKeyboardNote(prevNote, 0, true); // Note off
-                            }
-
-                            activeTouches.set(touchId, noteNumber);
-                            activeNotes.add(noteNumber);
-                            path.setAttribute('fill', '#CF1A37');
-                            playKeyboardNote(noteNumber, velocity, false); // Note on
-                        }
-                    });
-
-                    keyGroup.addEventListener('touchend', (e) => {
-                        e.preventDefault();
-                        for (let i = 0; i < e.changedTouches.length; i++) {
-                            const touch = e.changedTouches[i];
-                            const touchId = touch.identifier;
-                            const touchNote = activeTouches.get(touchId);
-
-                            if (touchNote === noteNumber) {
-                                activeTouches.delete(touchId);
-                                activeNotes.delete(noteNumber);
-                                if (!Array.from(activeTouches.values()).includes(noteNumber) && mouseNote !== noteNumber) {
-                                    path.setAttribute('fill', '#f0f0f0');
-                                }
-                                playKeyboardNote(noteNumber, 0, true); // Note off
-                            }
-                        }
-                    });
-
-                    svg.appendChild(keyGroup);
-                });
+            // Destroy existing keyboard if it exists
+            if (pianoKeyboard) {
+                pianoKeyboard.destroy();
             }
 
-            // Create black keys for each octave (render on top)
-            for (let octaveIndex = 0; octaveIndex < numOctaves; octaveIndex++) {
-                const octaveOffset = octaveIndex * 700;
-                const octaveNoteBase = baseNote + (octaveIndex * 12);
-
-                blackKeys.forEach(({ note, offset, position }) => {
-                    const noteNumber = octaveNoteBase + offset * 2 + 1 + (offset >= 3 ? -1 : 0);
-                    const x = octaveOffset + position - blackKeyWidth / 2;
-                    const keyY = 0;
-
-                    const keyGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-                    keyGroup.style.cursor = 'pointer';
-
-                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    const pathData = `M ${x},0 L ${x+blackKeyWidth},0 L ${x+blackKeyWidth},${blackKeyHeight-keyRadius} Q ${x+blackKeyWidth},${blackKeyHeight} ${x+blackKeyWidth-keyRadius},${blackKeyHeight} L ${x+keyRadius},${blackKeyHeight} Q ${x},${blackKeyHeight} ${x},${blackKeyHeight-keyRadius} Z`;
-                    path.setAttribute('d', pathData);
-                    path.setAttribute('fill', '#1a1a1a');
-                    path.setAttribute('stroke', '#000');
-                    path.setAttribute('stroke-width', '2');
-                    path.dataset.noteNumber = noteNumber;
-                    path.dataset.keyY = keyY;
-                    path.dataset.keyHeight = blackKeyHeight;
-                    path.dataset.isWhiteKey = 'false';
-
-                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.setAttribute('x', x + blackKeyWidth / 2);
-                    text.setAttribute('y', blackKeyHeight - 10);
-                    text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('fill', '#aaa');
-                    text.setAttribute('font-size', '10');
-                    text.setAttribute('font-family', 'Arial, sans-serif');
-                    text.setAttribute('pointer-events', 'none');
-                    text.textContent = note;
-
-                    keyGroup.appendChild(path);
-                    keyGroup.appendChild(text);
-
-                    // Mouse handlers (same as white keys)
-                    keyGroup.addEventListener('mousedown', (e) => {
-                        const velocity = calculateVelocity(e, keyY, blackKeyHeight);
-                        if (mouseNote !== null && mouseNote !== noteNumber) {
-                            const prevPath = svg.querySelector(`[data-note-number="${mouseNote}"]`);
-                            if (prevPath && !Array.from(activeTouches.values()).includes(mouseNote)) {
-                                const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                                prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                            }
-                            activeNotes.delete(mouseNote);
-                            playKeyboardNote(mouseNote, 0, true);
-                        }
-                        mouseNote = noteNumber;
-                        activeNotes.add(noteNumber);
-                        path.setAttribute('fill', '#CF1A37');
-                        playKeyboardNote(noteNumber, velocity, false);
-                    });
-
-                    keyGroup.addEventListener('mouseup', () => {
-                        if (mouseNote === noteNumber) {
-                            activeNotes.delete(noteNumber);
-                            if (!Array.from(activeTouches.values()).includes(noteNumber)) {
-                                path.setAttribute('fill', '#1a1a1a');
-                            }
-                            playKeyboardNote(noteNumber, 0, true);
-                            mouseNote = null;
-                        }
-                    });
-
-                    // Touch handlers (same as white keys)
-                    keyGroup.addEventListener('touchstart', (e) => {
-                        e.preventDefault();
-                        for (let i = 0; i < e.changedTouches.length; i++) {
-                            const touch = e.changedTouches[i];
-                            const touchId = touch.identifier;
-                            const velocity = calculateVelocity(touch, keyY, blackKeyHeight);
-
-                            const prevNote = activeTouches.get(touchId);
-                            if (prevNote !== undefined && prevNote !== noteNumber) {
-                                const prevPath = svg.querySelector(`[data-note-number="${prevNote}"]`);
-                                const otherTouchHoldingPrev = Array.from(activeTouches.entries()).some(
-                                    ([id, note]) => id !== touchId && note === prevNote
-                                );
-                                if (prevPath && !otherTouchHoldingPrev && mouseNote !== prevNote) {
-                                    const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                                    prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                                }
-                                activeNotes.delete(prevNote);
-                                playKeyboardNote(prevNote, 0, true);
-                            }
-
-                            activeTouches.set(touchId, noteNumber);
-                            activeNotes.add(noteNumber);
-                            path.setAttribute('fill', '#CF1A37');
-                            playKeyboardNote(noteNumber, velocity, false);
-                        }
-                    });
-
-                    keyGroup.addEventListener('touchend', (e) => {
-                        e.preventDefault();
-                        for (let i = 0; i < e.changedTouches.length; i++) {
-                            const touch = e.changedTouches[i];
-                            const touchId = touch.identifier;
-                            const touchNote = activeTouches.get(touchId);
-
-                            if (touchNote === noteNumber) {
-                                activeTouches.delete(touchId);
-                                activeNotes.delete(noteNumber);
-                                if (!Array.from(activeTouches.values()).includes(noteNumber) && mouseNote !== noteNumber) {
-                                    path.setAttribute('fill', '#1a1a1a');
-                                }
-                                playKeyboardNote(noteNumber, 0, true);
-                            }
-                        }
-                    });
-
-                    svg.appendChild(keyGroup);
-                });
-            }
-
-            // Global mouse move handler for sliding between keys (Meister's approach)
-            svg.addEventListener('mousemove', (e) => {
-                if (mouseNote === null) return;
-
-                const keyInfo = getNoteAtPosition(e);
-                if (keyInfo && keyInfo.noteNumber !== mouseNote) {
-                    const velocity = calculateVelocity(e, keyInfo.keyY, keyInfo.keyHeight);
-
-                    const prevPath = svg.querySelector(`[data-note-number="${mouseNote}"]`);
-                    if (prevPath && !Array.from(activeTouches.values()).includes(mouseNote)) {
-                        const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                        prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                    }
-                    activeNotes.delete(mouseNote);
-                    playKeyboardNote(mouseNote, 0, true);
-
-                    mouseNote = keyInfo.noteNumber;
-                    activeNotes.add(keyInfo.noteNumber);
-                    keyInfo.path.setAttribute('fill', '#CF1A37');
-                    playKeyboardNote(keyInfo.noteNumber, velocity, false);
-                }
+            // Create new PianoKeyboard component
+            pianoKeyboard = new PianoKeyboard('pianoKeyboard', {
+                octaves: 2,
+                baseOctave: keyboardOctave,
+                showLabels: true,
+                enableTouch: true,
+                enableMouse: true
             });
 
-            // Global touch move handler for sliding between keys (Meister's approach - polyphonic)
-            svg.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                for (let i = 0; i < e.touches.length; i++) {
-                    const touch = e.touches[i];
-                    const touchId = touch.identifier;
-                    const prevNote = activeTouches.get(touchId);
+            // Connect keyboard events to synth
+            pianoKeyboard.addEventListener('noteon', (e) => {
+                playKeyboardNote(e.detail.note, e.detail.velocity, false);
+            });
 
-                    if (prevNote === undefined) continue;
-
-                    const keyInfo = getNoteAtPosition(touch);
-                    if (keyInfo && keyInfo.noteNumber !== prevNote) {
-                        const velocity = calculateVelocity(touch, keyInfo.keyY, keyInfo.keyHeight);
-
-                        const prevPath = svg.querySelector(`[data-note-number="${prevNote}"]`);
-                        const otherTouchHoldingPrev = Array.from(activeTouches.entries()).some(
-                            ([id, note]) => id !== touchId && note === prevNote
-                        );
-                        if (prevPath && !otherTouchHoldingPrev && mouseNote !== prevNote) {
-                            const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                            prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                        }
-                        activeNotes.delete(prevNote);
-                        playKeyboardNote(prevNote, 0, true);
-
-                        activeTouches.set(touchId, keyInfo.noteNumber);
-                        activeNotes.add(keyInfo.noteNumber);
-                        keyInfo.path.setAttribute('fill', '#CF1A37');
-                        playKeyboardNote(keyInfo.noteNumber, velocity, false);
-                    }
-                }
-            }, { passive: false });
-
-            // Global mouse up handler to catch releases outside keys
-            const globalMouseUp = () => {
-                if (mouseNote !== null) {
-                    const prevPath = svg.querySelector(`[data-note-number="${mouseNote}"]`);
-                    if (prevPath && !Array.from(activeTouches.values()).includes(mouseNote)) {
-                        const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                        prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                    }
-                    activeNotes.delete(mouseNote);
-                    playKeyboardNote(mouseNote, 0, true);
-                    mouseNote = null;
-                }
-            };
-
-            // Global touch end handler to catch releases outside keys
-            const globalTouchEnd = (e) => {
-                for (let i = 0; i < e.changedTouches.length; i++) {
-                    const touch = e.changedTouches[i];
-                    const touchId = touch.identifier;
-                    const touchNote = activeTouches.get(touchId);
-
-                    if (touchNote !== undefined) {
-                        activeTouches.delete(touchId);
-                        activeNotes.delete(touchNote);
-
-                        const prevPath = svg.querySelector(`[data-note-number="${touchNote}"]`);
-                        if (prevPath && !Array.from(activeTouches.values()).includes(touchNote) && mouseNote !== touchNote) {
-                            const isWhite = prevPath.dataset.isWhiteKey === 'true';
-                            prevPath.setAttribute('fill', isWhite ? '#f0f0f0' : '#1a1a1a');
-                        }
-                        playKeyboardNote(touchNote, 0, true);
-                    }
-                }
-            };
-
-            // Store cleanup function for when keyboard is hidden/rebuilt
-            svg.cleanup = () => {
-                document.removeEventListener('mouseup', globalMouseUp);
-                document.removeEventListener('touchend', globalTouchEnd);
-            };
-
-            document.addEventListener('mouseup', globalMouseUp);
-            document.addEventListener('touchend', globalTouchEnd);
-
-            keyboardEl.appendChild(svg);
+            pianoKeyboard.addEventListener('noteoff', (e) => {
+                playKeyboardNote(e.detail.note, 0, true);
+            });
         }
 
         function playKeyboardNote(note, velocity, isNoteOff = false) {

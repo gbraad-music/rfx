@@ -83,6 +83,8 @@ SOURCES="$SOURCES ../../synth/synth_sid.c"
 SOURCES="$SOURCES ../../synth/ahx_synth_core.c"
 SOURCES="$SOURCES ../../synth/ahx_instrument.c"
 SOURCES="$SOURCES ../../synth/ahx_preset.c"
+SOURCES="$SOURCES ../../synth/ahx_plist.c"
+SOURCES="$SOURCES ../../synth/ahx_waves.c"
 
 # CPU emulation for SID
 SOURCES="$SOURCES ../../common/cpu_6502.c"

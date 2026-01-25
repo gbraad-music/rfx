@@ -274,6 +274,11 @@ void ahx_synth_voice_note_on(AhxSynthVoice* voice, uint8_t note, uint8_t velocit
     voice->FilterWait = 0;
     voice->SquareWait = 0;
 
+    // Reset filter position and ignore flags (authentic AHX from ahx_player.c:819-821)
+    voice->FilterPos = 32;         // Reset to neutral (no filtering)
+    voice->IgnoreFilter = 0;       // Clear ignore flag
+    voice->IgnoreSquare = 0;       // Clear ignore flag
+
     // Setup hard cut release
     voice->HardCutRelease = voice->Instrument->HardCutRelease;
     voice->HardCutReleaseF = voice->Instrument->HardCutReleaseFrames;

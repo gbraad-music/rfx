@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rfx-effects-v198';
+const CACHE_NAME = 'rfx-effects-v199';
 const ASSETS = [
     './',
     './index.html',
@@ -11,9 +11,10 @@ const ASSETS = [
     './apple-touch-icon.png',
     './icon-192x192.png',
     './icon-512x512.png',
-    './effects.js',
-    './regroove-effects.js',
-    './regroove-effects.wasm',
+    './player.js',
+    './synth.js',
+    './players/regroove-effects.js',
+    './players/regroove-effects.wasm',
     // Web UI components
     './components/pad-knob.js',
     './components/svg-slider.js',

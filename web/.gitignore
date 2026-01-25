@@ -1,9 +1,5 @@
-# Generated files from Emscripten build
-regroove-effects.js
-regroove-effects.wasm
+# Generated files
 *.js.mem
-
-# Synth WASM files (copied from plugins/ during build)
 synths/
 players/
 

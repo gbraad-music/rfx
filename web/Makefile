@@ -28,7 +28,7 @@ SOURCES = $(EFFECTS_DIR)/fx_distortion.c \
           $(EFFECTS_DIR)/fx_model1_sculpt.c \
           wasm_bindings.c
 
-OUTPUT = regroove-effects.js
+OUTPUT = players/regroove-effects.js
 
 # Exported functions
 EXPORTED_FUNCTIONS = \
@@ -121,11 +121,12 @@ EXPORTED_FUNCTIONS = \
 all: $(OUTPUT) synths
 
 $(OUTPUT): $(SOURCES)
+	@mkdir -p players
 	$(CC) $(CFLAGS) $(EXPORTED_FUNCTIONS) $(SOURCES) -o $(OUTPUT)
 	@echo "[BUILD] WASM effects built with non-minified function names"
 	@echo "[COPY] Copying drop-in files to revision project..."
 	@if [ -d ~/Projects/revision/effects ]; then \
-		cp regroove-effects.wasm regroove-effects.js worklets/audio-worklet-processor.js ~/Projects/revision/effects/ && \
+		cp players/regroove-effects.wasm players/regroove-effects.js worklets/audio-worklet-processor.js ~/Projects/revision/effects/ && \
 		echo "  [OK] Copied to ~/Projects/revision/effects/"; \
 	fi
 
@@ -165,7 +166,6 @@ synths:
 	@echo "[DONE] Synth files ready for deployment"
 
 clean:
-	rm -f $(OUTPUT) regroove-effects.wasm
-	rm -rf synths
+	rm -f $(OUTPUT) players/regroove-effects.wasm
 
 .PHONY: all synths clean

@@ -119,19 +119,63 @@ async function init() {
   // RGSID parameter controls (now auto-generated, no setup needed!)
   // setupRGSIDControls(); // OLD - manual controls
 
-  // Drum pads
+  // Drum pads with multi-touch support
   document.querySelectorAll(".drum-pad").forEach((pad) => {
-    pad.addEventListener("mousedown", () => {
+    let isPressed = false;
+    let activeTouches = new Set();
+
+    const handlePress = (e) => {
+      e.preventDefault();
       const note = parseInt(pad.dataset.note);
-      triggerDrum(note);
-      pad.classList.add("active");
-    });
-    pad.addEventListener("mouseup", () => {
-      pad.classList.remove("active");
-    });
-    pad.addEventListener("mouseleave", () => {
-      pad.classList.remove("active");
-    });
+      
+      if (e.type === 'touchstart') {
+        // Track each touch independently for multi-touch
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          if (!activeTouches.has(touch.identifier)) {
+            activeTouches.add(touch.identifier);
+            if (activeTouches.size === 1) {
+              triggerDrum(note);
+              pad.classList.add("active");
+            }
+          }
+        }
+      } else {
+        // Mouse event
+        if (!isPressed) {
+          isPressed = true;
+          triggerDrum(note);
+          pad.classList.add("active");
+        }
+      }
+    };
+
+    const handleRelease = (e) => {
+      e.preventDefault();
+      
+      if (e.type === 'touchend' || e.type === 'touchcancel') {
+        // Remove touches that ended
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const touch = e.changedTouches[i];
+          activeTouches.delete(touch.identifier);
+        }
+        // Only deactivate visual when all touches are gone
+        if (activeTouches.size === 0) {
+          pad.classList.remove("active");
+        }
+      } else {
+        // Mouse event
+        isPressed = false;
+        pad.classList.remove("active");
+      }
+    };
+
+    pad.addEventListener("mousedown", handlePress);
+    pad.addEventListener("mouseup", handleRelease);
+    pad.addEventListener("mouseleave", handleRelease);
+    pad.addEventListener("touchstart", handlePress, { passive: false });
+    pad.addEventListener("touchend", handleRelease, { passive: false });
+    pad.addEventListener("touchcancel", handleRelease, { passive: false });
   });
 
   // On-screen keyboard

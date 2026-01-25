@@ -677,6 +677,7 @@ pad-knob {
     justify-content: center;
     cursor: pointer;
     user-select: none;
+    touch-action: none;
     transition: all 0.1s;
 }
 

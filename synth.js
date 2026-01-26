@@ -745,6 +745,44 @@ function visualize() {
 
     barX += barWidth + 1;
   }
+
+  // Draw to popup windows if open
+  if (window.popupWindows && window.popupWindows.size > 0) {
+    window.popupWindows.forEach((popupData, canvasId) => {
+      if (popupData.window.closed) return;
+      const ctx = popupData.canvas.getContext('2d');
+
+      if (canvasId === 'waveform') {
+        ctx.fillStyle = "#0a0a0a";
+        ctx.fillRect(0, 0, popupData.canvas.width, popupData.canvas.height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "#CF1A37";
+        ctx.beginPath();
+        const sw = popupData.canvas.width / waveformData.length;
+        let px = 0;
+        for (let i = 0; i < waveformData.length; i++) {
+          const v = waveformData[i] / 128.0;
+          const py = (v * popupData.canvas.height) / 2;
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+          px += sw;
+        }
+        ctx.lineTo(popupData.canvas.width, popupData.canvas.height / 2);
+        ctx.stroke();
+      } else if (canvasId === 'spectrum') {
+        ctx.fillStyle = "#0a0a0a";
+        ctx.fillRect(0, 0, popupData.canvas.width, popupData.canvas.height);
+        const bw = (popupData.canvas.width / frequencyData.length) * 2.5;
+        let bx = 0;
+        for (let i = 0; i < frequencyData.length; i++) {
+          const bh = (frequencyData[i] / 255) * popupData.canvas.height;
+          const hue = (i / frequencyData.length) * 120;
+          ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+          ctx.fillRect(bx, popupData.canvas.height - bh, bw, bh);
+          bx += bw + 1;
+        }
+      }
+    });
+  }
 }
 
 // WAV file encoding

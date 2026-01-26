@@ -28,8 +28,8 @@
 
                 <div class="controls-grid">
                     <div class="file-input">
-                        <button>📁 Load File</button>
-                        <input type="file" id="audioFile" accept="*">
+                        <button>📁 Load File(s)</button>
+                        <input type="file" id="audioFile" accept="*" multiple>
                     </div>
 
                     <button id="micBtn">🎤 Input/Mic</button>
@@ -51,8 +51,14 @@
                     <select id="micDeviceList" style="display: none;">
                         <option value="">Select Microphone...</option>
                     </select>
-                    <div id="currentFileName" style="display: none; color: var(--text-primary); font-size: 0.85em; padding: 10px 15px; background: var(--bg-tertiary); border: 1px solid var(--border); letter-spacing: 1px; font-family: Arial, sans-serif; box-sizing: border-box; min-height: 38px;">
-                        <span style="color: var(--text-secondary); text-transform: uppercase;">Playing:</span> <span id="fileNameText"></span>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: nowrap;">
+                        <div id="currentFileName" style="display: none; color: var(--text-primary); font-size: 0.85em; padding: 10px 15px; background: var(--bg-tertiary); border: 1px solid var(--border); letter-spacing: 1px; font-family: Arial, sans-serif; box-sizing: border-box; min-height: 38px; flex: 1; min-width: 0; overflow: hidden;">
+                            <span style="color: var(--text-secondary); text-transform: uppercase;">Playing:</span> <span id="fileNameText" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; vertical-align: bottom;"></span>
+                        </div>
+                        <div id="playlistNavButtons" style="display: none; gap: 5px; align-items: center; flex-shrink: 0;">
+                            <button id="btnPrevTrackTop" title="Previous Track">◄ Prev</button>
+                            <button id="btnNextTrackTop" title="Next Track">Next ►</button>
+                        </div>
                     </div>
                 </div>
 
@@ -104,6 +110,21 @@
                     <select id="outputDeviceList" style="width: 120px; font-size: 0.6em; padding: 4px 6px;">
                         <option value="">Default Output</option>
                     </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Playlist Section (shown when multiple files loaded) -->
+        <div id="playlistSection" class="control-section" style="display: none;">
+            <div class="section-title" style="cursor: pointer; user-select: none; display: flex; align-items: center; justify-content: space-between;" id="playlistSectionTitle">
+                <span>Playlist (<span id="totalTracks">0</span> tracks)</span>
+                <span id="playlistToggle" style="font-size: 0.8em; transition: transform 0.3s;">▼</span>
+            </div>
+
+            <div id="playlistContent" style="overflow: hidden; transition: max-height 0.3s ease-out;">
+                <!-- Track list -->
+                <div id="playlistTrackList" style="margin-top: 15px; max-height: 300px; overflow-y: auto; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; padding: 10px;">
+                    <!-- Tracks will be inserted here -->
                 </div>
             </div>
         </div>
@@ -223,36 +244,254 @@
 
     <!-- Fullscreen Scope Functionality -->
     <script>
-        // Enable fullscreen for all visualizer containers - run immediately
+        // Track popup windows for each visualizer
+        const popupWindows = new Map();
+        window.popupWindows = popupWindows; // Expose globally for player.js
+        let videoPopupWindow = null;
+
+        // Pop-out video to separate window
+        function popOutVideo(videoElement) {
+            if (!videoElement) {
+                console.error('[PopOut] No video element provided');
+                return;
+            }
+
+            // Don't open duplicate video popups
+            if (videoPopupWindow && !videoPopupWindow.closed) {
+                videoPopupWindow.focus();
+                return;
+            }
+
+            const popup = window.open('', 'video_popup', 'width=1280,height=720,resizable=yes,scrollbars=no,location=no,menubar=no,status=no,toolbar=no');
+            if (!popup) {
+                alert('Pop-up blocked! Please allow pop-ups for this site.');
+                return;
+            }
+
+            popup.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Video Player - Regroove</title>
+                    <style>
+                        body {
+                            margin: 0;
+                            background: #0a0a0a;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            overflow: hidden;
+                        }
+                        video {
+                            max-width: 100%;
+                            max-height: 100vh;
+                            display: block;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <video id="video_popup" controls autoplay></video>
+                </body>
+                </html>
+            `);
+            popup.document.close();
+
+            const popupVideo = popup.document.getElementById('video_popup');
+
+            // Sync video source and current time
+            popupVideo.src = videoElement.src;
+            popupVideo.currentTime = videoElement.currentTime;
+
+            // Sync playback state
+            if (!videoElement.paused) {
+                popupVideo.play();
+            }
+
+            videoPopupWindow = popup;
+            console.log('[PopOut] Opened video in new window');
+
+            // Handle popup close
+            popup.addEventListener('beforeunload', () => {
+                videoPopupWindow = null;
+                console.log('[PopOut] Closed video popup');
+            });
+
+            // Sync playback between main and popup
+            const syncToPopup = () => {
+                if (!popup.closed && popupVideo) {
+                    popupVideo.currentTime = videoElement.currentTime;
+                    if (videoElement.paused && !popupVideo.paused) {
+                        popupVideo.pause();
+                    } else if (!videoElement.paused && popupVideo.paused) {
+                        popupVideo.play();
+                    }
+                }
+            };
+
+            const syncFromPopup = () => {
+                if (!popup.closed && popupVideo) {
+                    videoElement.currentTime = popupVideo.currentTime;
+                    if (popupVideo.paused && !videoElement.paused) {
+                        videoElement.pause();
+                    } else if (!popupVideo.paused && videoElement.paused) {
+                        videoElement.play();
+                    }
+                }
+            };
+
+            // Sync every second
+            const syncInterval = setInterval(() => {
+                if (popup.closed) {
+                    clearInterval(syncInterval);
+                    return;
+                }
+                syncToPopup();
+            }, 1000);
+
+            // Sync on popup events
+            popupVideo.addEventListener('play', syncFromPopup);
+            popupVideo.addEventListener('pause', syncFromPopup);
+            popupVideo.addEventListener('seeked', syncFromPopup);
+        }
+
+        // Expose globally
+        window.popOutVideo = popOutVideo;
+
+        // Pop-out visualizer using Picture-in-Picture API
+        async function popOutVisualizer(container) {
+            const canvas = container.querySelector('canvas');
+            if (!canvas) {
+                console.error('[PIP] No canvas found in container');
+                return;
+            }
+
+            const canvasId = canvas.id;
+            console.log(`[PIP] Attempting to pop out: ${canvasId}`);
+
+            // Check if already in PIP mode
+            if (popupWindows.has(canvasId)) {
+                console.log(`[PIP] ${canvasId} already in PIP mode`);
+                return;
+            }
+
+            // Check if browser supports PIP
+            if (!document.pictureInPictureEnabled) {
+                alert('Picture-in-Picture is not supported in your browser');
+                console.error('[PIP] PIP not supported');
+                return;
+            }
+
+            try {
+                // Create a video element to host the canvas stream
+                const video = document.createElement('video');
+                video.muted = true;
+                video.autoplay = true;
+                video.playsInline = true;
+
+                // Capture canvas as a video stream
+                const stream = canvas.captureStream(30); // 30 FPS
+                video.srcObject = stream;
+
+                // Wait for video to be ready
+                await video.play();
+
+                // Request Picture-in-Picture
+                const pipWindow = await video.requestPictureInPicture();
+
+                console.log(`[PIP] ${canvasId} entered PIP mode`);
+                console.log(`[PIP] PIP window size: ${pipWindow.width}x${pipWindow.height}`);
+
+                // Store reference
+                popupWindows.set(canvasId, {
+                    video: video,
+                    stream: stream,
+                    pipWindow: pipWindow
+                });
+
+                // Handle PIP exit
+                video.addEventListener('leavepictureinpicture', () => {
+                    console.log(`[PIP] ${canvasId} left PIP mode`);
+
+                    // Stop the stream
+                    const tracks = stream.getTracks();
+                    tracks.forEach(track => track.stop());
+
+                    // Remove video element
+                    video.remove();
+
+                    // Clean up reference
+                    popupWindows.delete(canvasId);
+                }, { once: true });
+
+            } catch (error) {
+                console.error('[PIP] Failed to enter PIP mode:', error);
+                alert('Failed to enter Picture-in-Picture mode: ' + error.message);
+            }
+        }
+
+        // Enable fullscreen and pop-out for all visualizer containers
         function setupFullscreen() {
             const containers = document.querySelectorAll('.visualizer-container');
-            console.log('Setting up fullscreen for', containers.length, 'containers');
+            console.log('[Fullscreen Setup] Found', containers.length, 'visualizer containers');
 
             containers.forEach((container, idx) => {
-                // Single click to toggle fullscreen (double-click is confusing)
-                container.addEventListener('click', (e) => {
-                    // Ignore if clicking on canvas during animation
-                    if (e.target !== container && e.target.tagName !== 'CANVAS') return;
+                // Check if buttons already exist
+                if (container.querySelector('.viz-popout-btn')) {
+                    console.log(`[Fullscreen Setup] Container ${idx} already has buttons, skipping`);
+                    return;
+                }
 
+                // Add pop-out button
+                const popoutBtn = document.createElement('button');
+                popoutBtn.className = 'viz-popout-btn';
+                popoutBtn.textContent = '⧉';
+                popoutBtn.title = 'Pop out (PIP mode)';
+                popoutBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    popOutVisualizer(container);
+                });
+                container.appendChild(popoutBtn);
+                console.log(`[Fullscreen Setup] Added ⧉ button to container ${idx}`);
+
+                // Add fullscreen button
+                const fullscreenBtn = document.createElement('button');
+                fullscreenBtn.className = 'viz-fullscreen-btn';
+                fullscreenBtn.textContent = '⛶';
+                fullscreenBtn.title = 'Fullscreen';
+                fullscreenBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (document.fullscreenElement === container) {
-                        // Exit fullscreen
                         document.exitFullscreen();
                     } else {
-                        // Enter fullscreen
                         if (container.requestFullscreen) {
                             container.requestFullscreen();
                         } else if (container.webkitRequestFullscreen) {
-                            container.webkitRequestFullscreen(); // Safari
+                            container.webkitRequestFullscreen();
                         } else if (container.msRequestFullscreen) {
-                            container.msRequestFullscreen(); // IE11
+                            container.msRequestFullscreen();
+                        }
+                    }
+                });
+                container.appendChild(fullscreenBtn);
+                console.log(`[Fullscreen Setup] Added ⛶ button to container ${idx}`);
+
+                // Allow clicking canvas for fullscreen (legacy behavior)
+                container.addEventListener('click', (e) => {
+                    if (e.target === container || e.target.tagName === 'CANVAS') {
+                        if (document.fullscreenElement === container) {
+                            document.exitFullscreen();
+                        } else {
+                            if (container.requestFullscreen) {
+                                container.requestFullscreen();
+                            }
                         }
                     }
                 });
 
-                // Add title for user hint
-                container.title = 'Click for fullscreen';
-                console.log('Attached fullscreen to container', idx);
+                console.log(`[Fullscreen Setup] Fully configured container ${idx}`);
             });
+
+            console.log('[Fullscreen Setup] All containers configured');
 
             // Handle resize when entering/exiting fullscreen
             let previousFullscreenElement = null;
@@ -292,15 +531,27 @@
             });
         }
 
+        // Expose globally
+        window.setupFullscreen = setupFullscreen;
+
         // Run after effects.js loads
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', setupFullscreen);
+            console.log('[Fullscreen Setup] Waiting for DOMContentLoaded...');
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('[Fullscreen Setup] DOMContentLoaded fired, running setupFullscreen');
+                setupFullscreen();
+            });
         } else {
+            console.log('[Fullscreen Setup] DOM already loaded, running setupFullscreen immediately');
             setupFullscreen();
         }
 
         // Also try after a delay to ensure canvases are created
-        setTimeout(setupFullscreen, 1000);
+        console.log('[Fullscreen Setup] Will retry after 1 second...');
+        setTimeout(() => {
+            console.log('[Fullscreen Setup] 1 second delay complete, running setupFullscreen again');
+            setupFullscreen();
+        }, 1000);
     </script>
 </body>
 </html>

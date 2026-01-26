@@ -328,13 +328,6 @@ button:disabled:hover {
     max-height: 100vh;
 }
 
-.visualizer-container:fullscreen .freq-viz {
-    width: 100vw !important;
-    height: 100vh !important;
-    padding: 20px;
-    box-sizing: border-box;
-}
-
 /* Visualizer control buttons */
 .viz-popout-btn,
 .viz-fullscreen-btn {
@@ -826,35 +819,7 @@ pad-knob {
     margin-bottom: 15px;
 }
 
-.freq-viz {
-    display: flex;
-    gap: 10px;
-    height: 150px;
-    align-items: flex-end;
-    background: var(--bg-primary);
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-}
-
-.freq-bar {
-    flex: 1;
-    background: linear-gradient(to top, #CF1A37, #ff3333);
-    min-height: 2px;
-    border-radius: 2px;
-    transition: height 0.1s;
-    position: relative;
-}
-
-.freq-label {
-    position: absolute;
-    bottom: -20px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 10px;
-    color: #666;
-    white-space: nowrap;
-}
+/* freq-viz is now a canvas visualizer - DIV styles removed */
 
 .drum-pads {
     display: grid;

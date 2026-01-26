@@ -18,11 +18,12 @@ let pianoKeyboard = null;
 const midiInput = document.getElementById("midiInput");
 const midiStatus = document.getElementById("midiStatus");
 const synthStatus = document.getElementById("synthStatus");
-const bassBar = document.getElementById("bassBar");
-const midBar = document.getElementById("midBar");
-const highBar = document.getElementById("highBar");
+const freqVizCanvas = document.getElementById("freq-viz");
 const waveformCanvas = document.getElementById("waveform");
 const spectrumCanvas = document.getElementById("spectrum");
+
+// Visualization components
+let freqBarsComponent = null;
 
 // Initialize
 async function init() {
@@ -676,9 +677,9 @@ function stopAllNotes() {
 }
 
 function updateFrequencyBars(bands) {
-  bassBar.style.height = bands.bass * 100 + "%";
-  midBar.style.height = bands.mid * 100 + "%";
-  highBar.style.height = bands.high * 100 + "%";
+  if (freqBarsComponent) {
+    freqBarsComponent.draw(bands);
+  }
 }
 
 function visualize() {
@@ -746,16 +747,62 @@ function visualize() {
     barX += barWidth + 1;
   }
 
+  // Frequency Bars (Bass, Mid, High) - calculate directly from analyser
+  if (freqBarsComponent) {
+    // Calculate frequency bands from raw analyser data
+    const nyquist = audioContext.sampleRate / 2;
+    const binCount = frequencyData.length;
+    const binWidth = nyquist / binCount;
+
+    // Define frequency ranges (Hz)
+    const bassMax = 250;
+    const midMax = 2000;
+    const highMax = nyquist;
+
+    // Calculate bins for each range
+    const bassBins = Math.floor(bassMax / binWidth);
+    const midBins = Math.floor(midMax / binWidth);
+
+    // Calculate average amplitude for each band
+    let bassSum = 0, midSum = 0, highSum = 0;
+    let bassCount = 0, midCount = 0, highCount = 0;
+
+    for (let i = 0; i < binCount; i++) {
+      if (i < bassBins) {
+        bassSum += frequencyData[i];
+        bassCount++;
+      } else if (i < midBins) {
+        midSum += frequencyData[i];
+        midCount++;
+      } else {
+        highSum += frequencyData[i];
+        highCount++;
+      }
+    }
+
+    const bands = {
+      bass: bassCount > 0 ? (bassSum / bassCount) / 255 : 0,
+      mid: midCount > 0 ? (midSum / midCount) / 255 : 0,
+      high: highCount > 0 ? (highSum / highCount) / 255 : 0
+    };
+
+    // Draw frequency bars every frame (smooth & responsive)
+    freqBarsComponent.draw(bands);
+  }
+
   // Draw to popup windows if open
   if (window.popupWindows && window.popupWindows.size > 0) {
     window.popupWindows.forEach((popupData, canvasId) => {
+      // Check if popup is still open
       if (popupData.window.closed) {
         window.popupWindows.delete(canvasId);
         return;
       }
+
       const ctx = popupData.canvas.getContext('2d');
 
       if (canvasId === 'waveform') {
+        // Draw waveform to popup canvas
         ctx.fillStyle = "#0a0a0a";
         ctx.fillRect(0, 0, popupData.canvas.width, popupData.canvas.height);
         ctx.lineWidth = 2;
@@ -772,57 +819,90 @@ function visualize() {
         ctx.lineTo(popupData.canvas.width, popupData.canvas.height / 2);
         ctx.stroke();
       } else if (canvasId === 'spectrum') {
+        // Draw spectrum to popup canvas
         ctx.fillStyle = "#0a0a0a";
         ctx.fillRect(0, 0, popupData.canvas.width, popupData.canvas.height);
         const bw = (popupData.canvas.width / frequencyData.length) * 2.5;
         let bx = 0;
         for (let i = 0; i < frequencyData.length; i++) {
           const bh = (frequencyData[i] / 255) * popupData.canvas.height;
-          // REGROOVE signature red
           ctx.fillStyle = `rgb(207, 26, 55)`;
           ctx.fillRect(bx, popupData.canvas.height - bh, bw, bh);
           bx += bw + 1;
         }
       } else if (canvasId === 'freq-viz') {
-        // Draw frequency bars to popup canvas
-        ctx.fillStyle = "#0a0a0a";
-        ctx.fillRect(0, 0, popupData.canvas.width, popupData.canvas.height);
-        
-        const bands = getFrequencyBands(analyser);
-        const barWidth = popupData.canvas.width / 3;
-        const barGap = 10;
-        
-        // Bass bar
-        const bassHeight = bands.bass * popupData.canvas.height;
-        const gradient1 = ctx.createLinearGradient(0, popupData.canvas.height, 0, popupData.canvas.height - bassHeight);
-        gradient1.addColorStop(0, '#CF1A37');
-        gradient1.addColorStop(1, '#ff3333');
-        ctx.fillStyle = gradient1;
-        ctx.fillRect(barGap, popupData.canvas.height - bassHeight, barWidth - barGap * 2, bassHeight);
-        
-        // Mid bar
-        const midHeight = bands.mid * popupData.canvas.height;
-        const gradient2 = ctx.createLinearGradient(0, popupData.canvas.height, 0, popupData.canvas.height - midHeight);
-        gradient2.addColorStop(0, '#CF1A37');
-        gradient2.addColorStop(1, '#ff3333');
-        ctx.fillStyle = gradient2;
-        ctx.fillRect(barWidth + barGap, popupData.canvas.height - midHeight, barWidth - barGap * 2, midHeight);
-        
-        // High bar
-        const highHeight = bands.high * popupData.canvas.height;
-        const gradient3 = ctx.createLinearGradient(0, popupData.canvas.height, 0, popupData.canvas.height - highHeight);
-        gradient3.addColorStop(0, '#CF1A37');
-        gradient3.addColorStop(1, '#ff3333');
-        ctx.fillStyle = gradient3;
-        ctx.fillRect(barWidth * 2 + barGap, popupData.canvas.height - highHeight, barWidth - barGap * 2, highHeight);
-        
-        // Labels
-        ctx.fillStyle = '#666';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('Bass', barWidth / 2, popupData.canvas.height - 5);
-        ctx.fillText('Mid', barWidth * 1.5, popupData.canvas.height - 5);
-        ctx.fillText('High', barWidth * 2.5, popupData.canvas.height - 5);
+        // Draw frequency bars to popup canvas using component
+        if (freqBarsComponent) {
+          // Use the already-smoothed current bands (don't re-smooth for popup)
+          const popupCanvas = popupData.canvas;
+          const padding = 10;
+          const innerWidth = popupCanvas.width - padding * 2;
+          const innerHeight = popupCanvas.height - padding * 2;
+          const labelHeight = 20;
+          const barAreaHeight = innerHeight - labelHeight;
+          const barGap = 10;
+          const barWidth = (innerWidth - barGap * 2) / 3;
+          const barX = [
+            padding + barGap / 2,
+            padding + barWidth + barGap * 1.5,
+            padding + barWidth * 2 + barGap * 2.5
+          ];
+
+          // Clear background
+          ctx.fillStyle = "#0a0a0a";
+          ctx.fillRect(0, 0, popupCanvas.width, popupCanvas.height);
+
+          const drawRoundedBar = (x, height, gradient) => {
+            const y = padding + barAreaHeight - height;
+            const cornerRadius = 2;
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.moveTo(x + cornerRadius, y);
+            ctx.lineTo(x + barWidth - cornerRadius, y);
+            ctx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + cornerRadius);
+            ctx.lineTo(x + barWidth, padding + barAreaHeight - cornerRadius);
+            ctx.quadraticCurveTo(x + barWidth, padding + barAreaHeight, x + barWidth - cornerRadius, padding + barAreaHeight);
+            ctx.lineTo(x + cornerRadius, padding + barAreaHeight);
+            ctx.quadraticCurveTo(x, padding + barAreaHeight, x, padding + barAreaHeight - cornerRadius);
+            ctx.lineTo(x, y + cornerRadius);
+            ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
+            ctx.closePath();
+            ctx.fill();
+          };
+
+          // Use already-smoothed current bands
+          const cb = freqBarsComponent.currentBands;
+
+          // Bass bar
+          const bassHeight = Math.max(2, cb.bass * barAreaHeight);
+          const gradient1 = ctx.createLinearGradient(0, padding + barAreaHeight, 0, padding + barAreaHeight - bassHeight);
+          gradient1.addColorStop(0, '#CF1A37');
+          gradient1.addColorStop(1, '#ff3333');
+          drawRoundedBar(barX[0], bassHeight, gradient1);
+
+          // Mid bar
+          const midHeight = Math.max(2, cb.mid * barAreaHeight);
+          const gradient2 = ctx.createLinearGradient(0, padding + barAreaHeight, 0, padding + barAreaHeight - midHeight);
+          gradient2.addColorStop(0, '#CF1A37');
+          gradient2.addColorStop(1, '#ff3333');
+          drawRoundedBar(barX[1], midHeight, gradient2);
+
+          // High bar
+          const highHeight = Math.max(2, cb.high * barAreaHeight);
+          const gradient3 = ctx.createLinearGradient(0, padding + barAreaHeight, 0, padding + barAreaHeight - highHeight);
+          gradient3.addColorStop(0, '#CF1A37');
+          gradient3.addColorStop(1, '#ff3333');
+          drawRoundedBar(barX[2], highHeight, gradient3);
+
+          // Labels
+          ctx.fillStyle = '#666';
+          ctx.font = '10px Arial';
+          ctx.textAlign = 'center';
+          const labelY = padding + barAreaHeight + labelHeight / 2 + 3;
+          ctx.fillText('Bass', barX[0] + barWidth / 2, labelY);
+          ctx.fillText('Mid', barX[1] + barWidth / 2, labelY);
+          ctx.fillText('High', barX[2] + barWidth / 2, labelY);
+        }
       }
     });
   }
@@ -2063,6 +2143,29 @@ window.addEventListener("preset_imported", (event) => {
 // Initialize on load
 window.addEventListener("load", () => {
   init();
+
+  // Initialize visualization components
+  if (freqVizCanvas) {
+    freqBarsComponent = new FrequencyBarsCanvas('freq-viz');
+    console.log('[Synth] Frequency bars component initialized');
+  }
+
+  // Resize canvases
+  if (freqVizCanvas) {
+    freqVizCanvas.width = freqVizCanvas.offsetWidth;
+    freqVizCanvas.height = freqVizCanvas.offsetHeight;
+  }
+  if (waveformCanvas) {
+    waveformCanvas.width = waveformCanvas.offsetWidth;
+    waveformCanvas.height = waveformCanvas.offsetHeight;
+  }
+  if (spectrumCanvas) {
+    spectrumCanvas.width = spectrumCanvas.offsetWidth;
+    spectrumCanvas.height = spectrumCanvas.offsetHeight;
+  }
+
+  // Start visualization loop
+  visualize();
 
   // Setup volume control
   const synthGainFader = document.getElementById("synthGainFader");

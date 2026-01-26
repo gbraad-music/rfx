@@ -18,18 +18,8 @@
             <div class="section" style="margin-bottom: 0;">
                 <div class="section-title">Audio Analysis</div>
                 <div class="viz-container">
-                    <div class="visualizer-container freq-viz-container">
-                        <div class="freq-viz">
-                            <div class="freq-bar" id="bassBar">
-                                <div class="freq-label">Bass</div>
-                            </div>
-                            <div class="freq-bar" id="midBar">
-                                <div class="freq-label">Mid</div>
-                            </div>
-                            <div class="freq-bar" id="highBar">
-                                <div class="freq-label">High</div>
-                            </div>
-                        </div>
+                    <div class="visualizer-container">
+                        <canvas id="freq-viz"></canvas>
                     </div>
                     <div class="visualizer-container">
                         <canvas id="waveform"></canvas>
@@ -371,6 +361,9 @@
         window.BrowserMIDIRTC = BrowserMIDIRTC;
     </script>
 
+    <!-- Visualization components -->
+    <script src="components/freq-bars-analyzer.js"></script>
+
     <script src="synth.js"></script>
 
     <!-- Fullscreen Scope Functionality -->
@@ -381,31 +374,32 @@
 
         // Pop-out visualizer to separate window
         function popOutVisualizer(container) {
-            // Check if it's freq-viz or a canvas visualizer
             const canvas = container.querySelector('canvas');
-            const freqViz = container.querySelector('.freq-viz');
-            
-            let canvasId, title;
-            
-            if (canvas) {
-                canvasId = canvas.id;
-                title = canvasId.toUpperCase();
-            } else if (freqViz) {
-                canvasId = 'freq-viz';
-                title = 'FREQUENCY BANDS';
-            } else {
+            if (!canvas) {
+                console.error('[PopOut] No canvas found in container');
                 return;
             }
 
+            const canvasId = canvas.id;
+            console.log(`[PopOut] Attempting to pop out: ${canvasId}`);
+
             // Don't open duplicate popups
             if (popupWindows.has(canvasId)) {
-                popupWindows.get(canvasId).focus();
-                return;
+                const existing = popupWindows.get(canvasId);
+                if (existing.window && !existing.window.closed) {
+                    existing.window.focus();
+                    console.log(`[PopOut] ${canvasId} popup already open, focusing`);
+                    return;
+                } else {
+                    // Clean up stale reference
+                    popupWindows.delete(canvasId);
+                }
             }
 
             const popup = window.open('', `scope_${canvasId}`, 'width=800,height=600,resizable=yes,scrollbars=no,location=no,menubar=no,status=no,toolbar=no');
             if (!popup) {
                 alert('Pop-up blocked! Please allow pop-ups for this site.');
+                console.error('[PopOut] Popup was blocked');
                 return;
             }
 
@@ -413,7 +407,7 @@
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>${title} - Regroove Scope</title>
+                    <title>${canvasId.toUpperCase()} - Regroove Scope</title>
                     <style>
                         body {
                             margin: 0;
@@ -455,6 +449,7 @@
             popup.addEventListener('resize', () => {
                 popupCanvas.width = popup.innerWidth;
                 popupCanvas.height = popup.innerHeight;
+                console.log(`[PopOut] Resized ${canvasId} popup canvas to ${popupCanvas.width}x${popupCanvas.height}`);
             });
         }
 
@@ -464,6 +459,12 @@
             console.log('[Fullscreen] Setting up for', containers.length, 'visualizer containers');
 
             containers.forEach((container, idx) => {
+                // Check if buttons already exist
+                if (container.querySelector('.viz-popout-btn')) {
+                    console.log(`[Fullscreen] Container ${idx} already has buttons, skipping`);
+                    return;
+                }
+
                 // Add pop-out button
                 const popoutBtn = document.createElement('button');
                 popoutBtn.className = 'viz-popout-btn';
@@ -509,8 +510,10 @@
                     }
                 });
 
-                console.log('[Fullscreen] Attached fullscreen/popout to container', idx);
+                console.log('[Fullscreen] Fully configured container', idx);
             });
+
+            console.log('[Fullscreen] All containers configured');
 
             // Handle resize when entering/exiting fullscreen
             let previousFullscreenElement = null;

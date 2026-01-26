@@ -1544,6 +1544,7 @@ function createModel1UI() {
       knob.setAttribute("label", isTrim ? "TRIM" : paramName.toUpperCase());
       knob.setAttribute("cc", String(idx + 1));
       knob.setAttribute("value", String(defaultValue));
+      knob.setAttribute("default", String(defaultValue));
       knob.setAttribute("min", "0");
       knob.setAttribute("max", "100");
       knob.style.cssText = "width: 100px; height: 140px;";
@@ -1695,6 +1696,7 @@ function createEffectsForContainer(containerId, definitions) {
       knob.setAttribute("label", paramName.toUpperCase());
       knob.setAttribute("cc", String(idx + 1));
       knob.setAttribute("value", String(defaultValue));
+      knob.setAttribute("default", String(defaultValue));
       knob.setAttribute("min", "0");
       knob.setAttribute("max", "100");
       knob.style.cssText = "width: 100px; height: 140px;";

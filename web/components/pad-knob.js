@@ -13,7 +13,7 @@ class PadKnob extends HTMLElement {
     }
 
     static get observedAttributes() {
-        return ['cc', 'value', 'min', 'max', 'label', 'sublabel'];
+        return ['cc', 'value', 'min', 'max', 'label', 'sublabel', 'default'];
     }
 
     connectedCallback() {
@@ -261,6 +261,32 @@ class PadKnob extends HTMLElement {
         knobContainer.addEventListener('contextmenu', (e) => {
             e.stopPropagation();
             e.preventDefault();
+        });
+
+        // Double-click to reset to default value
+        knobCenter.addEventListener('dblclick', (e) => {
+            const defaultValue = this.getAttribute('default');
+            if (defaultValue !== null) {
+                const resetValue = parseInt(defaultValue);
+                const min = parseInt(this.getAttribute('min') || '0');
+                const max = parseInt(this.getAttribute('max') || '127');
+
+                // Clamp to min/max range
+                const clampedValue = Math.max(min, Math.min(max, resetValue));
+
+                this.setAttribute('value', clampedValue);
+
+                const cc = parseInt(this.getAttribute('cc') || '1');
+                this.dispatchEvent(new CustomEvent('cc-change', {
+                    detail: { cc, value: clampedValue },
+                    bubbles: true,
+                    composed: true
+                }));
+
+                console.log(`[PadKnob] Reset CC${cc} to default: ${clampedValue}`);
+            }
+            e.preventDefault();
+            e.stopPropagation();
         });
     }
 }

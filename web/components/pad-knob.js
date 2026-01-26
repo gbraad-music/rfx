@@ -81,6 +81,7 @@ class PadKnob extends HTMLElement {
                     aspect-ratio: 1 / 1;
                     max-height: 100%;
                     flex-shrink: 0;
+                    margin: 0 auto;
                 }
 
                 .knob-track {

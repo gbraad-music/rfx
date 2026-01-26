@@ -91,6 +91,107 @@ body {
     border: 1px solid var(--border);
     padding: 20px;
     margin-bottom: 20px;
+    position: relative;
+}
+
+.control-section:fullscreen {
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.control-section:fullscreen .effects-grid {
+    flex: 1;
+    overflow: hidden;
+    gap: 20px;
+    min-height: 0;
+}
+
+/* Model 1 Section: 2x2 grid (4 effects) */
+#model1Section:fullscreen .effects-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: min(2vw, 2vh);
+    align-content: center;
+    justify-content: center;
+}
+
+/* Essential Effects: 2x2 grid (4 effects) */
+#essentialEffectsSection:fullscreen .effects-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: min(2vw, 2vh);
+    align-content: center;
+    justify-content: center;
+}
+
+/* Additional Effects: 3 columns responsive grid */
+#additionalEffectsSection:fullscreen .effects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(30vw, 400px), 1fr));
+    gap: min(2vw, 2vh);
+    overflow: auto;
+}
+
+/* Make effect cards fill available space in fullscreen */
+.control-section:fullscreen .effect-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.control-section:fullscreen .effect-header {
+    flex-shrink: 0;
+}
+
+/* Center the knobs container within the effect card */
+.control-section:fullscreen .effect-card > div[style*="display: flex"] {
+    justify-content: center !important;
+    align-items: center !important;
+    flex: 1;
+}
+
+/* Enlarge knobs/controls in fullscreen for better touch */
+.control-section:fullscreen pad-knob {
+    width: min(15vw, 15vh, 150px) !important;
+    height: min(20vw, 20vh, 200px) !important;
+    font-size: 1em;
+}
+
+.control-section:fullscreen::after {
+    content: '✕';
+    display: block;
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    font-size: 20px;
+    color: var(--text-primary);
+    opacity: 0.6;
+    transition: opacity 0.2s, color 0.2s;
+    pointer-events: auto;
+    background: rgba(207, 26, 55, 0.8);
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 1000;
+    font-weight: bold;
+}
+
+.control-section:fullscreen::after:hover {
+    opacity: 1;
+    background: rgba(207, 26, 55, 1);
 }
 
 .section-title {
@@ -101,6 +202,27 @@ body {
     margin-bottom: 15px;
     border-bottom: 1px solid var(--border);
     padding-bottom: 5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.fullscreen-btn {
+    background: var(--bg-tertiary);
+    color: #0066FF;
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    text-transform: none;
+}
+
+.fullscreen-btn:hover {
+    border-color: #0066FF;
+    background: #3a3a3a;
+    color: #CF1A37;
 }
 
 /* Common Controls */

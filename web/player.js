@@ -1602,10 +1602,28 @@ function createModel1UI() {
   processor.setParameter("model1_sculpt", "gain", 0.5); // 0dB neutral
 }
 
-function createEffectUI() {
-  const container = document.getElementById("effects");
+// Essential effects (Distortion, EQ, Filter, Reverb)
+const essentialEffects = ["distortion", "eq", "filter", "reverb"];
 
-  effectDefinitions.forEach((def) => {
+// Split effect definitions
+const essentialEffectDefinitions = effectDefinitions.filter(def => 
+  essentialEffects.includes(def.name)
+);
+
+const additionalEffectDefinitions = effectDefinitions.filter(def => 
+  !essentialEffects.includes(def.name)
+);
+
+function createEffectUI() {
+  createEffectsForContainer("essential-effects", essentialEffectDefinitions);
+  createEffectsForContainer("additional-effects", additionalEffectDefinitions);
+}
+
+function createEffectsForContainer(containerId, definitions) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  definitions.forEach((def) => {
     const card = document.createElement("div");
     card.className = "effect-card";
     card.id = `effect-${def.name}`;
@@ -1989,8 +2007,56 @@ document.getElementById("testSignal").addEventListener("change", (e) => {
     // Set initial tempo value (64 = 100% neutral)
     processor.setTempo(64);
     tempoValue.textContent = "0.0%";
+    
+    // Setup fullscreen functionality
+    setupSectionFullscreen();
   } catch (error) {
     console.error("INIT ERROR:", error);
     console.error("Stack:", error.stack);
   }
 })();
+
+// Setup fullscreen functionality for sections
+function setupSectionFullscreen() {
+  const sections = [
+    { btnId: 'btnModel1Fullscreen', sectionId: 'model1Section' },
+    { btnId: 'btnEssentialFullscreen', sectionId: 'essentialEffectsSection' },
+    { btnId: 'btnAdditionalFullscreen', sectionId: 'additionalEffectsSection' }
+  ];
+
+  sections.forEach(({ btnId, sectionId }) => {
+    const btn = document.getElementById(btnId);
+    const section = document.getElementById(sectionId);
+    
+    if (!btn || !section) return;
+
+    // Button click to enter fullscreen
+    btn.addEventListener('click', () => {
+      if (section.requestFullscreen) {
+        section.requestFullscreen();
+      } else if (section.webkitRequestFullscreen) {
+        section.webkitRequestFullscreen();
+      } else if (section.msRequestFullscreen) {
+        section.msRequestFullscreen();
+      }
+    });
+
+    // Handle clicks on the exit button (::after pseudo-element)
+    section.addEventListener('click', (e) => {
+      if (!document.fullscreenElement) return;
+      
+      // Check if click is in the top-right corner (exit button area)
+      const rect = section.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      
+      // Exit button is at top-right: 10px from top, 10px from right, 32x32px
+      if (clickX >= rect.width - 42 && clickX <= rect.width - 10 &&
+          clickY >= 10 && clickY <= 42) {
+        document.exitFullscreen();
+      }
+    });
+  });
+
+  console.log('[Fullscreen] Section fullscreen buttons enabled');
+}

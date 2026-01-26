@@ -1,3 +1,5 @@
+import { wakeLockManager } from './external/wakelock.js';
+
 let audioContext;
 let midiManager;
 let webrtcMidi = null;
@@ -211,6 +213,10 @@ async function init() {
 
   // Build keyboard
   buildKeyboard();
+
+  // Request wake lock to keep screen on during performance
+  await wakeLockManager.request();
+  console.log("[Synth Test] Wake lock requested for performance mode");
 
   // Start visualization
   requestAnimationFrame(visualize);

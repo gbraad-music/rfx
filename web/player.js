@@ -1,6 +1,8 @@
 // Regroove Effects - WASM ONLY VERSION
 // NO FALLBACK - Requires compiled WebAssembly
 
+import { wakeLockManager } from './external/wakelock.js';
+
 class AudioEffectsProcessor {
   constructor() {
     this.audioContext = null;
@@ -1059,6 +1061,9 @@ class AudioEffectsProcessor {
         `✅ Streaming at ${(this.playbackRate * 100).toFixed(1)}% tempo`,
       );
       console.log(`   Playlist mode: ${this.playlist.length > 1 ? "YES (no loop)" : "NO (loop)"}`);
+
+      // Request wake lock to keep screen on during playback
+      wakeLockManager.request();
     } else if (this.audioBuffer) {
       console.log("▶️ Playing (looped)...");
       console.log(
@@ -1089,6 +1094,9 @@ class AudioEffectsProcessor {
       console.log(
         `✅ Playback started at ${this.startTime.toFixed(3)}s, ${(this.playbackRate * 100).toFixed(1)}% tempo`,
       );
+
+      // Request wake lock to keep screen on during playback
+      wakeLockManager.request();
 
       this.sourceNode.onended = async () => {
         console.log("⏹ Track ended");
@@ -1216,6 +1224,9 @@ class AudioEffectsProcessor {
     }
     this.stopMicrophone();
     this.isPlaying = false;
+
+    // Release wake lock when playback stops
+    wakeLockManager.release();
 
     // Clear audio buffer (for test signals)
     this.audioBuffer = null;

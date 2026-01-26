@@ -1490,6 +1490,8 @@ let visualizerAnimationId = null;
 let vuMeterComponent = null;
 let waveformComponent = null;
 let spectrumComponent = null;
+let freqBarsComponent = null;
+let showFreqViz = false; // Toggle between VU meter and freq-viz
 
 // MODEL 1 input effects (all enabled by default)
 // Display order: TRIM → HPF → SCULPT → LPF
@@ -1833,6 +1835,54 @@ function drawVUMeter() {
   vuMeterComponent.draw();
 }
 
+function drawFreqViz() {
+  if (!freqBarsComponent || !processor.analyser) return;
+
+  // Get frequency data
+  const bufferLength = processor.analyser.frequencyBinCount;
+  const frequencyData = new Uint8Array(bufferLength);
+  processor.analyser.getByteFrequencyData(frequencyData);
+
+  // Calculate frequency bands from raw analyser data
+  const sampleRate = processor.audioContext.sampleRate;
+  const nyquist = sampleRate / 2;
+  const binWidth = nyquist / bufferLength;
+
+  // Define frequency ranges (Hz)
+  const bassMax = 250;
+  const midMax = 2000;
+
+  // Calculate bins for each range
+  const bassBins = Math.floor(bassMax / binWidth);
+  const midBins = Math.floor(midMax / binWidth);
+
+  // Calculate average amplitude for each band
+  let bassSum = 0, midSum = 0, highSum = 0;
+  let bassCount = 0, midCount = 0, highCount = 0;
+
+  for (let i = 0; i < bufferLength; i++) {
+    if (i < bassBins) {
+      bassSum += frequencyData[i];
+      bassCount++;
+    } else if (i < midBins) {
+      midSum += frequencyData[i];
+      midCount++;
+    } else {
+      highSum += frequencyData[i];
+      highCount++;
+    }
+  }
+
+  const bands = {
+    bass: bassCount > 0 ? (bassSum / bassCount) / 255 : 0,
+    mid: midCount > 0 ? (midSum / midCount) / 255 : 0,
+    high: highCount > 0 ? (highSum / highCount) / 255 : 0
+  };
+
+  // Draw frequency bars every frame (smooth & responsive)
+  freqBarsComponent.draw(bands);
+}
+
 function updatePlaybackPosition() {
   const pos = processor.getCurrentPosition();
   const progressContainer = document.getElementById("playbackProgress");
@@ -1871,6 +1921,9 @@ async function drawVisualizer() {
   if (!spectrumComponent) {
     spectrumComponent = new SpectrumAnalyzerCanvas("spectrum");
   }
+  if (!freqBarsComponent) {
+    freqBarsComponent = new FrequencyBarsCanvas("freq-viz-player");
+  }
 
   // Resize canvases
   const spectrumCanvas = document.getElementById("spectrum");
@@ -1883,6 +1936,57 @@ async function drawVisualizer() {
   if (vuCanvas) {
     vuCanvas.width = vuCanvas.offsetWidth;
     vuCanvas.height = vuCanvas.offsetHeight;
+  }
+
+  const freqVizCanvas = document.getElementById("freq-viz-player");
+  if (freqVizCanvas) {
+    freqVizCanvas.width = freqVizCanvas.offsetWidth;
+    freqVizCanvas.height = freqVizCanvas.offsetHeight;
+  }
+
+  // Setup toggle button
+  const toggleBtn = document.getElementById("toggleVuFreq");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      showFreqViz = !showFreqViz;
+      const vuCanvas = document.getElementById("vumeter");
+      const freqVizCanvas = document.getElementById("freq-viz-player");
+
+      // Close any open popups for the old mode
+      if (showFreqViz) {
+        // Switching to freq-viz, close VU meter popup if open
+        if (window.popupWindows && window.popupWindows.has('vumeter')) {
+          const popupData = window.popupWindows.get('vumeter');
+          if (popupData.window && !popupData.window.closed) {
+            popupData.window.close();
+          }
+          window.popupWindows.delete('vumeter');
+        }
+        vuCanvas.style.display = "none";
+        freqVizCanvas.style.display = "block";
+        toggleBtn.textContent = "FREQ ⇄ VU";
+
+        // Resize freq-viz canvas when showing it
+        freqVizCanvas.width = freqVizCanvas.offsetWidth;
+        freqVizCanvas.height = freqVizCanvas.offsetHeight;
+      } else {
+        // Switching to VU meter, close freq-viz popup if open
+        if (window.popupWindows && window.popupWindows.has('freq-viz-player')) {
+          const popupData = window.popupWindows.get('freq-viz-player');
+          if (popupData.window && !popupData.window.closed) {
+            popupData.window.close();
+          }
+          window.popupWindows.delete('freq-viz-player');
+        }
+        vuCanvas.style.display = "block";
+        freqVizCanvas.style.display = "none";
+        toggleBtn.textContent = "VU ⇄ FREQ";
+
+        // Resize VU canvas when showing it
+        vuCanvas.width = vuCanvas.offsetWidth;
+        vuCanvas.height = vuCanvas.offsetHeight;
+      }
+    });
   }
 
   // Animation loop
@@ -1898,7 +2002,14 @@ async function drawVisualizer() {
     }
 
     drawSpectrum();
-    drawVUMeter();
+
+    // Draw VU meter or freq-viz based on toggle
+    if (showFreqViz) {
+      drawFreqViz();
+    } else {
+      drawVUMeter();
+    }
+
     updatePlaybackPosition();
 
     // Draw to popup windows if open
@@ -1938,13 +2049,82 @@ async function drawVisualizer() {
           // Use the VU meter component to draw to popup canvas
           const originalCanvas = vuMeterComponent.canvas;
           const originalCtx = vuMeterComponent.ctx;
-          
+
           vuMeterComponent.canvas = popupCanvas;
           vuMeterComponent.ctx = popupCtx;
           vuMeterComponent.draw();
-          
+
           vuMeterComponent.canvas = originalCanvas;
           vuMeterComponent.ctx = originalCtx;
+        } else if (canvasId === 'freq-viz-player' && freqBarsComponent) {
+          // Draw frequency bars to popup canvas
+          const padding = 10;
+          const innerWidth = popupCanvas.width - padding * 2;
+          const innerHeight = popupCanvas.height - padding * 2;
+          const labelHeight = 20;
+          const barAreaHeight = innerHeight - labelHeight;
+          const barGap = 10;
+          const barWidth = (innerWidth - barGap * 2) / 3;
+          const barX = [
+            padding + barGap / 2,
+            padding + barWidth + barGap * 1.5,
+            padding + barWidth * 2 + barGap * 2.5
+          ];
+
+          // Clear background
+          popupCtx.fillStyle = "#0a0a0a";
+          popupCtx.fillRect(0, 0, popupCanvas.width, popupCanvas.height);
+
+          const drawRoundedBar = (x, height, gradient) => {
+            const y = padding + barAreaHeight - height;
+            const cornerRadius = 2;
+            popupCtx.fillStyle = gradient;
+            popupCtx.beginPath();
+            popupCtx.moveTo(x + cornerRadius, y);
+            popupCtx.lineTo(x + barWidth - cornerRadius, y);
+            popupCtx.quadraticCurveTo(x + barWidth, y, x + barWidth, y + cornerRadius);
+            popupCtx.lineTo(x + barWidth, padding + barAreaHeight - cornerRadius);
+            popupCtx.quadraticCurveTo(x + barWidth, padding + barAreaHeight, x + barWidth - cornerRadius, padding + barAreaHeight);
+            popupCtx.lineTo(x + cornerRadius, padding + barAreaHeight);
+            popupCtx.quadraticCurveTo(x, padding + barAreaHeight, x, padding + barAreaHeight - cornerRadius);
+            popupCtx.lineTo(x, y + cornerRadius);
+            popupCtx.quadraticCurveTo(x, y, x + cornerRadius, y);
+            popupCtx.closePath();
+            popupCtx.fill();
+          };
+
+          // Use already-smoothed current bands
+          const cb = freqBarsComponent.currentBands;
+
+          // Bass bar
+          const bassHeight = Math.max(2, cb.bass * barAreaHeight);
+          const gradient1 = popupCtx.createLinearGradient(0, padding + barAreaHeight, 0, padding + barAreaHeight - bassHeight);
+          gradient1.addColorStop(0, '#CF1A37');
+          gradient1.addColorStop(1, '#ff3333');
+          drawRoundedBar(barX[0], bassHeight, gradient1);
+
+          // Mid bar
+          const midHeight = Math.max(2, cb.mid * barAreaHeight);
+          const gradient2 = popupCtx.createLinearGradient(0, padding + barAreaHeight, 0, padding + barAreaHeight - midHeight);
+          gradient2.addColorStop(0, '#CF1A37');
+          gradient2.addColorStop(1, '#ff3333');
+          drawRoundedBar(barX[1], midHeight, gradient2);
+
+          // High bar
+          const highHeight = Math.max(2, cb.high * barAreaHeight);
+          const gradient3 = popupCtx.createLinearGradient(0, padding + barAreaHeight, 0, padding + barAreaHeight - highHeight);
+          gradient3.addColorStop(0, '#CF1A37');
+          gradient3.addColorStop(1, '#ff3333');
+          drawRoundedBar(barX[2], highHeight, gradient3);
+
+          // Labels
+          popupCtx.fillStyle = '#666';
+          popupCtx.font = '10px Arial';
+          popupCtx.textAlign = 'center';
+          const labelY = padding + barAreaHeight + labelHeight / 2 + 3;
+          popupCtx.fillText('Bass', barX[0] + barWidth / 2, labelY);
+          popupCtx.fillText('Mid', barX[1] + barWidth / 2, labelY);
+          popupCtx.fillText('High', barX[2] + barWidth / 2, labelY);
         }
       });
     }

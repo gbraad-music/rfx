@@ -81,6 +81,8 @@
                     </div>
                     <div class="visualizer-container" style="flex: 1.0; height: 200px;">
                         <canvas id="vumeter"></canvas>
+                        <canvas id="freq-viz-player" style="display: none;"></canvas>
+                        <button id="toggleVuFreq" class="viz-toggle-btn" title="Toggle VU / Freq Bars">VU ⇄ FREQ</button>
                     </div>
                 </div>
             </div>
@@ -207,6 +209,7 @@
     <script src="components/vu-meter.js"></script>
     <script src="components/waveform-display.js"></script>
     <script src="components/spectrum-analyzer.js"></script>
+    <script src="components/freq-bars-analyzer.js"></script>
 
     <script src="player.js" type="module"></script>
 
@@ -359,7 +362,21 @@
 
         // Pop-out visualizer to separate window
         function popOutVisualizer(container) {
-            const canvas = container.querySelector('canvas');
+            // Get the currently visible canvas (not just the first one)
+            const canvases = container.querySelectorAll('canvas');
+            let canvas = null;
+            for (const c of canvases) {
+                if (c.style.display !== 'none') {
+                    canvas = c;
+                    break;
+                }
+            }
+
+            if (!canvas) {
+                // Fallback to first canvas if none are explicitly visible
+                canvas = container.querySelector('canvas');
+            }
+
             if (!canvas) return;
 
             const canvasId = canvas.id;

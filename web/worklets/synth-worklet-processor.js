@@ -5,7 +5,7 @@
 class SynthWorkletProcessor extends AudioWorkletProcessor {
     constructor(options) {
         super();
-        console.log('[SynthWorklet] ✅ LOADED v176 - RGSlicer WASM bindings');
+        console.log('[SynthWorklet] ✅ LOADED v180 - Added voice-specific UI updates + detailed logging');
         this.wasmModule = null;
         this.synthPtr = null;
         this.audioBufferPtr = null;
@@ -55,6 +55,12 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
             this.getPListState();
         } else if (type === 'loadWav') {
             this.loadWavFile(data);
+        } else if (type === 'getPresetCount') {
+            this.getPresetCount();
+        } else if (type === 'getPresetName') {
+            this.getPresetName(data.index);
+        } else if (type === 'loadPreset') {
+            this.loadPreset(data.index, data.voice);
         }
     }
 
@@ -418,6 +424,96 @@ class SynthWorkletProcessor extends AudioWorkletProcessor {
     reset() {
         if (!this.synthPtr || !this.wasmFuncs.reset) return;
         this.wasmFuncs.reset(this.synthPtr);
+    }
+
+    getPresetCount() {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot get preset count: WASM not initialized');
+            return;
+        }
+
+        if (this.wasmModule._regroove_synth_get_preset_count) {
+            const count = this.wasmModule._regroove_synth_get_preset_count();
+            console.log(`[SynthWorklet] Preset count: ${count}`);
+            this.port.postMessage({ type: 'presetCount', count });
+        } else {
+            console.warn('[SynthWorklet] _regroove_synth_get_preset_count not available');
+        }
+    }
+
+    getPresetName(index) {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot get preset name: WASM not initialized');
+            return;
+        }
+
+        if (this.wasmModule._regroove_synth_get_preset_name) {
+            const namePtr = this.wasmModule._regroove_synth_get_preset_name(index);
+            if (namePtr) {
+                // Read C string from memory (manually decode - TextDecoder not available in AudioWorklet)
+                const heapU8 = new Uint8Array(this.wasmMemory.buffer);
+                let length = 0;
+                while (heapU8[namePtr + length] !== 0 && length < 256) {
+                    length++;
+                }
+                // Manually convert bytes to string (ASCII/UTF-8)
+                let name = '';
+                for (let i = 0; i < length; i++) {
+                    name += String.fromCharCode(heapU8[namePtr + i]);
+                }
+                console.log(`[SynthWorklet] Preset ${index}: "${name}"`);
+                this.port.postMessage({ type: 'presetName', index, name });
+            }
+        } else {
+            console.warn('[SynthWorklet] _regroove_synth_get_preset_name not available');
+        }
+    }
+
+    loadPreset(index, voice = 0) {
+        if (!this.wasmModule || !this.synthPtr) {
+            console.error('[SynthWorklet] Cannot load preset: WASM not initialized');
+            return;
+        }
+
+        if (this.wasmModule._regroove_synth_load_preset) {
+            console.log(`[SynthWorklet] ======================================`);
+            console.log(`[SynthWorklet] loadPreset() called in worklet`);
+            console.log(`[SynthWorklet]   index = ${index} (type: ${typeof index})`);
+            console.log(`[SynthWorklet]   voice = ${voice} (type: ${typeof voice})`);
+            console.log(`[SynthWorklet]   0=Voice1, 1=Voice2, 2=Voice3`);
+            console.log(`[SynthWorklet] Calling WASM: _regroove_synth_load_preset(${this.synthPtr}, ${index}, ${voice})`);
+            console.log(`[SynthWorklet] ======================================`);
+            this.wasmModule._regroove_synth_load_preset(this.synthPtr, index, voice);
+
+            // Get updated parameters ONLY for the voice that was loaded
+            const parameters = [];
+            if (this.wasmModule._regroove_synth_get_parameter) {
+                // Voice parameter mapping:
+                // Voice 1 (0): params 0-7
+                // Voice 2 (1): params 8-15
+                // Voice 3 (2): params 16-23
+                const startParam = voice * 8;
+                const endParam = startParam + 8;
+
+                console.log(`[SynthWorklet] Reading back parameters ${startParam}-${endParam-1} for voice ${voice}`);
+
+                // Read all 42 parameters but only log the voice-specific ones
+                for (let i = 0; i < 42; i++) {
+                    const value = this.wasmModule._regroove_synth_get_parameter(this.synthPtr, i);
+                    parameters.push(value);
+
+                    // Log voice-specific parameters for debugging
+                    if (i >= startParam && i < endParam) {
+                        console.log(`[SynthWorklet]   Param ${i} = ${value}`);
+                    }
+                }
+            }
+
+            this.port.postMessage({ type: 'presetLoaded', index, parameters, voice });
+            console.log(`[SynthWorklet] ✅ Preset ${index} loaded to voice ${voice}`);
+        } else {
+            console.warn('[SynthWorklet] _regroove_synth_load_preset not available');
+        }
     }
 
     process(inputs, outputs, parameters) {

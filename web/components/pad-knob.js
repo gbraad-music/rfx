@@ -68,6 +68,12 @@ class PadKnob extends HTMLElement {
                     text-align: center;
                 }
 
+                /* Larger labels in fullscreen */
+                :host(.fullscreen-knob) .knob-label {
+                    font-size: 1.3em;
+                    margin-bottom: 12px;
+                }
+
                 .knob-sublabel {
                     font-size: 0.65em;
                     color: #555;
@@ -81,7 +87,13 @@ class PadKnob extends HTMLElement {
                     aspect-ratio: 1 / 1;
                     max-height: 100%;
                     flex-shrink: 0;
-		    margin: 0 auto;
+                    margin: 0 auto;
+                }
+
+                /* Allow knobs to scale larger in fullscreen */
+                :host(.fullscreen-knob) .knob-container {
+                    width: 100%;
+                    max-width: none;
                 }
 
                 .knob-track {
@@ -90,6 +102,11 @@ class PadKnob extends HTMLElement {
                     border-radius: 50%;
                     background: #1a1a1a;
                     border: 2px solid #333;
+                }
+
+                /* Thicker border for larger knobs in fullscreen */
+                :host(.fullscreen-knob) .knob-track {
+                    border-width: max(2px, 0.3vw);
                 }
 
                 .knob-indicator {
@@ -103,6 +120,12 @@ class PadKnob extends HTMLElement {
                     transform-origin: bottom center;
                     transform: translateX(-50%) rotate(${rotation}deg);
                     transition: transform 0.05s linear;
+                }
+
+                /* Scale indicator for larger knobs in fullscreen */
+                :host(.fullscreen-knob) .knob-indicator {
+                    width: max(3px, 0.5vw);
+                    border-radius: max(2px, 0.3vw);
                 }
 
                 .knob-center {
@@ -126,6 +149,13 @@ class PadKnob extends HTMLElement {
                     background: #0a0a0a;
                     border-radius: 4px;
                     min-width: 40px;
+                }
+
+                /* Larger value display in fullscreen */
+                :host(.fullscreen-knob) .knob-value {
+                    font-size: 1.5em;
+                    padding: 8px 16px;
+                    min-width: 60px;
                 }
 
                 .knob-cc {

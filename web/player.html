@@ -357,76 +357,72 @@
         // Expose globally
         window.popOutVideo = popOutVideo;
 
-        // Pop-out visualizer using Picture-in-Picture API
-        async function popOutVisualizer(container) {
+        // Pop-out visualizer to separate window
+        function popOutVisualizer(container) {
             const canvas = container.querySelector('canvas');
-            if (!canvas) {
-                console.error('[PIP] No canvas found in container');
-                return;
-            }
+            if (!canvas) return;
 
             const canvasId = canvas.id;
-            console.log(`[PIP] Attempting to pop out: ${canvasId}`);
 
-            // Check if already in PIP mode
+            // Don't open duplicate popups
             if (popupWindows.has(canvasId)) {
-                console.log(`[PIP] ${canvasId} already in PIP mode`);
+                popupWindows.get(canvasId).focus();
                 return;
             }
 
-            // Check if browser supports PIP
-            if (!document.pictureInPictureEnabled) {
-                alert('Picture-in-Picture is not supported in your browser');
-                console.error('[PIP] PIP not supported');
+            const popup = window.open('', `scope_${canvasId}`, 'width=800,height=600,resizable=yes,scrollbars=no,location=no,menubar=no,status=no,toolbar=no');
+            if (!popup) {
+                alert('Pop-up blocked! Please allow pop-ups for this site.');
                 return;
             }
 
-            try {
-                // Create a video element to host the canvas stream
-                const video = document.createElement('video');
-                video.muted = true;
-                video.autoplay = true;
-                video.playsInline = true;
+            popup.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>${canvasId.toUpperCase()} - Regroove Scope</title>
+                    <style>
+                        body {
+                            margin: 0;
+                            background: #0a0a0a;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            overflow: hidden;
+                        }
+                        canvas {
+                            width: 100%;
+                            height: 100vh;
+                            display: block;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <canvas id="${canvasId}_popup"></canvas>
+                </body>
+                </html>
+            `);
+            popup.document.close();
 
-                // Capture canvas as a video stream
-                const stream = canvas.captureStream(30); // 30 FPS
-                video.srcObject = stream;
+            const popupCanvas = popup.document.getElementById(`${canvasId}_popup`);
+            popupCanvas.width = 800;
+            popupCanvas.height = 600;
 
-                // Wait for video to be ready
-                await video.play();
+            // Store reference to popup and its canvas
+            popupWindows.set(canvasId, { window: popup, canvas: popupCanvas });
+            console.log(`[PopOut] Opened ${canvasId} in new window`);
 
-                // Request Picture-in-Picture
-                const pipWindow = await video.requestPictureInPicture();
+            // Handle popup close
+            popup.addEventListener('beforeunload', () => {
+                popupWindows.delete(canvasId);
+                console.log(`[PopOut] Closed ${canvasId} popup`);
+            });
 
-                console.log(`[PIP] ${canvasId} entered PIP mode`);
-                console.log(`[PIP] PIP window size: ${pipWindow.width}x${pipWindow.height}`);
-
-                // Store reference
-                popupWindows.set(canvasId, {
-                    video: video,
-                    stream: stream,
-                    pipWindow: pipWindow
-                });
-
-                // Handle PIP exit
-                video.addEventListener('leavepictureinpicture', () => {
-                    console.log(`[PIP] ${canvasId} left PIP mode`);
-
-                    // Stop the stream
-                    const tracks = stream.getTracks();
-                    tracks.forEach(track => track.stop());
-
-                    // Remove video element
-                    video.remove();
-
-                    // Clean up reference
-                    popupWindows.delete(canvasId);
-                }, { once: true });
-
-            } catch (error) {
-                console.error('[PIP] Failed to enter PIP mode:', error);
-                alert('Failed to enter Picture-in-Picture mode: ' + error.message);
-            }
+            // Resize popup canvas when window resizes
+            popup.addEventListener('resize', () => {
+                popupCanvas.width = popup.innerWidth;
+                popupCanvas.height = popup.innerHeight;
+            });
         }
 
         // Enable fullscreen and pop-out for all visualizer containers

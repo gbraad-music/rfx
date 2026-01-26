@@ -160,10 +160,33 @@ body {
 }
 
 /* Enlarge knobs/controls in fullscreen for better touch */
+/* Default: multiple knobs (3+) */
 .control-section:fullscreen pad-knob {
-    width: min(15vw, 15vh, 150px) !important;
-    height: min(20vw, 20vh, 200px) !important;
-    font-size: 1em;
+    width: min(12vw, 12vh, 180px) !important;
+    height: min(15vw, 15vh, 220px) !important;
+    font-size: 1.1em;
+}
+
+/* 2 knobs in an effect - make them bigger */
+/* Use :nth-last-of-type to count only pad-knob elements, ignoring LEDs */
+.control-section:fullscreen .effect-card pad-knob:nth-last-of-type(2):nth-of-type(1),
+.control-section:fullscreen .effect-card pad-knob:nth-last-of-type(1):nth-of-type(2) {
+    width: min(18vw, 18vh, 250px) !important;
+    height: min(22vw, 22vh, 300px) !important;
+    font-size: 1.3em;
+}
+
+/* 1 knob in an effect - make it bigger for easy touch control */
+.control-section:fullscreen .effect-card pad-knob:only-of-type {
+    width: min(25vw, 25vh, 320px) !important;
+    height: min(30vw, 30vh, 380px) !important;
+    font-size: 1.5em;
+}
+
+/* Better spacing for effect cards with fewer knobs */
+.control-section:fullscreen .effect-card > div[style*="display: flex"] {
+    gap: max(20px, 3vw);
+    padding: 2vh 2vw;
 }
 
 .control-section:fullscreen::after {

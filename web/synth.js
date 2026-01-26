@@ -734,8 +734,8 @@ function visualize() {
   for (let i = 0; i < frequencyData.length; i++) {
     const barHeight = (frequencyData[i] / 255) * spectrumCanvas.height;
 
-    const hue = (i / frequencyData.length) * 120; // Red to green
-    spectrumCtx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+    // REGROOVE signature red
+    spectrumCtx.fillStyle = `rgb(207, 26, 55)`;
     spectrumCtx.fillRect(
       barX,
       spectrumCanvas.height - barHeight,
@@ -749,7 +749,10 @@ function visualize() {
   // Draw to popup windows if open
   if (window.popupWindows && window.popupWindows.size > 0) {
     window.popupWindows.forEach((popupData, canvasId) => {
-      if (popupData.window.closed) return;
+      if (popupData.window.closed) {
+        window.popupWindows.delete(canvasId);
+        return;
+      }
       const ctx = popupData.canvas.getContext('2d');
 
       if (canvasId === 'waveform') {
@@ -775,11 +778,51 @@ function visualize() {
         let bx = 0;
         for (let i = 0; i < frequencyData.length; i++) {
           const bh = (frequencyData[i] / 255) * popupData.canvas.height;
-          const hue = (i / frequencyData.length) * 120;
-          ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+          // REGROOVE signature red
+          ctx.fillStyle = `rgb(207, 26, 55)`;
           ctx.fillRect(bx, popupData.canvas.height - bh, bw, bh);
           bx += bw + 1;
         }
+      } else if (canvasId === 'freq-viz') {
+        // Draw frequency bars to popup canvas
+        ctx.fillStyle = "#0a0a0a";
+        ctx.fillRect(0, 0, popupData.canvas.width, popupData.canvas.height);
+        
+        const bands = getFrequencyBands(analyser);
+        const barWidth = popupData.canvas.width / 3;
+        const barGap = 10;
+        
+        // Bass bar
+        const bassHeight = bands.bass * popupData.canvas.height;
+        const gradient1 = ctx.createLinearGradient(0, popupData.canvas.height, 0, popupData.canvas.height - bassHeight);
+        gradient1.addColorStop(0, '#CF1A37');
+        gradient1.addColorStop(1, '#ff3333');
+        ctx.fillStyle = gradient1;
+        ctx.fillRect(barGap, popupData.canvas.height - bassHeight, barWidth - barGap * 2, bassHeight);
+        
+        // Mid bar
+        const midHeight = bands.mid * popupData.canvas.height;
+        const gradient2 = ctx.createLinearGradient(0, popupData.canvas.height, 0, popupData.canvas.height - midHeight);
+        gradient2.addColorStop(0, '#CF1A37');
+        gradient2.addColorStop(1, '#ff3333');
+        ctx.fillStyle = gradient2;
+        ctx.fillRect(barWidth + barGap, popupData.canvas.height - midHeight, barWidth - barGap * 2, midHeight);
+        
+        // High bar
+        const highHeight = bands.high * popupData.canvas.height;
+        const gradient3 = ctx.createLinearGradient(0, popupData.canvas.height, 0, popupData.canvas.height - highHeight);
+        gradient3.addColorStop(0, '#CF1A37');
+        gradient3.addColorStop(1, '#ff3333');
+        ctx.fillStyle = gradient3;
+        ctx.fillRect(barWidth * 2 + barGap, popupData.canvas.height - highHeight, barWidth - barGap * 2, highHeight);
+        
+        // Labels
+        ctx.fillStyle = '#666';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Bass', barWidth / 2, popupData.canvas.height - 5);
+        ctx.fillText('Mid', barWidth * 1.5, popupData.canvas.height - 5);
+        ctx.fillText('High', barWidth * 2.5, popupData.canvas.height - 5);
       }
     });
   }

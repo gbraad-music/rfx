@@ -18,15 +18,17 @@
             <div class="section" style="margin-bottom: 0;">
                 <div class="section-title">Audio Analysis</div>
                 <div class="viz-container">
-                    <div class="freq-viz">
-                        <div class="freq-bar" id="bassBar">
-                            <div class="freq-label">Bass</div>
-                        </div>
-                        <div class="freq-bar" id="midBar">
-                            <div class="freq-label">Mid</div>
-                        </div>
-                        <div class="freq-bar" id="highBar">
-                            <div class="freq-label">High</div>
+                    <div class="visualizer-container freq-viz-container">
+                        <div class="freq-viz">
+                            <div class="freq-bar" id="bassBar">
+                                <div class="freq-label">Bass</div>
+                            </div>
+                            <div class="freq-bar" id="midBar">
+                                <div class="freq-label">Mid</div>
+                            </div>
+                            <div class="freq-bar" id="highBar">
+                                <div class="freq-label">High</div>
+                            </div>
                         </div>
                     </div>
                     <div class="visualizer-container">
@@ -375,13 +377,25 @@
     <script>
         // Track popup windows for each visualizer
         const popupWindows = new Map();
+        window.popupWindows = popupWindows; // Expose globally for synth.js
 
         // Pop-out visualizer to separate window
         function popOutVisualizer(container) {
+            // Check if it's freq-viz or a canvas visualizer
             const canvas = container.querySelector('canvas');
-            if (!canvas) return;
-
-            const canvasId = canvas.id;
+            const freqViz = container.querySelector('.freq-viz');
+            
+            let canvasId, title;
+            
+            if (canvas) {
+                canvasId = canvas.id;
+                title = canvasId.toUpperCase();
+            } else if (freqViz) {
+                canvasId = 'freq-viz';
+                title = 'FREQUENCY BANDS';
+            } else {
+                return;
+            }
 
             // Don't open duplicate popups
             if (popupWindows.has(canvasId)) {
@@ -399,7 +413,7 @@
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <title>${canvasId.toUpperCase()} - Regroove Scope</title>
+                    <title>${title} - Regroove Scope</title>
                     <style>
                         body {
                             margin: 0;

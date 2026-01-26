@@ -328,6 +328,13 @@ button:disabled:hover {
     max-height: 100vh;
 }
 
+.visualizer-container:fullscreen .freq-viz {
+    width: 100vw !important;
+    height: 100vh !important;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
 /* Visualizer control buttons */
 .viz-popout-btn,
 .viz-fullscreen-btn {

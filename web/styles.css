@@ -248,6 +248,19 @@ body {
     color: #CF1A37;
 }
 
+/* Hide fullscreen button when section is in fullscreen */
+.control-section:fullscreen .fullscreen-btn {
+    display: none;
+}
+
+.drum-pads:fullscreen .fullscreen-btn {
+    display: none;
+}
+
+.keyboard-container:fullscreen .fullscreen-btn {
+    display: none;
+}
+
 /* Common Controls */
 button, select {
     background: var(--bg-tertiary);
@@ -316,17 +329,17 @@ button:disabled:hover {
 }
 
 .visualizer-container::after {
-    content: '⛶ Click for fullscreen';
+    content: '⛶';
     position: absolute;
     top: 5px;
     right: 8px;
-    font-size: 12px;
+    font-size: 14px;
     color: var(--text-secondary);
     opacity: 0.8;
     transition: opacity 0.2s;
     pointer-events: none;
     background: rgba(0, 0, 0, 0.7);
-    padding: 3px 6px;
+    padding: 4px 8px;
     border-radius: 2px;
 }
 
@@ -336,14 +349,28 @@ button:disabled:hover {
 }
 
 .visualizer-container:fullscreen::after {
-    content: 'ESC or click to exit';
-    font-size: 14px;
-    top: 20px;
-    right: 20px;
-    opacity: 1;
-    background: rgba(207, 26, 55, 0.9);
+    content: '✕';
+    display: block;
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    padding: 10px 15px;
+    background: rgba(207, 26, 55, 0.8);
     color: white;
-    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 20px;
+    text-align: center;
+    line-height: 1;
+    opacity: 0.8;
+    transition: opacity 0.2s, background 0.2s;
+    cursor: pointer;
+    z-index: 1000;
+    font-weight: bold;
+}
+
+.visualizer-container:fullscreen::after:hover {
+    opacity: 1;
+    background: rgba(207, 26, 55, 1);
 }
 
 /* Canvas */

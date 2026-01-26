@@ -9,6 +9,7 @@ class SynthUI extends HTMLElement {
         this.attachShadow({ mode: 'open' });
         this.synth = null;
         this.synthInstance = null;
+        this.isUpdatingFromPreset = false; // Flag to prevent feedback loops
     }
 
     connectedCallback() {
@@ -76,7 +77,8 @@ class SynthUI extends HTMLElement {
             // Listen for preset changes to update UI
             this.synthInstance.on('presetLoaded', (data) => {
                 if (data.parameters && data.parameters.length > 0) {
-                    this.updateUIFromParameters(data.parameters);
+                    // Pass voice parameter to only update that voice's UI
+                    this.updateUIFromParameters(data.parameters, data.voice);
                 }
             });
         }
@@ -277,50 +279,56 @@ class SynthUI extends HTMLElement {
         ).join('');
 
         presetContainer.innerHTML = `
-            <div class="preset-selector">
-                <div class="preset-label">Target Voice</div>
-                <select class="preset-select" id="voiceSelect" style="width: 110px;">
-                    <option value="0">Voice 1</option>
-                    <option value="1">Voice 2</option>
-                    <option value="2">Voice 3</option>
-                </select>
-                <div class="preset-label" style="margin-left: 10px;">Preset</div>
-                <select class="preset-select" id="presetSelect">
+            <div class="preset-selector" style="display: flex; align-items: center; gap: 10px; flex-wrap: nowrap;">
+                <div class="preset-label" style="white-space: nowrap;">Preset:</div>
+                <select class="preset-select" id="presetSelect" style="width: 280px; flex-shrink: 1;">
                     ${options}
                 </select>
+                <div class="preset-label" style="white-space: nowrap;">Voice:</div>
+                <select class="preset-select" id="voiceSelect" style="width: 90px; flex-shrink: 0;">
+                    <option value="0">1</option>
+                    <option value="1">2</option>
+                    <option value="2">3</option>
+                </select>
+                <button id="btnSetPreset" style="padding: 10px 20px; background: var(--bg-tertiary, #2a2a2a); border: 1px solid var(--border, #333333); border-radius: 4px; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; white-space: nowrap; flex-shrink: 0;">SET</button>
             </div>
         `;
 
-        // Bind preset change event
+        // Bind SET button event
         const presetSelect = this.shadowRoot.getElementById('presetSelect');
         const voiceSelect = this.shadowRoot.getElementById('voiceSelect');
+        const setButton = this.shadowRoot.getElementById('btnSetPreset');
 
-        // Debug: log voice selector changes
-        if (voiceSelect) {
-            voiceSelect.addEventListener('change', (e) => {
-                console.log(`[SynthUI] Voice selector changed to: ${e.target.value}`);
-            });
-        }
+        if (setButton) {
+            setButton.addEventListener('click', () => {
+                const index = parseInt(presetSelect.value);
+                const voice = parseInt(voiceSelect.value);
+                const presetName = presetNames[index] || 'Unknown';
+                console.log(`[SynthUI] ========================================`);
+                console.log(`[SynthUI] SET BUTTON CLICKED`);
+                console.log(`[SynthUI] Preset dropdown value: "${presetSelect.value}" -> index: ${index}`);
+                console.log(`[SynthUI] Voice dropdown value: "${voiceSelect.value}" -> voice: ${voice}`);
+                console.log(`[SynthUI] Preset name: "${presetName}"`);
+                console.log(`[SynthUI] Calling loadPreset(${index}, ${voice})`);
+                console.log(`[SynthUI] ========================================`);
 
-        if (presetSelect) {
-            // Only load preset when preset selector changes, using currently selected voice
-            presetSelect.addEventListener('change', (e) => {
-                const index = parseInt(e.target.value);
-                const voice = voiceSelect ? parseInt(voiceSelect.value) : 0;
-                console.log(`[SynthUI] Preset changed. Voice selector value: "${voiceSelect.value}", parsed: ${voice}`);
-                console.log(`[SynthUI] Loading preset ${index}: ${presetNames[index]} to voice ${voice}`);
                 if (this.synthInstance && typeof this.synthInstance.loadPreset === 'function') {
                     this.synthInstance.loadPreset(index, voice);
                 }
             });
 
-            // Load first preset by default to Voice 1
-            if (presetNames.length > 0) {
-                this.synthInstance.loadPreset(0, 0);
-            }
+            // Hover effect
+            setButton.addEventListener('mouseenter', () => {
+                setButton.style.background = '#3a3a3a';
+                setButton.style.borderColor = '#4a4a4a';
+            });
+            setButton.addEventListener('mouseleave', () => {
+                setButton.style.background = '#2a2a2a';
+                setButton.style.borderColor = '#333333';
+            });
         }
 
-        console.log('[SynthUI] Preset selector ready');
+        console.log('[SynthUI] Preset selector ready (manual SET mode)');
     }
 
     groupParameters(params) {
@@ -457,6 +465,11 @@ class SynthUI extends HTMLElement {
     }
 
     updateParameter(index, value) {
+        // Don't send parameter updates back to synth while syncing UI from preset load
+        if (this.isUpdatingFromPreset) {
+            return;
+        }
+
         if (this.synthInstance && typeof this.synthInstance.setParameter === 'function') {
             this.synthInstance.setParameter(index, value);
         }
@@ -465,11 +478,35 @@ class SynthUI extends HTMLElement {
     /**
      * Update UI controls from parameter values (called when preset loads)
      */
-    updateUIFromParameters(parameters) {
+    updateUIFromParameters(parameters, voice = null) {
         console.log('[SynthUI] Updating UI from', parameters.length, 'parameters:', parameters);
+
+        // Set flag to prevent feedback loop (UI updates triggering parameter changes)
+        this.isUpdatingFromPreset = true;
+
+        // If voice is specified, only update that voice's parameters (0-7 for V1, 8-15 for V2, 16-23 for V3)
+        // This prevents preset loading from overwriting global parameters like volume
+        let startParam = 0;
+        let endParam = parameters.length;
+        if (voice !== null && voice >= 0 && voice <= 2) {
+            startParam = voice * 8;
+            endParam = startParam + 8;
+            console.log(`[SynthUI] Only updating voice ${voice} parameters ${startParam}-${endParam-1}`);
+        }
 
         for (let i = 0; i < parameters.length; i++) {
             const value = parameters[i];
+
+            // Skip null/undefined values (allows sparse updates)
+            if (value === null || value === undefined) {
+                continue;
+            }
+
+            // Skip parameters outside the voice range if voice is specified
+            if (voice !== null && (i < startParam || i >= endParam)) {
+                continue;
+            }
+
             const param = this.getParamByIndex(i);
             if (!param) {
                 console.warn(`[SynthUI] No param definition for index ${i}`);
@@ -522,6 +559,9 @@ class SynthUI extends HTMLElement {
                 }
             }
         }
+
+        // Clear flag after UI update completes
+        this.isUpdatingFromPreset = false;
 
         console.log('[SynthUI] ✅ UI synchronized with preset');
     }

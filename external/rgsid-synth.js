@@ -172,7 +172,7 @@ class RGSIDSynth {
             console.log('[RGSIDSynth] Audio graph connected: worklet → masterGain → speakerGain → destination');
 
             // Load and register AudioWorklet processor (with cache-busting)
-            await this.audioContext.audioWorklet.addModule('worklets/synth-worklet-processor.js?v=199');
+            await this.audioContext.audioWorklet.addModule('worklets/synth-worklet-processor.js?v=300');
 
             // Create worklet node
             this.workletNode = new AudioWorkletNode(this.audioContext, 'synth-worklet-processor');
@@ -310,7 +310,7 @@ class RGSIDSynth {
         if (!this.isActive || !this.wasmReady || !this.workletNode) return;
 
         this.workletNode.port.postMessage({
-            type: 'setParameter',
+            type: 'setParam',
             data: { index, value }
         });
     }
@@ -516,10 +516,16 @@ class RGSIDSynth {
             return;
         }
 
-        console.log(`[RGSIDSynth] Loading preset ${index}: ${this.presetNames[index]} to voice ${voice}`);
+        console.log(`[RGSIDSynth] ======================================`);
+        console.log(`[RGSIDSynth] loadPreset() called`);
+        console.log(`[RGSIDSynth]   index = ${index} (type: ${typeof index})`);
+        console.log(`[RGSIDSynth]   voice = ${voice} (type: ${typeof voice})`);
+        console.log(`[RGSIDSynth]   preset name = "${this.presetNames[index]}"`);
+        console.log(`[RGSIDSynth] ======================================`);
 
         // Factory preset - load from WASM
         if (index < this.factoryPresetCount) {
+            console.log(`[RGSIDSynth] Sending 'loadPreset' message to worklet: { index: ${index}, voice: ${voice} }`);
             this.workletNode.port.postMessage({ type: 'loadPreset', data: { index, voice } });
         }
         // User preset - apply parameters directly
@@ -531,30 +537,50 @@ class RGSIDSynth {
                 return;
             }
 
-            console.log('[RGSIDSynth] Applying user preset from JSON');
+            console.log(`[RGSIDSynth] Applying user preset to voice ${voice}`);
 
-            // Build parameters array (31 parameters total, initialize all)
-            const parameters = new Array(31).fill(0);
+            // Map preset parameters to target voice
+            // Voice 0: params 0-7, Voice 1: params 8-15, Voice 2: params 16-23
+            const baseParam = voice * 8;
 
-            // Apply parameters (Voice 1 only for simplified format)
-            parameters[0] = preset.waveform || 4;  // Waveform
-            parameters[1] = preset.pulseWidth || 0.5;  // PW
-            parameters[2] = preset.attack || 0.0;  // Attack
-            parameters[3] = preset.decay || 0.5;  // Decay
-            parameters[4] = preset.sustain || 0.7;  // Sustain
-            parameters[5] = preset.release || 0.3;  // Release
-            parameters[24] = preset.filterMode || 1;  // Filter Mode
-            parameters[25] = preset.filterCutoff || 0.5;  // Filter Cutoff
-            parameters[26] = preset.filterResonance || 0.0;  // Filter Resonance
-            parameters[27] = preset.filterVoice1 || 0;  // Filter V1 routing
+            // Only set parameters for the target voice (don't touch other voices or global params)
+            this.setParameter(baseParam + 0, preset.waveform || 4);  // Waveform
+            this.setParameter(baseParam + 1, preset.pulseWidth || 0.5);  // PW
+            this.setParameter(baseParam + 2, preset.attack || 0.0);  // Attack
+            this.setParameter(baseParam + 3, preset.decay || 0.5);  // Decay
+            this.setParameter(baseParam + 4, preset.sustain || 0.7);  // Sustain
+            this.setParameter(baseParam + 5, preset.release || 0.3);  // Release
+            this.setParameter(baseParam + 6, preset.ringMod || 0);  // Ring Mod
+            this.setParameter(baseParam + 7, preset.sync || 0);  // Sync
 
-            // Send to WASM
-            for (let i = 0; i < 31; i++) {
-                this.setParameter(i, parameters[i]);
+            // Optionally update filter settings (but don't override filter routing for other voices)
+            if (preset.filterMode !== undefined) {
+                this.setParameter(24, preset.filterMode);  // Filter Mode
+            }
+            if (preset.filterCutoff !== undefined) {
+                this.setParameter(25, preset.filterCutoff);  // Filter Cutoff
+            }
+            if (preset.filterResonance !== undefined) {
+                this.setParameter(26, preset.filterResonance);  // Filter Resonance
             }
 
-            // Emit event for UI sync with parameters
-            this.emit('presetLoaded', { index, name: preset.name, parameters });
+            // Set filter routing for target voice only
+            const filterRoutingParam = 27 + voice;  // 27=V1, 28=V2, 29=V3
+            this.setParameter(filterRoutingParam, preset.filterVoice1 !== undefined ? preset.filterVoice1 : 1);
+
+            // Build parameters array for UI update (only the voice that changed)
+            const parameters = new Array(31).fill(null);
+            parameters[baseParam + 0] = preset.waveform || 4;
+            parameters[baseParam + 1] = preset.pulseWidth || 0.5;
+            parameters[baseParam + 2] = preset.attack || 0.0;
+            parameters[baseParam + 3] = preset.decay || 0.5;
+            parameters[baseParam + 4] = preset.sustain || 0.7;
+            parameters[baseParam + 5] = preset.release || 0.3;
+            parameters[baseParam + 6] = preset.ringMod || 0;
+            parameters[baseParam + 7] = preset.sync || 0;
+
+            // Emit event for UI sync with parameters (include voice so UI knows what changed)
+            this.emit('presetLoaded', { index, name: preset.name, parameters, voice });
         }
     }
 

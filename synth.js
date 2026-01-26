@@ -313,13 +313,31 @@ async function initializeSynth(engine) {
 
   synthStatus.innerHTML = `Synth: <span>${engineName}</span>`;
 
-  // Disable active button
-  document.getElementById("btnInitSimple").disabled = engine === "simple";
-  document.getElementById("btnInitRGResonate1").disabled =
-    engine === "rgresonate1";
-  document.getElementById("btnInitRGAHX").disabled = engine === "rgahx";
-  document.getElementById("btnInitRGSID").disabled = engine === "rgsid";
-  document.getElementById("btnInitRG1Piano").disabled = engine === "rg1piano";
+  // Update button states - Remove all active classes first
+  document.getElementById("btnInitSimple").classList.remove("active");
+  document.getElementById("btnInitRGResonate1").classList.remove("active");
+  document.getElementById("btnInitRGAHX").classList.remove("active");
+  document.getElementById("btnInitRGSID").classList.remove("active");
+  document.getElementById("btnInitRG1Piano").classList.remove("active");
+  document.getElementById("btnInitRGSFZ").classList.remove("active");
+  document.getElementById("btnInitRGSlicer").classList.remove("active");
+
+  // Add active class to current engine
+  if (engine === "simple") {
+    document.getElementById("btnInitSimple").classList.add("active");
+  } else if (engine === "rgresonate1") {
+    document.getElementById("btnInitRGResonate1").classList.add("active");
+  } else if (engine === "rgahx") {
+    document.getElementById("btnInitRGAHX").classList.add("active");
+  } else if (engine === "rgsid") {
+    document.getElementById("btnInitRGSID").classList.add("active");
+  } else if (engine === "rg1piano") {
+    document.getElementById("btnInitRG1Piano").classList.add("active");
+  } else if (engine === "rgsfz") {
+    document.getElementById("btnInitRGSFZ").classList.add("active");
+  } else if (engine === "rgslicer") {
+    document.getElementById("btnInitRGSlicer").classList.add("active");
+  }
 
   // Show/hide engine-specific controls
   document.getElementById("rgahxControls").style.display =
@@ -343,9 +361,14 @@ async function initializeDrum() {
     await audioContext.resume();
   }
 
+  // Destroy existing drum engines if switching
   if (drumSynth) {
-    console.log("[Synth Test] RG909 Drum already initialized");
-    return;
+    drumSynth.destroy();
+    drumSynth = null;
+  }
+  if (ahxDrumSynth) {
+    ahxDrumSynth.destroy();
+    ahxDrumSynth = null;
   }
 
   drumSynth = new RG909Drum(audioContext);
@@ -380,7 +403,10 @@ async function initializeDrum() {
 
   // Don't call setAudible(true) - already connected through analyzer
   // (Calling setAudible would create dual path: analyzer + speakerGain = 2x volume!)
-  document.getElementById("btnInitDrum").disabled = true;
+
+  // Update button states
+  document.getElementById("btnInitDrum").classList.add("active");
+  document.getElementById("btnInitAHXDrum").classList.remove("active");
   document.getElementById("btnRenderDrums").disabled = false;
 }
 
@@ -390,9 +416,14 @@ async function initializeAHXDrum() {
     await audioContext.resume();
   }
 
+  // Destroy existing drum engines if switching
+  if (drumSynth) {
+    drumSynth.destroy();
+    drumSynth = null;
+  }
   if (ahxDrumSynth) {
-    console.log("[Synth Test] RGAHX Drum already initialized");
-    return;
+    ahxDrumSynth.destroy();
+    ahxDrumSynth = null;
   }
 
   ahxDrumSynth = new RGAHXDrum(audioContext);
@@ -425,9 +456,9 @@ async function initializeAHXDrum() {
   // Connect analyzer to master gain (volume control)
   sharedAnalyzer.connectTo(masterGainNode);
 
-  document.getElementById("btnInitAHXDrum").textContent =
-    "RGAHX Drum Initialized";
-  document.getElementById("btnInitAHXDrum").disabled = true;
+  // Update button states
+  document.getElementById("btnInitDrum").classList.remove("active");
+  document.getElementById("btnInitAHXDrum").classList.add("active");
 }
 
 function toggleWebRTCConfig() {
@@ -1260,9 +1291,14 @@ async function initializeRGSFZ() {
     await audioContext.resume();
   }
 
+  // Destroy existing synth if switching
+  if (currentSynth) {
+    currentSynth.destroy();
+    currentSynth = null;
+  }
   if (sfzPlayer) {
-    console.log("[RGSFZ] Already initialized");
-    return;
+    sfzPlayer.destroy();
+    sfzPlayer = null;
   }
 
   try {
@@ -1293,9 +1329,16 @@ async function initializeRGSFZ() {
     // Show RGSFZ controls
     document.getElementById("rgsfzControls").style.display = "block";
 
-    // Update button states
-    document.getElementById("btnInitRGSFZ").textContent = "RGSFZ Initialized";
-    document.getElementById("btnInitRGSFZ").disabled = true;
+    // Update button states - Remove all active classes first
+    document.getElementById("btnInitSimple").classList.remove("active");
+    document.getElementById("btnInitRGResonate1").classList.remove("active");
+    document.getElementById("btnInitRGAHX").classList.remove("active");
+    document.getElementById("btnInitRGSID").classList.remove("active");
+    document.getElementById("btnInitRG1Piano").classList.remove("active");
+    document.getElementById("btnInitRGSFZ").classList.remove("active");
+    document.getElementById("btnInitRGSlicer").classList.remove("active");
+    // Add active class to RGSFZ
+    document.getElementById("btnInitRGSFZ").classList.add("active");
 
     console.log("[RGSFZ] Initialized successfully");
   } catch (error) {

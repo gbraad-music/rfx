@@ -1901,8 +1901,53 @@ async function drawVisualizer() {
     drawVUMeter();
     updatePlaybackPosition();
 
-    // Note: PIP mode uses canvas.captureStream() - no extra drawing needed!
-    // The canvas is automatically streamed to the PIP video element
+    // Draw to popup windows if open
+    if (window.popupWindows && window.popupWindows.size > 0) {
+      window.popupWindows.forEach((popupData, canvasId) => {
+        if (popupData.window.closed) {
+          window.popupWindows.delete(canvasId);
+          return;
+        }
+        
+        const popupCtx = popupData.canvas.getContext('2d');
+        const popupCanvas = popupData.canvas;
+
+        if (canvasId === 'visualizer' && dataArray && waveformComponent) {
+          // Use the waveform component to draw to popup canvas
+          const originalCanvas = waveformComponent.canvas;
+          const originalCtx = waveformComponent.ctx;
+          
+          waveformComponent.canvas = popupCanvas;
+          waveformComponent.ctx = popupCtx;
+          waveformComponent.draw(dataArray);
+          
+          waveformComponent.canvas = originalCanvas;
+          waveformComponent.ctx = originalCtx;
+        } else if (canvasId === 'spectrum' && spectrumComponent) {
+          // Use the spectrum component to draw to popup canvas
+          const originalCanvas = spectrumComponent.canvas;
+          const originalCtx = spectrumComponent.ctx;
+          
+          spectrumComponent.canvas = popupCanvas;
+          spectrumComponent.ctx = popupCtx;
+          spectrumComponent.draw(processor.analyser);
+          
+          spectrumComponent.canvas = originalCanvas;
+          spectrumComponent.ctx = originalCtx;
+        } else if (canvasId === 'vumeter' && vuMeterComponent) {
+          // Use the VU meter component to draw to popup canvas
+          const originalCanvas = vuMeterComponent.canvas;
+          const originalCtx = vuMeterComponent.ctx;
+          
+          vuMeterComponent.canvas = popupCanvas;
+          vuMeterComponent.ctx = popupCtx;
+          vuMeterComponent.draw();
+          
+          vuMeterComponent.canvas = originalCanvas;
+          vuMeterComponent.ctx = originalCtx;
+        }
+      });
+    }
   };
 
   draw();

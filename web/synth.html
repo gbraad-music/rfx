@@ -373,34 +373,129 @@
 
     <!-- Fullscreen Scope Functionality -->
     <script>
-        // Enable fullscreen for all visualizer containers
+        // Track popup windows for each visualizer
+        const popupWindows = new Map();
+
+        // Pop-out visualizer to separate window
+        function popOutVisualizer(container) {
+            const canvas = container.querySelector('canvas');
+            if (!canvas) return;
+
+            const canvasId = canvas.id;
+
+            // Don't open duplicate popups
+            if (popupWindows.has(canvasId)) {
+                popupWindows.get(canvasId).focus();
+                return;
+            }
+
+            const popup = window.open('', `scope_${canvasId}`, 'width=800,height=600,resizable=yes,scrollbars=no,location=no,menubar=no,status=no,toolbar=no');
+            if (!popup) {
+                alert('Pop-up blocked! Please allow pop-ups for this site.');
+                return;
+            }
+
+            popup.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>${canvasId.toUpperCase()} - Regroove Scope</title>
+                    <style>
+                        body {
+                            margin: 0;
+                            background: #0a0a0a;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            overflow: hidden;
+                        }
+                        canvas {
+                            width: 100%;
+                            height: 100vh;
+                            display: block;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <canvas id="${canvasId}_popup"></canvas>
+                </body>
+                </html>
+            `);
+            popup.document.close();
+
+            const popupCanvas = popup.document.getElementById(`${canvasId}_popup`);
+            popupCanvas.width = 800;
+            popupCanvas.height = 600;
+
+            // Store reference to popup and its canvas
+            popupWindows.set(canvasId, { window: popup, canvas: popupCanvas });
+            console.log(`[PopOut] Opened ${canvasId} in new window`);
+
+            // Handle popup close
+            popup.addEventListener('beforeunload', () => {
+                popupWindows.delete(canvasId);
+                console.log(`[PopOut] Closed ${canvasId} popup`);
+            });
+
+            // Resize popup canvas when window resizes
+            popup.addEventListener('resize', () => {
+                popupCanvas.width = popup.innerWidth;
+                popupCanvas.height = popup.innerHeight;
+            });
+        }
+
+        // Enable fullscreen and pop-out for all visualizer containers
         function setupFullscreen() {
             const containers = document.querySelectorAll('.visualizer-container');
             console.log('[Fullscreen] Setting up for', containers.length, 'visualizer containers');
 
             containers.forEach((container, idx) => {
-                // Click to toggle fullscreen
-                container.addEventListener('click', (e) => {
-                    // Ignore if clicking on canvas during animation
-                    if (e.target !== container && e.target.tagName !== 'CANVAS') return;
+                // Add pop-out button
+                const popoutBtn = document.createElement('button');
+                popoutBtn.className = 'viz-popout-btn';
+                popoutBtn.textContent = '⧉';
+                popoutBtn.title = 'Pop out to window';
+                popoutBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    popOutVisualizer(container);
+                });
+                container.appendChild(popoutBtn);
 
+                // Add fullscreen button
+                const fullscreenBtn = document.createElement('button');
+                fullscreenBtn.className = 'viz-fullscreen-btn';
+                fullscreenBtn.textContent = '⛶';
+                fullscreenBtn.title = 'Fullscreen';
+                fullscreenBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     if (document.fullscreenElement === container) {
-                        // Exit fullscreen
                         document.exitFullscreen();
                     } else {
-                        // Enter fullscreen
                         if (container.requestFullscreen) {
                             container.requestFullscreen();
                         } else if (container.webkitRequestFullscreen) {
-                            container.webkitRequestFullscreen(); // Safari
+                            container.webkitRequestFullscreen();
                         } else if (container.msRequestFullscreen) {
-                            container.msRequestFullscreen(); // IE11
+                            container.msRequestFullscreen();
+                        }
+                    }
+                });
+                container.appendChild(fullscreenBtn);
+
+                // Allow clicking canvas for fullscreen (legacy behavior)
+                container.addEventListener('click', (e) => {
+                    if (e.target === container || e.target.tagName === 'CANVAS') {
+                        if (document.fullscreenElement === container) {
+                            document.exitFullscreen();
+                        } else {
+                            if (container.requestFullscreen) {
+                                container.requestFullscreen();
+                            }
                         }
                     }
                 });
 
-                // Remove old title hint, keep only the ⛶ symbol visible in corner
-                console.log('[Fullscreen] Attached to container', idx);
+                console.log('[Fullscreen] Attached fullscreen/popout to container', idx);
             });
 
             // Handle resize when entering/exiting fullscreen

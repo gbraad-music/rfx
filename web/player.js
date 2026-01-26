@@ -24,12 +24,20 @@ class AudioEffectsProcessor {
     this.audioElement = null;
     this.isStreaming = false;
 
+    // Video playback
+    this.videoElement = null;
+    this.isVideo = false;
+
     // MOD/MED player
     this.modMedModule = null;
     this.modMedPlayer = null;
     this.modMedScriptNode = null;
     this.isModMedPlaying = false;
     this.modMedAnimationFrame = null;
+
+    // Playlist management
+    this.playlist = [];
+    this.currentTrackIndex = 0;
   }
 
   async init() {
@@ -385,6 +393,11 @@ class AudioEffectsProcessor {
   }
 
   async loadAudioFile(file) {
+    if (!file) {
+      console.error('❌ No file provided to loadAudioFile');
+      return;
+    }
+
     console.log(
       `📂 Loading: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`,
     );
@@ -396,14 +409,40 @@ class AudioEffectsProcessor {
       return;
     }
 
-    this.cleanupAudioElement();
+    // Skip UI updates if we're in a playlist (keeps currentFileName visible)
+    const inPlaylist = this.playlist.length > 1;
+    this.cleanupAudioElement(inPlaylist);
 
-    this.audioElement = new Audio();
-    this.audioElement.loop = true;
+    // Detect if file is video based on extension or MIME type
+    const videoExtensions = ['.mp4', '.webm', '.ogv', '.mov', '.avi', '.mkv', '.m4v'];
+    const isVideoExt = videoExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    const isVideoMime = file.type && file.type.startsWith('video/');
+    const isVideo = isVideoExt || isVideoMime;
+    this.isVideo = isVideo;
+
+    if (isVideo) {
+      console.log('🎬 Detected video file');
+      this.videoElement = document.createElement('video');
+      this.videoElement.loop = true;
+      this.audioElement = this.videoElement; // Use video element as audio source
+      console.log('✅ Created video element:', this.videoElement);
+      console.log('✅ Set audioElement to videoElement:', this.audioElement);
+    } else {
+      this.audioElement = new Audio();
+      this.audioElement.loop = true;
+      console.log('✅ Created audio element:', this.audioElement);
+    }
+
+    if (!this.audioElement) {
+      console.error('❌ CRITICAL: audioElement is null after creation!');
+      throw new Error('Failed to create audio/video element');
+    }
 
     // Try blob URL first, fallback to data URL for immutable systems
     try {
+      console.log(`📎 Setting src on ${isVideo ? 'video' : 'audio'} element...`);
       this.audioElement.src = URL.createObjectURL(file);
+      console.log('✅ Blob URL set successfully');
 
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(
@@ -454,7 +493,25 @@ class AudioEffectsProcessor {
     document.getElementById("audioSourceInfo").style.display = "block";
     document.getElementById("micDeviceList").style.display = "none";
     document.getElementById("currentFileName").style.display = "block";
-    document.getElementById("fileNameText").textContent = file.name;
+    const fileNameText = document.getElementById("fileNameText");
+    fileNameText.textContent = file.name;
+
+    // Add video indicator and popup button if it's a video file
+    if (this.isVideo) {
+      console.log('📺 Video file loaded - click "Pop-out Video" button to view');
+      fileNameText.innerHTML = `${file.name} <button id="videoPopupBtn" style="margin-left: 10px; padding: 3px 8px; font-size: 0.85em; cursor: pointer; background: #CF1A37; color: white; border: none; border-radius: 3px;">📺 Pop-out Video</button>`;
+
+      // Attach event listener to video popup button
+      setTimeout(() => {
+        const videoBtn = document.getElementById('videoPopupBtn');
+        if (videoBtn) {
+          videoBtn.addEventListener('click', () => {
+            console.log('🎬 Opening video popup window...');
+            popOutVideo(this.videoElement);
+          });
+        }
+      }, 0);
+    }
 
     // Show RENDER button, hide TEST SIGNAL selector
     document.getElementById("renderBtn").style.display = "inline-block";
@@ -464,7 +521,7 @@ class AudioEffectsProcessor {
     document.title = `RFX: ${file.name}`;
   }
 
-  cleanupAudioElement() {
+  cleanupAudioElement(skipUIUpdate = false) {
     if (this.mediaElementSource) {
       this.mediaElementSource.disconnect();
       this.mediaElementSource = null;
@@ -476,14 +533,24 @@ class AudioEffectsProcessor {
       }
       this.audioElement = null;
     }
+    if (this.videoElement) {
+      this.videoElement = null;
+    }
     this.isStreaming = false;
+    this.isVideo = false;
     this.loadedFile = null;
+
+    // Skip UI updates when switching tracks within a playlist
+    if (skipUIUpdate) {
+      return;
+    }
 
     // Hide RENDER button, show TEST SIGNAL selector
     document.getElementById("renderBtn").style.display = "none";
     document.getElementById("testSignal").style.display = "inline-block";
 
     // Hide file name, show mic selector (if available)
+    // Note: Don't hide playlist nav buttons here - they're controlled by playlist state
     const micDeviceList = document.getElementById("micDeviceList");
     if (micDeviceList && micDeviceList.options.length > 0) {
       document.getElementById("audioSourceInfo").style.display = "block";
@@ -966,14 +1033,32 @@ class AudioEffectsProcessor {
         this.mediaElementSource.connect(this.workletNode);
       }
 
+      // Set up ended event for playlist auto-advance
+      this.audioElement.onended = async () => {
+        console.log("⏹ Stream ended");
+
+        // If in playlist mode, auto-advance to next track
+        if (this.playlist.length > 1) {
+          console.log("📋 Auto-advancing to next track...");
+          await playNextTrack();
+          updatePlaybackButtons();
+        } else {
+          this.isPlaying = false;
+          updatePlaybackButtons();
+        }
+      };
+
       // Apply tempo (playback rate)
       this.audioElement.playbackRate = this.playbackRate;
+      // Set loop based on playlist mode
+      this.audioElement.loop = this.playlist.length <= 1;
 
       await this.audioElement.play();
       this.isPlaying = true;
       console.log(
         `✅ Streaming at ${(this.playbackRate * 100).toFixed(1)}% tempo`,
       );
+      console.log(`   Playlist mode: ${this.playlist.length > 1 ? "YES (no loop)" : "NO (loop)"}`);
     } else if (this.audioBuffer) {
       console.log("▶️ Playing (looped)...");
       console.log(
@@ -984,7 +1069,9 @@ class AudioEffectsProcessor {
 
       this.sourceNode = this.audioContext.createBufferSource();
       this.sourceNode.buffer = this.audioBuffer;
-      this.sourceNode.loop = true;
+
+      // Only loop if NOT in playlist mode
+      this.sourceNode.loop = this.playlist.length <= 1;
       this.sourceNode.playbackRate.value = this.playbackRate; // Apply tempo
 
       console.log(
@@ -993,6 +1080,7 @@ class AudioEffectsProcessor {
       console.log(
         `   Worklet connected to: ${this.workletNode.numberOfOutputs} outputs`,
       );
+      console.log(`   Playlist mode: ${this.playlist.length > 1 ? "YES (no loop)" : "NO (loop)"}`);
       this.sourceNode.connect(this.workletNode);
 
       this.sourceNode.start(0);
@@ -1002,10 +1090,18 @@ class AudioEffectsProcessor {
         `✅ Playback started at ${this.startTime.toFixed(3)}s, ${(this.playbackRate * 100).toFixed(1)}% tempo`,
       );
 
-      this.sourceNode.onended = () => {
-        this.isPlaying = false;
-        updatePlaybackButtons();
-        console.log("⏹ Playback ended");
+      this.sourceNode.onended = async () => {
+        console.log("⏹ Track ended");
+
+        // If in playlist mode, auto-advance to next track
+        if (this.playlist.length > 1) {
+          console.log("📋 Auto-advancing to next track...");
+          await playNextTrack();
+          updatePlaybackButtons();
+        } else {
+          this.isPlaying = false;
+          updatePlaybackButtons();
+        }
       };
     }
   }
@@ -1067,6 +1163,10 @@ class AudioEffectsProcessor {
       this.stopModMed();
       return;
     }
+
+    // Clear playlist when stopping
+    this.playlist = [];
+    this.currentTrackIndex = 0;
 
     // Clean up audio file/stream
     this.cleanupAudioElement();
@@ -1800,6 +1900,9 @@ async function drawVisualizer() {
     drawSpectrum();
     drawVUMeter();
     updatePlaybackPosition();
+
+    // Note: PIP mode uses canvas.captureStream() - no extra drawing needed!
+    // The canvas is automatically streamed to the PIP video element
   };
 
   draw();
@@ -1824,10 +1927,220 @@ function updatePlaybackButtons() {
   stopBtn.disabled = !processor.isPlaying;
 }
 
+// =======================================
+// PLAYLIST MANAGEMENT
+// =======================================
+
+async function loadPlaylist(files) {
+  console.log(`📋 Loading playlist with ${files.length} files`);
+
+  // Clean up any existing playback (including MOD/MED)
+  processor.stop();
+  processor.cleanupModMedPlayer();
+
+  // Store files in playlist
+  processor.playlist = files;
+  processor.currentTrackIndex = 0;
+
+  // Update playlist UI
+  updatePlaylistUI();
+
+  // Load first track
+  await processor.loadAudioFile(files[0]);
+}
+
+function updatePlaylistUI() {
+  const playlistSection = document.getElementById('playlistSection');
+  const totalTracks = document.getElementById('totalTracks');
+  const playlistTrackList = document.getElementById('playlistTrackList');
+  const playlistNavButtons = document.getElementById('playlistNavButtons');
+
+  if (processor.playlist.length > 1) {
+    // Show playlist UI and navigation buttons
+    playlistSection.style.display = 'block';
+    playlistNavButtons.style.display = 'flex';
+    totalTracks.textContent = processor.playlist.length;
+
+    // Build track list
+    playlistTrackList.innerHTML = '';
+    processor.playlist.forEach((file, index) => {
+      const trackItem = document.createElement('div');
+      trackItem.style.cssText = `
+        padding: 8px 12px;
+        margin-bottom: 5px;
+        background: ${index === processor.currentTrackIndex ? 'rgba(207, 26, 55, 0.2)' : 'var(--bg-secondary)'};
+        border: 1px solid ${index === processor.currentTrackIndex ? '#CF1A37' : 'var(--border)'};
+        border-radius: 3px;
+        cursor: pointer;
+        transition: background 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      `;
+
+      // Track number
+      const trackNum = document.createElement('span');
+      trackNum.textContent = `${index + 1}.`;
+      trackNum.style.cssText = `
+        color: var(--text-secondary);
+        font-weight: bold;
+        min-width: 30px;
+        font-family: monospace;
+      `;
+
+      // Track name
+      const trackName = document.createElement('span');
+      trackName.textContent = file.name;
+      trackName.style.cssText = `
+        color: ${index === processor.currentTrackIndex ? '#CF1A37' : 'var(--text-primary)'};
+        font-weight: ${index === processor.currentTrackIndex ? 'bold' : 'normal'};
+        flex: 1;
+      `;
+
+      trackItem.appendChild(trackNum);
+      trackItem.appendChild(trackName);
+
+      // Click to play track
+      trackItem.addEventListener('click', async () => {
+        if (index !== processor.currentTrackIndex) {
+          // Stop current playback WITHOUT full cleanup (we're switching tracks, not stopping)
+          if (processor.modMedPlayer && processor.isModMedPlaying) {
+            processor.stopModMed();
+          }
+          if (processor.audioElement) {
+            processor.audioElement.pause();
+          }
+          if (processor.sourceNode && processor.sourceNode.stop) {
+            try {
+              processor.sourceNode.stop();
+              processor.sourceNode.disconnect();
+              processor.sourceNode = null;
+            } catch (e) {
+              // Already stopped
+            }
+          }
+          processor.isPlaying = false;
+
+          processor.currentTrackIndex = index;
+          // Don't call updatePlaylistUI() here - it will be called after loading
+          await processor.loadAudioFile(processor.playlist[index]);
+          updatePlaylistUI(); // Update after file is loaded
+          await processor.play();
+          updatePlaybackButtons(); // Sync button states
+        }
+      });
+
+      // Hover effect
+      trackItem.addEventListener('mouseenter', () => {
+        if (index !== processor.currentTrackIndex) {
+          trackItem.style.background = 'rgba(207, 26, 55, 0.1)';
+        }
+      });
+      trackItem.addEventListener('mouseleave', () => {
+        if (index !== processor.currentTrackIndex) {
+          trackItem.style.background = 'var(--bg-secondary)';
+        }
+      });
+
+      playlistTrackList.appendChild(trackItem);
+    });
+  } else {
+    // Hide playlist UI and navigation buttons for single file
+    playlistSection.style.display = 'none';
+    playlistNavButtons.style.display = 'none';
+  }
+}
+
+// Setup playlist collapse functionality
+function setupPlaylistCollapse() {
+  const playlistSectionTitle = document.getElementById('playlistSectionTitle');
+  const playlistContent = document.getElementById('playlistContent');
+  const playlistToggle = document.getElementById('playlistToggle');
+  let isCollapsed = false;
+
+  playlistSectionTitle.addEventListener('click', () => {
+    isCollapsed = !isCollapsed;
+
+    if (isCollapsed) {
+      playlistContent.style.maxHeight = '0';
+      playlistToggle.style.transform = 'rotate(-90deg)';
+      playlistToggle.textContent = '▶';
+    } else {
+      playlistContent.style.maxHeight = '400px';
+      playlistToggle.style.transform = 'rotate(0deg)';
+      playlistToggle.textContent = '▼';
+    }
+  });
+}
+
+async function playNextTrack() {
+  if (processor.playlist.length === 0) return;
+
+  // Stop current playback WITHOUT full cleanup (we're switching tracks, not stopping)
+  if (processor.modMedPlayer && processor.isModMedPlaying) {
+    processor.stopModMed();
+  }
+  if (processor.audioElement) {
+    processor.audioElement.pause();
+  }
+  if (processor.sourceNode && processor.sourceNode.stop) {
+    try {
+      processor.sourceNode.stop();
+      processor.sourceNode.disconnect();
+      processor.sourceNode = null;
+    } catch (e) {
+      // Already stopped
+    }
+  }
+  processor.isPlaying = false;
+
+  processor.currentTrackIndex = (processor.currentTrackIndex + 1) % processor.playlist.length;
+  console.log(`⏭️ Next track: ${processor.currentTrackIndex + 1}/${processor.playlist.length}`);
+
+  updatePlaylistUI();
+  await processor.loadAudioFile(processor.playlist[processor.currentTrackIndex]);
+
+  // Auto-play next track
+  await processor.play();
+  updatePlaybackButtons();
+}
+
+async function playPrevTrack() {
+  if (processor.playlist.length === 0) return;
+
+  // Stop current playback WITHOUT full cleanup (we're switching tracks, not stopping)
+  if (processor.modMedPlayer && processor.isModMedPlaying) {
+    processor.stopModMed();
+  }
+  if (processor.audioElement) {
+    processor.audioElement.pause();
+  }
+  if (processor.sourceNode && processor.sourceNode.stop) {
+    try {
+      processor.sourceNode.stop();
+      processor.sourceNode.disconnect();
+      processor.sourceNode = null;
+    } catch (e) {
+      // Already stopped
+    }
+  }
+  processor.isPlaying = false;
+
+  processor.currentTrackIndex = (processor.currentTrackIndex - 1 + processor.playlist.length) % processor.playlist.length;
+  console.log(`⏮️ Previous track: ${processor.currentTrackIndex + 1}/${processor.playlist.length}`);
+
+  updatePlaylistUI();
+  await processor.loadAudioFile(processor.playlist[processor.currentTrackIndex]);
+
+  // Auto-play previous track
+  await processor.play();
+  updatePlaybackButtons();
+}
+
 // Event Listeners
 document.getElementById("audioFile").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (file) {
+  const files = Array.from(e.target.files);
+  if (files.length > 0) {
     try {
       // Stop microphone if active when loading new audio
       if (processor.micStream) {
@@ -1835,11 +2148,20 @@ document.getElementById("audioFile").addEventListener("change", async (e) => {
       }
       processor.stop();
 
-      await processor.loadAudioFile(file);
+      // Load playlist (multiple files) or single file
+      if (files.length > 1) {
+        await loadPlaylist(files);
+      } else {
+        // Single file - clear playlist and load normally
+        processor.playlist = [];
+        processor.currentTrackIndex = 0;
+        updatePlaylistUI();
+        await processor.loadAudioFile(files[0]);
+      }
 
       updatePlaybackButtons();
     } catch (error) {
-      console.error("Error loading file:", error);
+      console.error("Error loading file(s):", error);
     }
   }
   // Clear the input value to allow reloading the same file
@@ -1882,6 +2204,7 @@ document.getElementById("playBtn").addEventListener("click", async () => {
 document.getElementById("stopBtn").addEventListener("click", () => {
   processor.stop();
   updatePlaybackButtons();
+  updatePlaylistUI(); // Hide playlist UI and nav buttons
 });
 
 document.getElementById("renderBtn").addEventListener("click", async () => {
@@ -1968,6 +2291,17 @@ document.getElementById("testSignal").addEventListener("change", (e) => {
   });
 })();
 
+// Playlist navigation buttons (top)
+document.getElementById("btnPrevTrackTop").addEventListener("click", async () => {
+  await playPrevTrack();
+  updatePlaybackButtons();
+});
+
+document.getElementById("btnNextTrackTop").addEventListener("click", async () => {
+  await playNextTrack();
+  updatePlaybackButtons();
+});
+
 // Initialize
 (async () => {
   try {
@@ -2012,6 +2346,9 @@ document.getElementById("testSignal").addEventListener("change", (e) => {
     
     // Setup fullscreen functionality
     setupSectionFullscreen();
+
+    // Setup playlist collapse
+    setupPlaylistCollapse();
   } catch (error) {
     console.error("INIT ERROR:", error);
     console.error("Stack:", error.stack);

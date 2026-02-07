@@ -15,7 +15,8 @@ struct SynthEnvelope {
     // State
     SynthEnvStage stage;
     float level;
-    float phase;     // Phase within current stage (0.0-1.0)
+    float phase;         // Phase within current stage (0.0-1.0)
+    float release_start; // Level at start of release phase
 };
 
 SynthEnvelope* synth_envelope_create(void)
@@ -78,6 +79,7 @@ void synth_envelope_release(SynthEnvelope* env)
 {
     if (!env) return;
     if (env->stage != SYNTH_ENV_IDLE && env->stage != SYNTH_ENV_RELEASE) {
+        env->release_start = env->level;  // Capture level at start of release
         env->stage = SYNTH_ENV_RELEASE;
         env->phase = 0.0f;
     }
@@ -138,22 +140,20 @@ float synth_envelope_process(SynthEnvelope* env, int sample_rate)
         env->level = env->sustain;
         break;
 
-    case SYNTH_ENV_RELEASE: {
-        float release_start = env->level;
+    case SYNTH_ENV_RELEASE:
         if (env->release > 0.0f) {
             env->phase += dt / env->release;
             if (env->phase >= 1.0f) {
                 env->level = 0.0f;
                 env->stage = SYNTH_ENV_IDLE;
             } else {
-                env->level = release_start * (1.0f - env->phase);
+                env->level = env->release_start * (1.0f - env->phase);
             }
         } else {
             env->level = 0.0f;
             env->stage = SYNTH_ENV_IDLE;
         }
         break;
-    }
 
     case SYNTH_ENV_IDLE:
         env->level = 0.0f;

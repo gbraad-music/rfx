@@ -7,6 +7,7 @@
 #define REGROOVE_UI_H
 
 #include <imgui.h>
+#include <cstdio>  // for snprintf
 
 namespace RegroovelizerUI {
 

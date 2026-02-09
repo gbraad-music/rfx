@@ -68,6 +68,17 @@ static inline SDL_AudioStream* sdl_audio_create_output_stream(
         *out_device = device;
     }
 
+    // Pre-buffer audio to reduce crackling/underruns
+    // Fill stream with 2048 frames of silence (~42ms at 48kHz)
+    const int prebuffer_frames = 2048;
+    const int prebuffer_bytes = prebuffer_frames * 2 * sizeof(float);
+    float* silence = (float*)calloc(prebuffer_frames * 2, sizeof(float));
+    if (silence) {
+        SDL_PutAudioStreamData(stream, silence, prebuffer_bytes);
+        free(silence);
+        SDL_Log("Audio pre-buffered with %d frames", prebuffer_frames);
+    }
+
     if (!SDL_ResumeAudioDevice(device)) {
         SDL_LogError(SDL_LOG_CATEGORY_AUDIO, "Failed to resume audio device: %s", SDL_GetError());
         SDL_DestroyAudioStream(stream);

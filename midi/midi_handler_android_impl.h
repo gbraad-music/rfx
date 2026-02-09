@@ -1,9 +1,26 @@
-// Android MIDI Handler using Java MidiManager + JNI
-// Works on Android 6.0+ (API 23+)
+/**
+ * Android MIDI Handler Implementation (Header-Only)
+ * Works on Android 6.0+ (API 23+)
+ *
+ * USAGE: Define ANDROID_APP_PACKAGE before including this file:
+ *   #define ANDROID_APP_PACKAGE nl_gbraad_junglizer
+ *   #include "midi_handler_android_impl.h"
+ *
+ * This generates JNI function names specific to your app package.
+ */
+
+#ifndef ANDROID_APP_PACKAGE
+#error "ANDROID_APP_PACKAGE must be defined before including midi_handler_android_impl.h"
+#error "Example: #define ANDROID_APP_PACKAGE nl_gbraad_junglizer"
+#endif
 
 #include "midi_handler.h"
 
 #ifdef __ANDROID__
+
+// Macro magic to concatenate package name with function suffix
+#define JNI_FUNC_NAME_HELPER(pkg, func) Java_ ## pkg ## _MidiHandler_ ## func
+#define JNI_FUNC_NAME(pkg, func) JNI_FUNC_NAME_HELPER(pkg, func)
 
 #include <android/log.h>
 #include <jni.h>
@@ -76,7 +93,7 @@ bool midi_handler_open_device(int device_index) {
         return false;
     }
 
-    jclass midiHandlerClass = env->FindClass("nl/gbraad/regroovelizer/MidiHandler");
+    jclass midiHandlerClass = env->FindClass("nl/gbraad/junglizer/MidiHandler");
     if (!midiHandlerClass) {
         LOGE("Failed to find MidiHandler class");
         return false;
@@ -106,7 +123,7 @@ void midi_handler_close_device(void) {
         return;
     }
 
-    jclass midiHandlerClass = env->FindClass("nl/gbraad/regroovelizer/MidiHandler");
+    jclass midiHandlerClass = env->FindClass("nl/gbraad/junglizer/MidiHandler");
     if (!midiHandlerClass) {
         LOGE("Failed to find MidiHandler class");
         return;
@@ -143,9 +160,10 @@ bool midi_handler_send_message(const midi_message_t* message) {
 }
 
 // JNI callbacks called from Java
+// Function names are generated using ANDROID_APP_PACKAGE macro
 
 extern "C" __attribute__((visibility("default"))) JNIEXPORT void JNICALL
-Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiClearDevices(
+JNI_FUNC_NAME(ANDROID_APP_PACKAGE, nativeMidiClearDevices)(
     JNIEnv* env,
     jobject thiz) {
 
@@ -157,7 +175,7 @@ Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiClearDevices(
 }
 
 extern "C" __attribute__((visibility("default"))) JNIEXPORT void JNICALL
-Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiAddDevice(
+JNI_FUNC_NAME(ANDROID_APP_PACKAGE, nativeMidiAddDevice)(
     JNIEnv* env,
     jobject thiz,
     jint index,
@@ -181,7 +199,7 @@ Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiAddDevice(
 }
 
 extern "C" __attribute__((visibility("default"))) JNIEXPORT void JNICALL
-Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiDeviceOpened(
+JNI_FUNC_NAME(ANDROID_APP_PACKAGE, nativeMidiDeviceOpened)(
     JNIEnv* env,
     jobject thiz,
     jint id) {
@@ -194,7 +212,7 @@ Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiDeviceOpened(
 }
 
 extern "C" __attribute__((visibility("default"))) JNIEXPORT void JNICALL
-Java_nl_gbraad_regroovelizer_MidiHandler_nativeMidiMessage(
+JNI_FUNC_NAME(ANDROID_APP_PACKAGE, nativeMidiMessage)(
     JNIEnv* env,
     jobject thiz,
     jint status,

@@ -18,6 +18,11 @@
 
 #ifdef __ANDROID__
 
+// Default MIDI handler Java class path (can be overridden at compile time)
+#ifndef MIDI_HANDLER_CLASS_PATH
+#define MIDI_HANDLER_CLASS_PATH "nl/gbraad/regroove/MidiHandler"
+#endif
+
 // Macro magic to concatenate package name with function suffix
 #define JNI_FUNC_NAME_HELPER(pkg, func) Java_ ## pkg ## _MidiHandler_ ## func
 #define JNI_FUNC_NAME(pkg, func) JNI_FUNC_NAME_HELPER(pkg, func)
@@ -27,7 +32,12 @@
 #include <vector>
 #include <string>
 
-#define LOG_TAG "MIDIHandler"
+// Allow log tag to be overridden at compile time (no default - must be defined by app)
+#ifndef MIDI_LOG_TAG
+#define MIDI_LOG_TAG "RFX-MIDI"
+#endif
+
+#define LOG_TAG MIDI_LOG_TAG
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
@@ -84,7 +94,13 @@ void midi_handler_set_callback(midi_callback_t callback, void* user_data) {
 extern "C" void* SDL_GetAndroidJNIEnv();
 
 bool midi_handler_open_device(int device_index) {
-    LOGI("Opening MIDI device at index: %d", device_index);
+    LOGI("Opening MIDI device at index: %d (total devices: %d)", device_index, (int)g_midi_state.devices.size());
+
+    // Validate device index
+    if (device_index < 0 || device_index >= (int)g_midi_state.devices.size()) {
+        LOGE("Invalid device index %d", device_index);
+        return false;
+    }
 
     // Get JNI environment from SDL
     JNIEnv* env = (JNIEnv*)SDL_GetAndroidJNIEnv();
@@ -93,23 +109,43 @@ bool midi_handler_open_device(int device_index) {
         return false;
     }
 
-    jclass midiHandlerClass = env->FindClass("nl/gbraad/junglizer/MidiHandler");
+    jclass midiHandlerClass = env->FindClass(MIDI_HANDLER_CLASS_PATH);
     if (!midiHandlerClass) {
-        LOGE("Failed to find MidiHandler class");
+        LOGE("Failed to find MidiHandler class: %s", MIDI_HANDLER_CLASS_PATH);
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
         return false;
     }
 
     jmethodID openMethod = env->GetStaticMethodID(midiHandlerClass, "openDeviceByIndex", "(I)V");
     if (!openMethod) {
         LOGE("Failed to find openDeviceByIndex method");
+        if (env->ExceptionCheck()) {
+            env->ExceptionDescribe();
+            env->ExceptionClear();
+        }
         env->DeleteLocalRef(midiHandlerClass);
         return false;
     }
 
+    LOGI("Calling openDeviceByIndex(%d)...", device_index);
     env->CallStaticVoidMethod(midiHandlerClass, openMethod, device_index);
+
+    // Check for Java exceptions
+    if (env->ExceptionCheck()) {
+        LOGE("Exception in openDeviceByIndex(%d)", device_index);
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        env->DeleteLocalRef(midiHandlerClass);
+        return false;
+    }
+
     env->DeleteLocalRef(midiHandlerClass);
 
-    LOGI("Called Java openDeviceByIndex(%d)", device_index);
+    g_midi_state.current_device_id = device_index;
+    LOGI("Successfully opened MIDI device %d", device_index);
     return true;
 }
 
@@ -123,7 +159,7 @@ void midi_handler_close_device(void) {
         return;
     }
 
-    jclass midiHandlerClass = env->FindClass("nl/gbraad/junglizer/MidiHandler");
+    jclass midiHandlerClass = env->FindClass(MIDI_HANDLER_CLASS_PATH);
     if (!midiHandlerClass) {
         LOGE("Failed to find MidiHandler class");
         return;
@@ -150,6 +186,8 @@ const char* midi_handler_get_device_name(int device_index) {
     if (device_index < 0 || device_index >= (int)g_midi_state.devices.size()) {
         return nullptr;
     }
+    // NOTE: This returns a pointer to std::string internals which can become
+    // invalid if the vector is modified. Callers should copy immediately.
     return g_midi_state.devices[device_index].name.c_str();
 }
 
@@ -170,8 +208,9 @@ JNI_FUNC_NAME(ANDROID_APP_PACKAGE, nativeMidiClearDevices)(
     (void)env;
     (void)thiz;
 
+    int old_count = (int)g_midi_state.devices.size();
     g_midi_state.devices.clear();
-    LOGI("Cleared MIDI devices");
+    LOGI("[JNI] nativeMidiClearDevices called - cleared %d devices", old_count);
 }
 
 extern "C" __attribute__((visibility("default"))) JNIEXPORT void JNICALL

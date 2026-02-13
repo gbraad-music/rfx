@@ -7,8 +7,22 @@ extern "C" {
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct Regroove Regroove;
+
+// Loop state enum for compatibility with regroove_controller
+typedef enum {
+    RG_LOOP_OFF = 0,      // Not looping
+    RG_LOOP_ARMED = 1,    // Loop armed, waiting to reach loop start
+    RG_LOOP_ACTIVE = 2    // Currently looping
+} RegrooveLoopState;
+
+// Pattern mode enum for compatibility with regroove_controller
+typedef enum {
+    RG_PATTERN_MODE_OFF = 0,     // Normal playback through song
+    RG_PATTERN_MODE_SINGLE = 1   // Loop current pattern indefinitely
+} RegroovePatternMode;
 
 // --- Optional UI callback types ---
 typedef void (*RegrooveOrderCallback)(int order, int pattern, void *userdata);
@@ -59,6 +73,7 @@ void regroove_clear_pending_jump(Regroove *g);  // Clear any pending order/patte
 
 // Loop range system (replaces loop_till_row)
 void regroove_set_loop_range(Regroove *g, int start_order, int start_row, int end_order, int end_row);
+void regroove_get_loop_range(const Regroove *g, int *start_order, int *start_row, int *end_order, int *end_row);
 void regroove_set_loop_start_here(Regroove *g);   // Set loop start to current position
 void regroove_set_loop_end_here(Regroove *g);     // Set loop end to current position
 void regroove_trigger_loop(Regroove *g);          // Jump to loop start and activate
@@ -144,6 +159,48 @@ int regroove_get_num_samples(const Regroove *g);
 // Get sample name by index
 // Returns NULL if sample doesn't exist or has no name
 const char* regroove_get_sample_name(const Regroove *g, int index);
+
+// ============================================================================
+// Compatibility wrappers for unified API with regroove_controller
+// ============================================================================
+
+// Unified position getter (compatible with regroove_controller API)
+static inline void regroove_get_position(const Regroove *g, int *order, int *row) {
+    if (!g) return;
+    if (order) *order = regroove_get_current_order(g);
+    if (row) *row = regroove_get_current_row(g);
+}
+
+// Unified immediate jump (compatible with regroove_controller API)
+static inline void regroove_jump_immediate(Regroove *g, int order, int row) {
+    if (!g) return;
+    regroove_jump_to_order(g, order);
+    regroove_set_position_row(g, row);
+}
+
+// Explicit loop control (compatible with regroove_controller API)
+static inline void regroove_arm_loop(Regroove *g) {
+    if (!g) return;
+    if (regroove_get_loop_state(g) == RG_LOOP_OFF) {
+        regroove_play_to_loop(g);  // OFF -> ARMED
+    }
+}
+
+static inline void regroove_disable_loop(Regroove *g) {
+    if (!g) return;
+    if (regroove_get_loop_state(g) != RG_LOOP_OFF) {
+        regroove_play_to_loop(g);  // ARMED or ACTIVE -> OFF
+    }
+}
+
+// Naming consistency aliases for compatibility with controller API
+
+// Loop range functions (_rows suffix)
+#define regroove_set_loop_range_rows regroove_set_loop_range
+#define regroove_get_loop_range_rows regroove_get_loop_range
+
+// Channel mute query (controller uses get_channel_mute, engine uses is_channel_muted)
+#define regroove_get_channel_mute regroove_is_channel_muted
 
 #ifdef __cplusplus
 }

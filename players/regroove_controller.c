@@ -554,3 +554,25 @@ uint16_t regroove_controller_get_rows_per_pattern(const RegrooveController* cont
     // TODO: Add API to pattern_sequencer to query this
     return 64; // Default assumption
 }
+
+uint16_t regroove_controller_get_num_channels(const RegrooveController* controller) {
+    if (!controller) return 0;
+    // Channel count is not stored in the controller or pattern sequencer
+    // This would need to be provided by the player implementation
+    // For MOD: typically 4 channels
+    // For extended formats: varies
+    // TODO: Add API to store/retrieve channel count
+    return MAX_CHANNELS; // Return max supported channels as a fallback
+}
+
+uint16_t regroove_controller_get_current_pattern(const RegrooveController* controller) {
+    if (!controller || !controller->sequencer) return 0;
+
+    // Get pattern number from sequencer
+    uint16_t pattern_index = 0;
+    uint16_t pattern_number = 0;
+    uint16_t row = 0;
+    pattern_sequencer_get_position(controller->sequencer, &pattern_index, &pattern_number, &row);
+
+    return pattern_number;
+}

@@ -276,6 +276,34 @@ uint16_t regroove_controller_get_song_length(const RegrooveController* controlle
  */
 uint16_t regroove_controller_get_rows_per_pattern(const RegrooveController* controller, uint16_t order);
 
+/**
+ * Get number of channels (compatible with regroove_engine API)
+ */
+uint16_t regroove_controller_get_num_channels(const RegrooveController* controller);
+
+/**
+ * Get current pattern number (compatible with regroove_engine API)
+ */
+uint16_t regroove_controller_get_current_pattern(const RegrooveController* controller);
+
+/**
+ * Get number of orders (alias for get_song_length for compatibility)
+ */
+static inline uint16_t regroove_controller_get_num_orders(const RegrooveController* controller) {
+    return regroove_controller_get_song_length(controller);
+}
+
+// ============================================================================
+// Naming consistency aliases for compatibility with engine API
+// ============================================================================
+
+// Loop range functions (engine doesn't have _rows suffix)
+#define regroove_controller_set_loop_range regroove_controller_set_loop_range_rows
+#define regroove_controller_get_loop_range regroove_controller_get_loop_range_rows
+
+// Channel mute query (engine uses is_channel_muted, controller uses get_channel_mute)
+#define regroove_controller_is_channel_muted regroove_controller_get_channel_mute
+
 #ifdef __cplusplus
 }
 #endif

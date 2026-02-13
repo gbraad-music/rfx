@@ -1173,6 +1173,13 @@ void regroove_clear_pending_jump(Regroove* g) {
 void regroove_set_loop_range(Regroove* g, int start_order, int start_row, int end_order, int end_row) {
     enqueue_command_range(g, RG_CMD_SET_LOOP_RANGE, start_order, start_row, end_order, end_row);
 }
+void regroove_get_loop_range(const Regroove* g, int *start_order, int *start_row, int *end_order, int *end_row) {
+    if (!g) return;
+    if (start_order) *start_order = g->loop_start_order;
+    if (start_row) *start_row = g->loop_start_row;
+    if (end_order) *end_order = g->loop_end_order;
+    if (end_row) *end_row = g->loop_end_row;
+}
 void regroove_set_loop_start_here(Regroove* g) {
     int cur_order = openmpt_module_get_current_order(g->mod);
     int cur_row = openmpt_module_get_current_row(g->mod);
